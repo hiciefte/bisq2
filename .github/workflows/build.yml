@@ -79,5 +79,3 @@ jobs:
         uses: transifex/cli-action@v2
         with:
           token: ${{ secrets.TX_TOKEN }}
-          build-root-dir: i18n
-
