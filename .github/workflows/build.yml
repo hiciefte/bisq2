@@ -3,6 +3,7 @@ name: Build Bisq 2
 on:
   push:
   pull_request:
+    types: [ opened, reopened, synchronize, closed ]
     branches: [ main ]
 
 permissions:
