@@ -21,6 +21,7 @@ import bisq.chat.ChatChannel;
 import bisq.chat.ChatChannelDomain;
 import bisq.chat.ChatMessage;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannel;
+import bisq.common.observable.Observable;
 import bisq.common.proto.PersistableProto;
 import bisq.presentation.notifications.Notification;
 import bisq.user.profile.UserProfile;
@@ -53,7 +54,7 @@ public class ChatNotification implements Notification, PersistableProto {
 
     // Mutable field
     @EqualsAndHashCode.Exclude
-    private boolean isConsumed;
+    private final Observable<Boolean> isConsumed = new Observable<>();
 
     public ChatNotification(String id,
                             String title,
@@ -70,7 +71,8 @@ public class ChatNotification implements Notification, PersistableProto {
                 chatMessage.getId(),
                 findTradeId(chatChannel),
                 senderUserProfile,
-                findMediator(chatChannel));
+                findMediator(chatChannel),
+                false);
     }
 
     private ChatNotification(String id,
@@ -82,7 +84,8 @@ public class ChatNotification implements Notification, PersistableProto {
                              String chatMessageId,
                              Optional<String> tradeId,
                              Optional<UserProfile> senderUserProfile,
-                             Optional<UserProfile> mediator
+                             Optional<UserProfile> mediator,
+                             boolean isConsumed
     ) {
         this.id = id;
         this.title = title;
@@ -94,27 +97,33 @@ public class ChatNotification implements Notification, PersistableProto {
         this.tradeId = tradeId;
         this.senderUserProfile = senderUserProfile;
         this.mediator = mediator;
+        this.isConsumed.set(isConsumed);
     }
 
     @Override
-    public bisq.chat.protobuf.ChatNotification toProto() {
+    public bisq.chat.protobuf.ChatNotification.Builder getBuilder(boolean serializeForHash) {
         bisq.chat.protobuf.ChatNotification.Builder builder = bisq.chat.protobuf.ChatNotification.newBuilder()
                 .setId(id)
                 .setTitle(title)
                 .setMessage(message)
                 .setDate(date)
                 .setChatChannelId(chatChannelId)
-                .setChatChannelDomain(chatChannelDomain.toProto())
+                .setChatChannelDomain(chatChannelDomain.toProtoEnum())
                 .setChatMessageId(chatMessageId)
-                .setIsConsumed(isConsumed);
+                .setIsConsumed(isConsumed.get());
         tradeId.ifPresent(builder::setTradeId);
-        senderUserProfile.ifPresent(e -> builder.setSenderUserProfile(e.toProto()));
-        mediator.ifPresent(e -> builder.setMediator(e.toProto()));
-        return builder.build();
+        senderUserProfile.ifPresent(e -> builder.setSenderUserProfile(e.toProto(serializeForHash)));
+        mediator.ifPresent(e -> builder.setMediator(e.toProto(serializeForHash)));
+        return builder;
+    }
+
+    @Override
+    public bisq.chat.protobuf.ChatNotification toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static ChatNotification fromProto(bisq.chat.protobuf.ChatNotification proto) {
-        ChatNotification chatNotification = new ChatNotification(
+        return new ChatNotification(
                 proto.getId(),
                 proto.getTitle(),
                 proto.getMessage(),
@@ -124,10 +133,9 @@ public class ChatNotification implements Notification, PersistableProto {
                 proto.getChatMessageId(),
                 proto.hasTradeId() ? Optional.of(proto.getTradeId()) : Optional.empty(),
                 proto.hasSenderUserProfile() ? Optional.of(UserProfile.fromProto(proto.getSenderUserProfile())) : Optional.empty(),
-                proto.hasMediator() ? Optional.of(UserProfile.fromProto(proto.getMediator())) : Optional.empty()
+                proto.hasMediator() ? Optional.of(UserProfile.fromProto(proto.getMediator())) : Optional.empty(),
+                proto.getIsConsumed()
         );
-        chatNotification.setConsumed(proto.getIsConsumed());
-        return chatNotification;
     }
 
     private static Optional<String> findTradeId(ChatChannel<? extends ChatMessage> chatChannel) {
@@ -143,10 +151,10 @@ public class ChatNotification implements Notification, PersistableProto {
     }
 
     public void setConsumed(boolean consumed) {
-        isConsumed = consumed;
+        this.isConsumed.set(consumed);
     }
 
     public boolean isNotConsumed() {
-        return !isConsumed;
+        return !isConsumed.get();
     }
 }

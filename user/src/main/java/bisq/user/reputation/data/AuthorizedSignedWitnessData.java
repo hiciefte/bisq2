@@ -41,9 +41,12 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_100_DAYS;
 @Getter
 public final class AuthorizedSignedWitnessData implements AuthorizedDistributedData {
     public static final long TTL = TTL_100_DAYS;
+
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL, HIGH_PRIORITY, getClass().getSimpleName());
     private final String profileId;
     private final long witnessSignDate;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedSignedWitnessData(String profileId, long witnessSignDate, boolean staticPublicKeysProvided) {
@@ -61,12 +64,16 @@ public final class AuthorizedSignedWitnessData implements AuthorizedDistributedD
     }
 
     @Override
-    public bisq.user.protobuf.AuthorizedSignedWitnessData toProto() {
+    public bisq.user.protobuf.AuthorizedSignedWitnessData.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.AuthorizedSignedWitnessData.newBuilder()
                 .setProfileId(profileId)
                 .setWitnessSignDate(witnessSignDate)
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.user.protobuf.AuthorizedSignedWitnessData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedSignedWitnessData fromProto(bisq.user.protobuf.AuthorizedSignedWitnessData proto) {
@@ -99,9 +106,9 @@ public final class AuthorizedSignedWitnessData implements AuthorizedDistributedD
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

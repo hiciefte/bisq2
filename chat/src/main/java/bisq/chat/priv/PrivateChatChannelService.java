@@ -26,7 +26,6 @@ import bisq.network.identity.NetworkId;
 import bisq.network.identity.NetworkIdWithKeyPair;
 import bisq.network.p2p.services.confidential.ConfidentialMessageService;
 import bisq.persistence.PersistableStore;
-import bisq.security.pow.ProofOfWorkService;
 import bisq.user.UserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.profile.UserProfile;
@@ -44,15 +43,11 @@ public abstract class PrivateChatChannelService<
         C extends PrivateChatChannel<M>,
         S extends PersistableStore<S>
         > extends ChatChannelService<M, C, S> implements ConfidentialMessageService.Listener {
-    protected final ProofOfWorkService proofOfWorkService;
 
     public PrivateChatChannelService(NetworkService networkService,
                                      UserService userService,
-                                     ProofOfWorkService proofOfWorkService,
                                      ChatChannelDomain chatChannelDomain) {
         super(networkService, userService, chatChannelDomain);
-
-        this.proofOfWorkService = proofOfWorkService;
     }
 
 
@@ -62,14 +57,12 @@ public abstract class PrivateChatChannelService<
 
     @Override
     public CompletableFuture<Boolean> initialize() {
-        log.info("initialize");
         networkService.addConfidentialMessageListener(this);
         return CompletableFuture.completedFuture(true);
     }
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         networkService.removeConfidentialMessageListener(this);
         return CompletableFuture.completedFuture(true);
     }
@@ -130,8 +123,9 @@ public abstract class PrivateChatChannelService<
     }
 
     protected CompletableFuture<SendMessageResult> sendLeaveMessage(C channel, UserProfile receiver, long date) {
+        String encoded = Res.encode("chat.privateChannel.message.leave", channel.getMyUserIdentity().getUserProfile().getUserName());
         return sendMessage(StringUtils.createUid(),
-                Res.get("chat.privateChannel.message.leave", channel.getMyUserIdentity().getUserProfile().getUserName()),
+                encoded,
                 Optional.empty(),
                 channel,
                 receiver,

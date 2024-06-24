@@ -27,7 +27,7 @@ import bisq.network.p2p.node.handshake.ConnectionHandshakeInitiator;
 import bisq.network.p2p.node.network_load.ConnectionMetrics;
 import bisq.network.p2p.node.network_load.NetworkLoad;
 import bisq.network.p2p.node.network_load.NetworkLoadSnapshot;
-import bisq.network.p2p.services.peergroup.BanList;
+import bisq.network.p2p.services.peer_group.BanList;
 import bisq.tor.TorAddressOwnershipProofGenerator;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -242,7 +242,7 @@ public class OutboundConnectionManager {
     }
 
     private ByteBuffer wrapPayloadInByteBuffer(NetworkEnvelope networkEnvelope) {
-        bisq.network.protobuf.NetworkEnvelope poWRequest = networkEnvelope.toProto();
+        bisq.network.protobuf.NetworkEnvelope poWRequest = networkEnvelope.completeProto();
         byte[] requestInBytes = poWRequest.toByteArray();
         ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
         ProtoBufMessageLengthWriter.writeToBuffer(requestInBytes.length, byteBuffer);

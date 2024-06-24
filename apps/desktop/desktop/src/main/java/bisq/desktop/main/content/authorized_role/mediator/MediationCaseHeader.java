@@ -125,16 +125,14 @@ public class MediationCaseHeader {
 
         private void doClose() {
             MediatorView.ListItem listItem = model.getMediationCaseListItem().get();
-            channelService.sendSystemMessage(Res.get("authorizedRole.mediator.close.systemMessage"),
-                    listItem.getChannel());
+            channelService.sendTradeLogMessage(Res.encode("authorizedRole.mediator.close.tradeLogMessage"), listItem.getChannel());
             mediatorService.closeMediationCase(listItem.getMediationCase());
             onCloseHandler.run();
         }
 
         private void doReOpen() {
             MediatorView.ListItem listItem = model.getMediationCaseListItem().get();
-            channelService.sendSystemMessage(Res.get("authorizedRole.mediator"),
-                    listItem.getChannel());
+            channelService.sendTradeLogMessage(Res.encode("authorizedRole.mediator"), listItem.getChannel());
             mediatorService.reOpenMediationCase(listItem.getMediationCase());
             onReOpenHandler.run();
         }
@@ -194,7 +192,7 @@ public class MediationCaseHeader {
         protected void onViewAttached() {
             mediationCaseListItemPin = EasyBind.subscribe(model.getMediationCaseListItem(), item -> {
                 if (item != null) {
-                    makerProfileDisplay.setUserProfile(item.getMaker().getUserProfile());
+                    makerProfileDisplay.applyData(item.getMaker().getUserProfile(), item.getMaker().getLastSeenAsString(), item.getMaker().getLastSeen());
                     makerProfileDisplay.setReputationScore(item.getMaker().getReputationScore());
                     boolean isMakerRequester = item.isMakerRequester();
                     if (isMakerRequester) {
@@ -207,7 +205,7 @@ public class MediationCaseHeader {
 
                     direction.setText(item.getDirection());
 
-                    takerProfileDisplay.setUserProfile(item.getTaker().getUserProfile());
+                    takerProfileDisplay.applyData(item.getTaker().getUserProfile(), item.getTaker().getLastSeenAsString(), item.getTaker().getLastSeen());
                     takerProfileDisplay.setReputationScore(item.getTaker().getReputationScore());
                     if (!isMakerRequester) {
                         takerProfileDisplay.getStyleClass().add("mediator-header-requester");
@@ -220,11 +218,11 @@ public class MediationCaseHeader {
 
                     tradeId.getSecond().setText(item.getShortTradeId());
                 } else {
-                    makerProfileDisplay.setUserProfile(null);
+                    makerProfileDisplay.applyData(null, null, -1);
                     makerProfileDisplay.setReputationScore(null);
                     makerProfileDisplay.getTooltip().setText(null);
                     direction.setText(null);
-                    takerProfileDisplay.setUserProfile(null);
+                    takerProfileDisplay.applyData(null, null, -1);
                     takerProfileDisplay.setReputationScore(null);
                     takerProfileDisplay.getTooltip().setText(null);
                     tradeId.getSecond().setText(null);

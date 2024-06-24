@@ -38,6 +38,7 @@ public final class MailboxSequentialData implements NetworkProto {
     private final byte[] receiversPubKeyBytes;
     private final long created;
     private final int sequenceNumber;
+    @EqualsAndHashCode.Exclude  // transient are excluded by default but let's make it more explicit
     private transient final PublicKey receiversPubKey;
 
     public MailboxSequentialData(MailboxData mailboxData,
@@ -95,15 +96,19 @@ public final class MailboxSequentialData implements NetworkProto {
     }
 
     @Override
-    public bisq.network.protobuf.MailboxSequentialData toProto() {
+    public bisq.network.protobuf.MailboxSequentialData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.MailboxSequentialData.Builder getBuilder(boolean serializeForHash) {
         return bisq.network.protobuf.MailboxSequentialData.newBuilder()
-                .setMailboxData(mailboxData.toProto())
+                .setMailboxData(mailboxData.toProto(serializeForHash))
                 .setSenderPublicKeyHash(ByteString.copyFrom(senderPublicKeyHash))
                 .setReceiversPubKeyHash(ByteString.copyFrom(receiversPublicKeyHash))
                 .setReceiversPubKeyBytes(ByteString.copyFrom(receiversPubKeyBytes))
                 .setCreated(created)
-                .setSequenceNumber(sequenceNumber)
-                .build();
+                .setSequenceNumber(sequenceNumber);
     }
 
     public static MailboxSequentialData fromProto(bisq.network.protobuf.MailboxSequentialData proto) {

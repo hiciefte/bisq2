@@ -40,9 +40,12 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_30_DAYS;
 @Getter
 public final class AuthorizedTimestampData implements AuthorizedDistributedData {
     public static final long TTL = TTL_30_DAYS;
+
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL, getClass().getSimpleName());
     private final String profileId;
     private final long date;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedTimestampData(String profileId, long date, boolean staticPublicKeysProvided) {
@@ -60,12 +63,16 @@ public final class AuthorizedTimestampData implements AuthorizedDistributedData 
     }
 
     @Override
-    public bisq.user.protobuf.AuthorizedTimestampData toProto() {
+    public bisq.user.protobuf.AuthorizedTimestampData.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.AuthorizedTimestampData.newBuilder()
                 .setProfileId(profileId)
                 .setDate(date)
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.user.protobuf.AuthorizedTimestampData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedTimestampData fromProto(bisq.user.protobuf.AuthorizedTimestampData proto) {
@@ -98,9 +105,9 @@ public final class AuthorizedTimestampData implements AuthorizedDistributedData 
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

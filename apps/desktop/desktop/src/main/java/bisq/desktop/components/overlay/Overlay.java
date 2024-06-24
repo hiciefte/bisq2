@@ -29,6 +29,7 @@ import bisq.desktop.common.threading.UIScheduler;
 import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.components.containers.BisqGridPane;
 import bisq.desktop.components.containers.Spacer;
+import bisq.desktop.components.controls.BisqTooltip;
 import bisq.desktop.components.controls.BusyAnimation;
 import bisq.i18n.Res;
 import bisq.settings.DontShowAgainService;
@@ -65,16 +66,14 @@ import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 import javafx.stage.Window;
 import javafx.util.Duration;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @Slf4j
 public abstract class Overlay<T extends Overlay<T>> {
     protected final static double DEFAULT_WIDTH = 668;
@@ -83,12 +82,14 @@ public abstract class Overlay<T extends Overlay<T>> {
     private static String baseDir;
     public static SettingsService settingsService;
     private static ShutDownHandler shutdownHandler;
+    private static DontShowAgainService dontShowAgainService;
 
     public static void init(ServiceProvider serviceProvider, Region primaryStageOwner) {
         Overlay.primaryStageOwner = primaryStageOwner;
         Overlay.baseDir = serviceProvider.getConfig().getBaseDir().toAbsolutePath().toString();
         Overlay.settingsService = serviceProvider.getSettingsService();
         Overlay.shutdownHandler = serviceProvider.getShutDownHandler();
+        Overlay.dontShowAgainService = serviceProvider.getDontShowAgainService();
     }
 
 
@@ -108,7 +109,9 @@ public abstract class Overlay<T extends Overlay<T>> {
     public enum Type {
         UNDEFINED(AnimationType.ScaleFromCenter),
 
-        NOTIFICATION(AnimationType.SlideFromRightTop),
+        // NOTIFICATION(AnimationType.SlideFromRightTop),
+        // TODO https://github.com/bisq-network/bisq2/issues/1883
+        NOTIFICATION(AnimationType.SlideDownFromCenterTop, Transitions.Type.LIGHT_BLUR_LIGHT),
 
         BACKGROUND_INFO(AnimationType.SlideDownFromCenterTop),
         FEEDBACK(AnimationType.SlideDownFromCenterTop),
@@ -135,6 +138,9 @@ public abstract class Overlay<T extends Overlay<T>> {
         }
     }
 
+    @EqualsAndHashCode.Include
+    private final String id;
+
     private Region owner;
     protected Stage stage;
     @Getter
@@ -152,15 +158,11 @@ public abstract class Overlay<T extends Overlay<T>> {
     @Getter
     protected BooleanProperty isHiddenProperty = new SimpleBooleanProperty();
 
-    // Used when a priority queue is used for displaying order of popups. Higher numbers mean lower priority
-    @Setter
-    @Getter
-    protected Integer displayOrderPriority = Integer.MAX_VALUE;
-
     protected boolean useAnimation = true;
 
     protected Label headlineIcon, headlineLabel, messageLabel;
-    protected String headline, message, closeButtonText, actionButtonText,
+    protected String headline, message;
+    protected String closeButtonText, actionButtonText,
             secondaryActionButtonText, dontShowAgainId, dontShowAgainText,
             truncatedMessage;
     private List<String> messageHyperlinks;
@@ -186,6 +188,7 @@ public abstract class Overlay<T extends Overlay<T>> {
     protected int maxChar = 2200;
 
     public Overlay() {
+        id = UUID.randomUUID().toString();
         TypeToken<T> typeToken = new TypeToken<>(getClass()) {
         };
         if (!typeToken.isSupertypeOf(getClass())) {
@@ -200,7 +203,7 @@ public abstract class Overlay<T extends Overlay<T>> {
     ///////////////////////////////////////////////////////////////////////////////////////////
 
     public void show(boolean showAgainChecked) {
-        if (dontShowAgainId == null || DontShowAgainService.showAgain(dontShowAgainId)) {
+        if (dontShowAgainId == null || dontShowAgainService.showAgain(dontShowAgainId)) {
             createGridPane();
             if (LanguageRepository.isDefaultLanguageRTL()) {
                 getRootContainer().setNodeOrientation(NodeOrientation.RIGHT_TO_LEFT);
@@ -331,6 +334,12 @@ public abstract class Overlay<T extends Overlay<T>> {
         return cast();
     }
 
+    public T notify(String message) {
+        type = Type.NOTIFICATION;
+        processMessage(message);
+        return cast();
+    }
+
     public T feedback(String message) {
         type = Type.FEEDBACK;
         if (headline == null)
@@ -405,7 +414,7 @@ public abstract class Overlay<T extends Overlay<T>> {
     public T error(String message) {
         type = Type.ERROR;
         showReportErrorButtons();
-        width = 1100;
+        width = 800;
         if (headline == null)
             this.headline = Res.get("popup.headline.error");
         processMessage(message);
@@ -802,12 +811,15 @@ public abstract class Overlay<T extends Overlay<T>> {
             headlineIcon.setVisible(true);
             headlineLabel.getStyleClass().add("overlay-headline");
             switch (type) {
+                case NOTIFICATION:
+                    headlineIcon.setManaged(false);
+                    headlineIcon.setVisible(false);
+                    break;
                 case INFORMATION:
                 case BACKGROUND_INFO:
                 case INSTRUCTION:
                 case CONFIRMATION:
                 case FEEDBACK:
-                case NOTIFICATION:
                 case ATTENTION:
                     Icons.getIconForLabel(AwesomeIcon.INFO_SIGN, headlineIcon, "1.8em");
                     headlineLabel.getStyleClass().add("overlay-headline-information");
@@ -898,10 +910,16 @@ public abstract class Overlay<T extends Overlay<T>> {
             GridPane.setMargin(footerBox, new Insets(buttonDistance, 0, 0, 0));
             gridPane.getChildren().add(footerBox);
             for (int i = 0; i < messageHyperlinks.size(); i++) {
-                Label label = new Label(String.format("[%d]", i + 1));
+                Label enumeration = new Label(String.format("[%d]", i + 1));
+                enumeration.getStyleClass().add("overlay-message");
                 Hyperlink link = new Hyperlink(messageHyperlinks.get(i));
+                link.getStyleClass().add("overlay-message");
                 link.setOnAction(event -> Browser.open(link.getText()));
-                HBox hBox = new HBox(label, link);
+                String tooltipText = Browser.hyperLinksGetCopiesWithoutPopup()
+                        ? Res.get("popup.hyperlink.copy.tooltip", link.getText())
+                        : Res.get("popup.hyperlink.openInBrowser.tooltip", link.getText());
+                link.setTooltip(new BisqTooltip(tooltipText));
+                HBox hBox = new HBox(5, enumeration, link);
                 hBox.setAlignment(Pos.CENTER_LEFT);
                 footerBox.getChildren().addAll(hBox);
             }
@@ -951,8 +969,8 @@ public abstract class Overlay<T extends Overlay<T>> {
             buttonBox.getChildren().add(0, dontShowAgainCheckBox);
 
             dontShowAgainCheckBox.setSelected(isChecked);
-            DontShowAgainService.putDontShowAgain(dontShowAgainId, isChecked);
-            dontShowAgainCheckBox.setOnAction(e -> DontShowAgainService.putDontShowAgain(dontShowAgainId, dontShowAgainCheckBox.isSelected()));
+            dontShowAgainService.putDontShowAgain(dontShowAgainId, isChecked);
+            dontShowAgainCheckBox.setOnAction(e -> dontShowAgainService.putDontShowAgain(dontShowAgainId, dontShowAgainCheckBox.isSelected()));
         }
     }
 

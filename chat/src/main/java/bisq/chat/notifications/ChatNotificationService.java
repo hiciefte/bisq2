@@ -20,7 +20,6 @@ package bisq.chat.notifications;
 import bisq.chat.*;
 import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookChannel;
 import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookChannelService;
-import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookMessage;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannel;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannelService;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeMessage;
@@ -43,6 +42,7 @@ import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -75,6 +75,9 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
     @Getter
     private final Observable<ChatNotification> changedNotification = new Observable<>();
     private final Map<String, Pin> chatMessagesByChannelIdPins = new ConcurrentHashMap<>();
+    private final long startUpDateTime = System.currentTimeMillis();
+    @Setter
+    private boolean isApplicationFocussed;
 
     public ChatNotificationService(PersistenceService persistenceService,
                                    ChatService chatService,
@@ -212,7 +215,7 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
     }
 
     private void consumeNotification(ChatNotification notification) {
-        if (notification.isConsumed()) {
+        if (notification.getIsConsumed().get()) {
             return;
         }
         boolean hadChange;
@@ -221,6 +224,7 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
                 notification.setConsumed(true);
                 persistableStore.getNotifications().add(notification);
                 hadChange = true;
+                changedNotification.set(notification);
             } else {
                 hadChange = persistableStore.getNotConsumedNotifications()
                         .filter(e -> e.equals(notification))
@@ -232,6 +236,10 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
                         .orElse(false);
             }
             if (hadChange) {
+                // If we changed the consumed state we need to trigger an update of the observable by setting it to null
+                // first as the isConsumed field is excluded from EqualsAndHashCode and thus would not trigger
+                // notifications of observers.
+                changedNotification.set(null);
                 changedNotification.set(notification);
             }
         }
@@ -242,7 +250,7 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
 
     private boolean isConsumed(ChatNotification notification) {
         synchronized (persistableStore) {
-            return persistableStore.findNotification(notification).map(ChatNotification::isConsumed).orElse(false);
+            return persistableStore.findNotification(notification).map(e -> e.getIsConsumed().get()).orElse(false);
         }
     }
 
@@ -280,7 +288,8 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
 
     private <M extends ChatMessage> void onMessageAdded(ChatChannel<M> chatChannel, M chatMessage) {
         String id = ChatNotification.createId(chatChannel.getId(), chatMessage.getId());
-        ChatNotification chatNotification = createNotification(id, chatChannel, chatMessage);
+        ChatNotification chatNotification = persistableStore.findNotification(id)
+                .orElseGet(() -> createNotification(id, chatChannel, chatMessage));
 
         // At first start-up when user has not setup their profile yet, we set all notifications as consumed
         if (!userIdentityService.hasUserIdentities()) {
@@ -305,15 +314,6 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
                 !chatService.getChatChannelSelectionService(chatChannel.getChatChannelDomain()).getSelectedChannel().get().equals(chatChannel)) {
             consumeNotification(chatNotification);
             return;
-        }
-
-        // If user has set "Show offers only" in settings we mark messages as consumed
-        if (chatMessage instanceof BisqEasyOfferbookMessage) {
-            BisqEasyOfferbookMessage bisqEasyOfferbookMessage = (BisqEasyOfferbookMessage) chatMessage;
-            if (settingsService.getOffersOnly().get() && !bisqEasyOfferbookMessage.hasBisqEasyOffer()) {
-                consumeNotification(chatNotification);
-                return;
-            }
         }
 
         ChatChannelNotificationType notificationType = chatChannel.getChatChannelNotificationType().get();
@@ -341,7 +341,7 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
 
         if (shouldSendNotification) {
             addNotification(chatNotification);
-            sendNotificationService.send(chatNotification);
+            maybeSendSystemNotification(chatNotification);
         } else {
             consumeNotification(chatNotification);
         }
@@ -364,7 +364,7 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
             // For Private messages we show title: `{username} ({channel domain} - Private message)`
             String userName = senderUserProfile.map(UserProfile::getUserName).orElse(Res.get("data.na"));
             String channelInfo = ChatUtil.getChannelNavigationPath(chatChannel);
-            title = StringUtils.truncate(userName, 15) + " (" + channelInfo + ")";
+            title = StringUtils.truncate(userName, 20) + " (" + channelInfo + ")";
             message = StringUtils.truncate(chatMessage.getText(), 210);
         }
         return new ChatNotification(id,
@@ -373,5 +373,15 @@ public class ChatNotificationService implements PersistenceClient<ChatNotificati
                 chatChannel,
                 chatMessage,
                 senderUserProfile);
+    }
+
+    private void maybeSendSystemNotification(ChatNotification chatNotification) {
+        if (!isApplicationFocussed && isReceivedAfterStartUp(chatNotification)) {
+            sendNotificationService.send(chatNotification);
+        }
+    }
+
+    private boolean isReceivedAfterStartUp(ChatNotification chatNotification) {
+        return chatNotification.getDate() > startUpDateTime;
     }
 }

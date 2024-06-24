@@ -17,23 +17,71 @@
 
 package bisq.desktop.components.controls.validator;
 
+import bisq.common.util.StringUtils;
+import bisq.presentation.formatters.DefaultNumberFormatter;
 import javafx.scene.control.TextInputControl;
-import javafx.util.StringConverter;
-import javafx.util.converter.NumberStringConverter;
+import lombok.Getter;
+
+import java.util.Optional;
 
 public class NumberValidator extends ValidatorBase {
-
-    private static final StringConverter<Number> NUMBER_STRING_CONVERTER = new NumberStringConverter();
+    @Getter
+    private Optional<Number> minValue = Optional.empty();
+    @Getter
+    private Optional<Number> maxValue = Optional.empty();
+    @Getter
+    private Optional<Number> numberValue = Optional.empty();
+    private final boolean allowEmptyString;
 
     public NumberValidator(String message) {
         super(message);
+
+        this.allowEmptyString = false;
+    }
+
+    public NumberValidator(String message, Number minValue, Number maxValue) {
+        this(message, minValue, maxValue, true);
+    }
+
+    public NumberValidator(String message, Number minValue, Number maxValue, boolean allowEmptyString) {
+        super(message);
+
+        this.minValue = Optional.of(minValue);
+        this.maxValue = Optional.of(maxValue);
+        this.allowEmptyString = allowEmptyString;
+    }
+
+    public void setMinValue(Number minValue) {
+        this.minValue = Optional.of(minValue);
+    }
+
+    public void setMaxValue(Number maxValue) {
+        this.maxValue = Optional.of(maxValue);
     }
 
     @Override
     protected void eval() {
+        hasErrors.set(false);
         var textField = (TextInputControl) srcControl.get();
         try {
-            NUMBER_STRING_CONVERTER.fromString(textField.getText());
+            String text = textField.getText();
+            if (allowEmptyString && StringUtils.isEmpty(text)) {
+                return;
+            }
+
+            double value = DefaultNumberFormatter.parse(text);
+            numberValue = Optional.of(value);
+
+            if (minValue.isPresent() && value < minValue.get().doubleValue()) {
+                hasErrors.set(true);
+                return;
+            }
+
+            if (maxValue.isPresent() && value > maxValue.get().doubleValue()) {
+                hasErrors.set(true);
+                return;
+            }
+
             hasErrors.set(false);
         } catch (Exception e) {
             hasErrors.set(true);

@@ -31,7 +31,6 @@ import bisq.offer.bisq_easy.BisqEasyOffer;
 import bisq.persistence.DbSubDirectory;
 import bisq.persistence.Persistence;
 import bisq.persistence.PersistenceService;
-import bisq.security.pow.ProofOfWorkService;
 import bisq.user.UserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.profile.UserProfile;
@@ -47,7 +46,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelService<BisqEasyOpenTradeMessage, BisqEasyOpenTradeChannel, BisqEasyOpenTradeChannelStore> {
@@ -59,9 +57,8 @@ public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelServ
 
     public BisqEasyOpenTradeChannelService(PersistenceService persistenceService,
                                            NetworkService networkService,
-                                           UserService userService,
-                                           ProofOfWorkService proofOfWorkService) {
-        super(networkService, userService, proofOfWorkService, ChatChannelDomain.BISQ_EASY_OPEN_TRADES);
+                                           UserService userService) {
+        super(networkService, userService, ChatChannelDomain.BISQ_EASY_OPEN_TRADES);
 
         persistence = persistenceService.getOrCreatePersistence(this, DbSubDirectory.PRIVATE, persistableStore);
     }
@@ -129,7 +126,7 @@ public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelServ
                     if (bannedUserService.isUserProfileBanned(makerUserProfile)) {
                         return CompletableFuture.<SendMessageResult>failedFuture(new RuntimeException("Maker is banned"));
                     }
-                    UserIdentity myUserIdentity = checkNotNull(userIdentityService.getSelectedUserIdentity());
+                    UserIdentity myUserIdentity = userIdentityService.getSelectedUserIdentity();
                     if (bannedUserService.isUserProfileBanned(myUserIdentity.getUserProfile())) {
                         return CompletableFuture.<SendMessageResult>failedFuture(new RuntimeException());
                     }
@@ -152,9 +149,9 @@ public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelServ
                 .orElse(CompletableFuture.failedFuture(new RuntimeException("makerUserProfile not found from message.authorUserProfileId")));
     }
 
-    public CompletableFuture<SendMessageResult> sendSystemMessage(String text,
-                                                                  BisqEasyOpenTradeChannel channel) {
-        return sendMessage(text, Optional.empty(), ChatMessageType.SYSTEM_MESSAGE, channel);
+    public CompletableFuture<SendMessageResult> sendTradeLogMessage(String text,
+                                                                    BisqEasyOpenTradeChannel channel) {
+        return sendMessage(text, Optional.empty(), ChatMessageType.PROTOCOL_LOG_MESSAGE, channel);
     }
 
     public CompletableFuture<SendMessageResult> sendTextMessage(String text,
@@ -209,7 +206,7 @@ public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelServ
         checkArgument(channel.getMediator().isPresent());
         UserProfile receiverUserProfile = channel.getMyUserIdentity().getUserProfile();
         UserProfile senderUserProfile = channel.getMediator().get();
-        BisqEasyOpenTradeMessage systemMessage = new BisqEasyOpenTradeMessage(channel.getTradeId(),
+        BisqEasyOpenTradeMessage tradeLogMessage = new BisqEasyOpenTradeMessage(channel.getTradeId(),
                 StringUtils.createUid(),
                 channel.getId(),
                 senderUserProfile,
@@ -220,9 +217,9 @@ public class BisqEasyOpenTradeChannelService extends PrivateGroupChatChannelServ
                 new Date().getTime(),
                 false,
                 channel.getMediator(),
-                ChatMessageType.SYSTEM_MESSAGE,
+                ChatMessageType.PROTOCOL_LOG_MESSAGE,
                 Optional.empty());
-        channel.addChatMessage(systemMessage);
+        channel.addChatMessage(tradeLogMessage);
     }
 
     public Optional<BisqEasyOpenTradeChannel> findChannel(String offerId, String peersUserProfileId) {

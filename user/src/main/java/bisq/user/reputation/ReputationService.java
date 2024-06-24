@@ -44,6 +44,7 @@ public class ReputationService implements Service {
     private final Observable<String> changedUserProfileScore = new Observable<>();
     private final Map<String, Long> scoreByUserProfileId = new ConcurrentHashMap<>();
     private final ProfileAgeService profileAgeService;
+    private final NetworkService networkService;
 
     public ReputationService(PersistenceService persistenceService,
                              NetworkService networkService,
@@ -51,6 +52,7 @@ public class ReputationService implements Service {
                              UserProfileService userProfileService,
                              BannedUserService bannedUserService,
                              AuthorizedBondedRolesService authorizedBondedRolesService) {
+        this.networkService = networkService;
         proofOfBurnService = new ProofOfBurnService(networkService,
                 userIdentityService,
                 userProfileService,
@@ -94,6 +96,9 @@ public class ReputationService implements Service {
 
     public CompletableFuture<Boolean> initialize() {
         log.info("initialize");
+
+        ReputationDataUtil.cleanupMap(networkService);
+
         return proofOfBurnService.initialize()
                 .thenCompose(r -> bondedReputationService.initialize())
                 .thenCompose(r -> accountAgeService.initialize())
@@ -102,7 +107,6 @@ public class ReputationService implements Service {
     }
 
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         return proofOfBurnService.shutdown()
                 .thenCompose(r -> bondedReputationService.shutdown())
                 .thenCompose(r -> accountAgeService.shutdown())
@@ -115,8 +119,12 @@ public class ReputationService implements Service {
     // API
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+    public ReputationScore getReputationScore(String userProfileId) {
+        return findReputationScore(userProfileId).orElse(new ReputationScore(0, 0, scoreByUserProfileId.size()));
+    }
+
     public ReputationScore getReputationScore(UserProfile userProfile) {
-        return findReputationScore(userProfile).orElse(ReputationScore.NONE);
+        return findReputationScore(userProfile).orElse(new ReputationScore(0, 0, scoreByUserProfileId.size()));
     }
 
     public Optional<ReputationScore> findReputationScore(UserProfile userProfile) {
@@ -128,11 +136,10 @@ public class ReputationService implements Service {
             return Optional.empty();
         }
         long score = scoreByUserProfileId.get(userProfileId);
-        double relativeScore = getRelativeScore(score, scoreByUserProfileId.values());
+        double fiveSystemScore = getFiveSystemScore(score);
         int index = getIndex(score, scoreByUserProfileId.values());
         int rank = scoreByUserProfileId.size() - index;
-        double relativeRanking = (index + 1) / (double) scoreByUserProfileId.size();
-        return Optional.of(new ReputationScore(score, relativeScore, rank, relativeRanking));
+        return Optional.of(new ReputationScore(score, fiveSystemScore, rank));
     }
 
     private void onUserProfileScoreChanged(String userProfileId) {
@@ -149,9 +156,30 @@ public class ReputationService implements Service {
     }
 
     @VisibleForTesting
-    static double getRelativeScore(long candidateScore, Collection<Long> scores) {
-        long bestScore = scores.stream().max(Comparator.comparing(Long::longValue)).orElse(0L);
-        return bestScore > 0 ? candidateScore / (double) bestScore : 0;
+    static double getFiveSystemScore(long candidateScore) {
+        if (candidateScore < 1_200) {
+            return 0;
+        } else if (candidateScore < 5_000) {
+            return 0.5;
+        } else if (candidateScore < 15_000) {
+            return 1;
+        } else if (candidateScore < 20_000) {
+            return 1.5;
+        } else if (candidateScore < 25_000) {
+            return 2;
+        } else if (candidateScore < 30_000) {
+            return 2.5;
+        } else if (candidateScore < 35_000) {
+            return 3;
+        } else if (candidateScore < 40_000) {
+            return 3.5;
+        } else if (candidateScore < 60_000) {
+            return 4;
+        } else if (candidateScore < 100_000) {
+            return 4.5;
+        } else {
+            return 5;
+        }
     }
 
     @VisibleForTesting

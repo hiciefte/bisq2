@@ -37,12 +37,14 @@ import bisq.network.p2p.node.transport.BootstrapInfo;
 import bisq.network.p2p.services.confidential.ConfidentialMessageService;
 import bisq.network.p2p.services.confidential.SendConfidentialMessageResult;
 import bisq.network.p2p.services.confidential.ack.MessageDeliveryStatusService;
+import bisq.network.p2p.services.confidential.resend.ResendMessageService;
 import bisq.network.p2p.services.data.DataService;
 import bisq.network.p2p.services.data.inventory.InventoryService;
-import bisq.network.p2p.services.peergroup.PeerGroupManager;
+import bisq.network.p2p.services.peer_group.PeerGroupManager;
 import bisq.persistence.PersistenceService;
 import bisq.security.keys.KeyBundleService;
-import bisq.security.pow.ProofOfWorkService;
+import bisq.security.pow.equihash.EquihashProofOfWorkService;
+import bisq.security.pow.hashcash.HashCashProofOfWorkService;
 import com.runjva.sourceforge.jsocks.protocol.Socks5Proxy;
 import lombok.extern.slf4j.Slf4j;
 
@@ -73,17 +75,23 @@ public class ServiceNodesByTransport {
                                    Map<TransportType, PeerGroupManager.Config> peerGroupServiceConfigByTransport,
                                    Map<TransportType, Set<Address>> seedAddressesByTransport,
                                    InventoryService.Config inventoryServiceConfig,
+                                   AuthorizationService.Config authorizationServiceConfig,
                                    Set<TransportType> supportedTransportTypes,
                                    Set<Feature> features,
                                    KeyBundleService keyBundleService,
                                    PersistenceService persistenceService,
-                                   ProofOfWorkService proofOfWorkService,
+                                   HashCashProofOfWorkService hashCashProofOfWorkService,
+                                   EquihashProofOfWorkService equihashProofOfWorkService,
                                    Optional<DataService> dataService,
                                    Optional<MessageDeliveryStatusService> messageDeliveryStatusService,
+                                   Optional<ResendMessageService> resendMessageService,
                                    NetworkLoadSnapshot networkLoadSnapshot) {
         this.supportedTransportTypes = supportedTransportTypes;
 
-        authorizationService = new AuthorizationService(proofOfWorkService);
+        authorizationService = new AuthorizationService(authorizationServiceConfig,
+                hashCashProofOfWorkService,
+                equihashProofOfWorkService,
+                features);
 
         supportedTransportTypes.forEach(transportType -> {
             TransportConfig transportConfig = configByTransportType.get(transportType);
@@ -92,7 +100,10 @@ public class ServiceNodesByTransport {
                     features,
                     transportConfig,
                     transportConfig.getDefaultNodeSocketTimeout(),
-                    transportConfig.getUserNodeSocketTimeout());
+                    transportConfig.getUserNodeSocketTimeout(),
+                    transportConfig.getDevModeDelayInMs(),
+                    transportConfig.getSendMessageThrottleTime(),
+                    transportConfig.getReceiveMessageThrottleTime());
             Set<Address> seedAddresses = seedAddressesByTransport.get(transportType);
             checkNotNull(seedAddresses, "Seed nodes must be setup for %s", transportType);
             PeerGroupManager.Config peerGroupServiceConfig = peerGroupServiceConfigByTransport.get(transportType);
@@ -103,6 +114,7 @@ public class ServiceNodesByTransport {
                     inventoryServiceConfig,
                     dataService,
                     messageDeliveryStatusService,
+                    resendMessageService,
                     keyBundleService,
                     persistenceService,
                     authorizationService,
@@ -185,6 +197,7 @@ public class ServiceNodesByTransport {
             if (map.containsKey(transportType)) {
                 ServiceNode serviceNode = map.get(transportType);
                 SendConfidentialMessageResult result = serviceNode.confidentialSend(envelopePayloadMessage,
+                        receiverNetworkId,
                         address,
                         receiverNetworkId.getPubKey(),
                         senderKeyPair,
@@ -238,7 +251,7 @@ public class ServiceNodesByTransport {
                 });
     }
 
-    public Map<TransportType, Observable<Node.State>> getNodeStateByTransportType() {
+    public Map<TransportType, Observable<Node.State>> getDefaultNodeStateByTransportType() {
         return map.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getDefaultNode().getObservableState()));
     }

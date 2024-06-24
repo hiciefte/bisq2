@@ -17,11 +17,13 @@
 
 package bisq.network.p2p.services.data.storage.auth;
 
+import bisq.common.application.DevMode;
 import bisq.common.data.ByteArray;
 import bisq.common.timer.Scheduler;
 import bisq.common.util.StringUtils;
 import bisq.network.p2p.services.data.storage.DataStorageResult;
 import bisq.network.p2p.services.data.storage.DataStorageService;
+import bisq.network.p2p.services.data.storage.DataStore;
 import bisq.network.p2p.services.data.storage.auth.authorized.AuthorizedData;
 import bisq.persistence.PersistenceService;
 import bisq.security.DigestUtil;
@@ -33,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -57,20 +60,28 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
     }
 
     @Override
+    public void onPersistedApplied(DataStore<AuthenticatedDataRequest> persisted) {
+        maybeLogMapState("onPersistedApplied", persisted);
+        pruneInvalidAuthorizedData();
+    }
+
+    @Override
     public void shutdown() {
+        maybeLogMapState("shutdown", persistableStore);
         super.shutdown();
         scheduler.stop();
     }
 
     public DataStorageResult add(AddAuthenticatedDataRequest request) {
+        maybeLogMapState("add", persistableStore);
         AuthenticatedSequentialData authenticatedSequentialData = request.getAuthenticatedSequentialData();
         AuthenticatedData authenticatedData = authenticatedSequentialData.getAuthenticatedData();
-        byte[] hash = DigestUtil.hash(authenticatedData.serialize());
+        byte[] hash = DigestUtil.hash(authenticatedData.serializeForHash());
         ByteArray byteArray = new ByteArray(hash);
         AuthenticatedDataRequest requestFromMap;
         Map<ByteArray, AuthenticatedDataRequest> map = persistableStore.getMap();
         synchronized (mapAccessLock) {
-            if (map.size() > getMaxMapSize()) {
+            if (isExceedingMapSize()) {
                 return new DataStorageResult(false).maxMapSizeReached();
             }
             requestFromMap = map.get(byteArray);
@@ -129,10 +140,12 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
                 log.error("Calling onAdded at listener {} failed", listener, e);
             }
         });
+        maybeLogMapState("add success", persistableStore);
         return new DataStorageResult(true);
     }
 
     public DataStorageResult remove(RemoveAuthenticatedDataRequest request) {
+        maybeLogMapState("remove ", persistableStore);
         ByteArray byteArray = new ByteArray(request.getHash());
         AuthenticatedData authenticatedDataFromMap;
         Map<ByteArray, AuthenticatedDataRequest> map = persistableStore.getMap();
@@ -169,7 +182,6 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
                 log.warn("MetaData of remove request not matching the one from the addRequest from the map. {} vs. {}",
                         request.getMetaData(),
                         addRequestFromMap.getAuthenticatedSequentialData().getAuthenticatedData().getMetaData());
-                return new DataStorageResult(false).metaDataInvalid();
             }
 
             // We have an entry, lets validate if we can remove it
@@ -199,10 +211,12 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
                 log.error("Calling onRemoved at listener {} failed", listener, e);
             }
         });
+        maybeLogMapState("remove success", persistableStore);
         return new DataStorageResult(true).removedData(authenticatedDataFromMap);
     }
 
     public DataStorageResult refresh(RefreshAuthenticatedDataRequest request) {
+        maybeLogMapState("refresh ", persistableStore);
         ByteArray byteArray = new ByteArray(request.getHash());
         AddAuthenticatedDataRequest updatedRequest;
         Map<ByteArray, AuthenticatedDataRequest> map = persistableStore.getMap();
@@ -255,6 +269,7 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
                 log.error("Calling onRefreshed at listener {} failed", listener, e);
             }
         });
+        maybeLogMapState("refresh success", persistableStore);
         return new DataStorageResult(true);
     }
 
@@ -298,6 +313,51 @@ public class AuthenticatedDataStorageService extends DataStorageService<Authenti
                     });
                 }
             });
+        }
+    }
+
+    private void pruneInvalidAuthorizedData() {
+        Map<ByteArray, AuthenticatedDataRequest> invalidAuthorizedData = persistableStore.getMap().entrySet().stream()
+                .filter(entry -> {
+                    AuthenticatedDataRequest request = entry.getValue();
+                    if (request instanceof AddAuthenticatedDataRequest) {
+                        AddAuthenticatedDataRequest addAuthenticatedDataRequest = (AddAuthenticatedDataRequest) request;
+                        AuthenticatedData authenticatedData = addAuthenticatedDataRequest.getAuthenticatedSequentialData().getAuthenticatedData();
+                        if (authenticatedData instanceof AuthorizedData) {
+                            AuthorizedData authorizedData = (AuthorizedData) authenticatedData;
+                            return authorizedData.isNotAuthorized();
+                        }
+                    }
+                    return false;
+                })
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        if (!invalidAuthorizedData.isEmpty()) {
+            invalidAuthorizedData.forEach((key, value) -> {
+                log.warn("We prune the AddAuthenticatedDataRequest with an invalid AuthorizedData. {}",
+                        StringUtils.truncate(value.toString(), 3000));
+                persistableStore.getMap().remove(key);
+            });
+            persist();
+        }
+    }
+
+    // Useful for debugging state of the store
+    private void maybeLogMapState(String methodName, DataStore<AuthenticatedDataRequest> dataStore) {
+        if (DevMode.isDevMode() || methodName.equals("onPersistedApplied")) {
+            var added = dataStore.getMap().values().stream()
+                    .filter(authenticatedDataRequest -> authenticatedDataRequest instanceof AddAuthenticatedDataRequest)
+                    .map(authenticatedDataRequest -> (AddAuthenticatedDataRequest) authenticatedDataRequest)
+                    .map(e -> e.getAuthenticatedSequentialData().getAuthenticatedData().getDistributedData().getClass().getSimpleName())
+                    .collect(Collectors.toList());
+            var removed = dataStore.getMap().values().stream()
+                    .filter(authenticatedDataRequest -> authenticatedDataRequest instanceof RemoveAuthenticatedDataRequest)
+                    .map(authenticatedDataRequest -> (RemoveAuthenticatedDataRequest) authenticatedDataRequest)
+                    .map(RemoveAuthenticatedDataRequest::getClassName)
+                    .collect(Collectors.toList());
+            var className = Stream.concat(added.stream(), removed.stream())
+                    .findAny().orElse(persistence.getFileName().replace("Store", "")); // Remove trailing Store postfix
+            log.info("Method: {}; map entry: {}; num AddRequests: {}; num RemoveRequests={}; map size:{}",
+                    methodName, className, added.size(), removed.size(), dataStore.getMap().size());
         }
     }
 }

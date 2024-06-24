@@ -26,31 +26,35 @@ import java.util.Optional;
 
 public class PriceSpecUtil {
     public static Optional<FixPriceSpec> findFixPriceSpec(PriceSpec priceSpec) {
-        return priceSpec instanceof FixPriceSpec ?
-                Optional.of((FixPriceSpec) priceSpec) :
-                Optional.empty();
+        return priceSpec instanceof FixPriceSpec
+                ? Optional.of((FixPriceSpec) priceSpec)
+                : Optional.empty();
     }
 
     public static Optional<FloatPriceSpec> findFloatPriceSpec(PriceSpec priceSpec) {
-        return priceSpec instanceof FloatPriceSpec ?
-                Optional.of((FloatPriceSpec) priceSpec) :
-                Optional.empty();
+        return priceSpec instanceof FloatPriceSpec
+                ? Optional.of((FloatPriceSpec) priceSpec)
+                : Optional.empty();
     }
 
     public static Optional<MarketPriceSpec> findMarketPriceSpec(PriceSpec priceSpec) {
-        return priceSpec instanceof MarketPriceSpec ?
-                Optional.of((MarketPriceSpec) priceSpec) :
-                Optional.empty();
+        return priceSpec instanceof MarketPriceSpec
+                ? Optional.of((MarketPriceSpec) priceSpec)
+                : Optional.empty();
     }
 
-    public static Optional<FloatPriceSpec> createFloatPriceSpec(MarketPriceService marketPriceService, PriceQuote priceQuote) {
+    public static Optional<Double> createFloatPriceAsPercentage(MarketPriceService marketPriceService, PriceQuote priceQuote) {
         return marketPriceService.findMarketPrice(priceQuote.getMarket())
                 .map(MarketPrice::getPriceQuote).stream()
                 .map(marketPrice -> {
                     double exact = (double) priceQuote.getValue() / (double) marketPrice.getValue() - 1;
                     return MathUtils.roundDouble(exact, 4);
                 })
-                .map(FloatPriceSpec::new)
                 .findAny();
+    }
+
+    public static Optional<FloatPriceSpec> createFloatPriceSpec(MarketPriceService marketPriceService, PriceQuote priceQuote) {
+        return createFloatPriceAsPercentage(marketPriceService, priceQuote)
+                .map(FloatPriceSpec::new);
     }
 }

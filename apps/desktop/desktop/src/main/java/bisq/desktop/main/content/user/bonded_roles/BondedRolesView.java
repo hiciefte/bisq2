@@ -72,10 +72,12 @@ public abstract class BondedRolesView<M extends BondedRolesModel, C extends Bond
 
     @Override
     protected void onViewAttached() {
+        tableView.initialize();
     }
 
     @Override
     protected void onViewDetached() {
+        tableView.dispose();
     }
 
     protected abstract void configTableView();
@@ -98,14 +100,16 @@ public abstract class BondedRolesView<M extends BondedRolesModel, C extends Bond
 
                 if (item != null && !empty) {
                     userName.setText(item.getUserName());
-                    if (item.isStaticPublicKeysProvided()) {
+                    if (item.isRootNode()) {
                         userName.setTooltip(tooltip);
                         userName.setStyle("-fx-text-fill: -bisq2-green;");
                     } else {
                         userName.setTooltip(null);
                         userName.setStyle("-fx-text-fill: -fx-light-text-color;");
                     }
-                    item.getUserProfile().ifPresent(userProfileIcon::setUserProfile);
+
+                    item.getUserProfile().ifPresent(userProfile ->
+                            userProfileIcon.applyData(userProfile, item.getLastSeenAsString(), item.getLastSeen()));
                     setGraphic(hBox);
                 } else {
                     setGraphic(null);

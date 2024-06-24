@@ -27,6 +27,7 @@ import bisq.security.keys.KeyGeneration;
 import com.google.protobuf.ByteString;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.GeneralSecurityException;
@@ -35,6 +36,7 @@ import java.security.PublicKey;
 import java.util.Arrays;
 
 @Slf4j
+@ToString
 @EqualsAndHashCode
 @Getter
 public final class RemoveMailboxRequest implements MailboxRequest, RemoveDataRequest {
@@ -47,7 +49,7 @@ public final class RemoveMailboxRequest implements MailboxRequest, RemoveDataReq
 
     public static RemoveMailboxRequest from(MailboxData mailboxData, KeyPair receiverKeyPair)
             throws GeneralSecurityException {
-        byte[] hash = DigestUtil.hash(mailboxData.serialize());
+        byte[] hash = DigestUtil.hash(mailboxData.serializeForHash());
         byte[] signature = SignatureUtil.sign(hash, receiverKeyPair.getPrivate());
         return new RemoveMailboxRequest(mailboxData.getMetaData(), hash, receiverKeyPair.getPublic(), signature);
     }
@@ -90,15 +92,23 @@ public final class RemoveMailboxRequest implements MailboxRequest, RemoveDataReq
     }
 
     @Override
-    public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-        return getNetworkMessageBuilder().setDataRequest(getDataRequestBuilder().setRemoveMailboxRequest(
-                        bisq.network.protobuf.RemoveMailboxRequest.newBuilder()
-                                .setMetaData(metaData.toProto())
-                                .setHash(ByteString.copyFrom(hash))
-                                .setReceiverPublicKeyBytes(ByteString.copyFrom(receiverPublicKeyBytes))
-                                .setSignature(ByteString.copyFrom(signature))
-                                .setCreated(created)))
-                .build();
+    public bisq.network.protobuf.DataRequest.Builder getDataRequestBuilder(boolean serializeForHash) {
+        return newDataRequestBuilder().setRemoveMailboxRequest(toValueProto(serializeForHash));
+    }
+
+    @Override
+    public bisq.network.protobuf.RemoveMailboxRequest toValueProto(boolean serializeForHash) {
+        return resolveValueProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.RemoveMailboxRequest.Builder getValueBuilder(boolean serializeForHash) {
+        return bisq.network.protobuf.RemoveMailboxRequest.newBuilder()
+                .setMetaData(metaData.toProto(serializeForHash))
+                .setHash(ByteString.copyFrom(hash))
+                .setReceiverPublicKeyBytes(ByteString.copyFrom(receiverPublicKeyBytes))
+                .setSignature(ByteString.copyFrom(signature))
+                .setCreated(created);
     }
 
     public static RemoveMailboxRequest fromProto(bisq.network.protobuf.RemoveMailboxRequest proto) {

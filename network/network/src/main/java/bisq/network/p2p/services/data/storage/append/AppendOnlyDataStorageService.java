@@ -61,11 +61,11 @@ public class AppendOnlyDataStorageService extends DataStorageService<AddAppendOn
         AppendOnlyData appendOnlyData = addAppendOnlyDataRequest.getAppendOnlyData();
         Map<ByteArray, AddAppendOnlyDataRequest> map = persistableStore.getMap();
         synchronized (mapAccessLock) {
-            if (map.size() > getMaxMapSize()) {
+            if (isExceedingMapSize()) {
                 return new DataStorageResult(false).maxMapSizeReached();
             }
 
-            byte[] hash = DigestUtil.hash(appendOnlyData.serialize());
+            byte[] hash = DigestUtil.hash(appendOnlyData.serializeForHash());
             ByteArray byteArray = new ByteArray(hash);
             if (map.containsKey(byteArray)) {
                 return new DataStorageResult(false).payloadAlreadyStored();

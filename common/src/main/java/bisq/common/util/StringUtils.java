@@ -110,16 +110,16 @@ public class StringUtils {
         }
     }
 
-    // Replaces the content inside the brackets marked with HYPERLINK with the number of the hyperlink
+    // Replaces the content inside the brackets marked with HYPERLINK with the hyperlink and the number of the hyperlink
     // and add the hyperlink to the hyperlinks list.
-    // E.g. ...some text [HYPERLINK:https://bisq.community] .... -> ...some text [1] ...
+    // E.g. ...some text: [HYPERLINK:https://bisq.community] .... -> ...some text: https://bisq.community [1] ...
     public static String extractHyperlinks(String message, List<String> hyperlinks) {
         Pattern pattern = Pattern.compile("\\[HYPERLINK:(.*?)]");
         Matcher matcher = pattern.matcher(message);
-        while (matcher.find()) {  // extract hyperlinks & store in array
-            hyperlinks.add(matcher.group(1));
-            // replace hyperlink in message with [n] reference
-            message = message.replaceFirst(pattern.toString(), String.format("[%d]", hyperlinks.size()));
+        while (matcher.find()) {
+            String link = matcher.group(1);
+            hyperlinks.add(link);
+            message = message.replaceFirst(pattern.toString(), String.format("'%s' [%d]", link, hyperlinks.size()));
         }
         return message;
     }
@@ -129,7 +129,7 @@ public class StringUtils {
     }
 
     public static boolean isEmpty(String value) {
-        return value == null || value.isEmpty();
+        return value == null || value.trim().isEmpty();
     }
 
     @Nullable
@@ -204,5 +204,22 @@ public class StringUtils {
         }
 
         return result;
+    }
+
+    public static String formatBytes(long size) {
+        //todo Use ByteUnit instead
+        if (size <= 0) return "0 B";
+        String[] units = new String[]{"B", "kB", "MB", "GB", "TB"};
+        int digitGroups = (int) (Math.log10(size) / Math.log10(1024));
+        return new DecimalFormat("#,##0.###").format(size / Math.pow(1024, digitGroups)) + " " + units[digitGroups];
+    }
+
+    public static String formatTime(long time) {
+        double sec = MathUtils.roundDouble(time / 1000d, 2);
+        long min = (int) sec / 60;
+        sec = sec % 60;
+        long hours = min / 60;
+        min = min % 60;
+        return String.format("%02d:%02d:%02.2f", hours, min, sec);
     }
 }

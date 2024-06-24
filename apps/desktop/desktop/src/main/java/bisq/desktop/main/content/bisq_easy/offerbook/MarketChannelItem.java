@@ -21,12 +21,17 @@ import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookChannel;
 import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookMessage;
 import bisq.common.currency.Market;
 import bisq.desktop.common.threading.UIThread;
-import bisq.desktop.common.utils.ImageUtil;
+import bisq.desktop.components.overlay.Popup;
+import bisq.desktop.main.content.components.MarketImageComposition;
+import bisq.i18n.Res;
+import bisq.settings.FavouriteMarketsService;
+import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.scene.CacheHint;
+import javafx.scene.Node;
 import javafx.scene.effect.ColorAdjust;
-import javafx.scene.image.ImageView;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 
@@ -34,27 +39,38 @@ import java.lang.ref.WeakReference;
 
 @EqualsAndHashCode
 @Getter
-public class MarketChannelItem {
+class MarketChannelItem {
+    private static final ColorAdjust DEFAULT_COLOR_ADJUST = new ColorAdjust();
+    private static final ColorAdjust SELECTED_COLOR_ADJUST = new ColorAdjust();
+
     private final BisqEasyOfferbookChannel channel;
+    private final FavouriteMarketsService favouriteMarketsService;
     private final Market market;
-    private final ImageView marketLogo;
+    private final Node marketLogo;
     private final IntegerProperty numOffers = new SimpleIntegerProperty(0);
+    private final BooleanProperty isFavourite = new SimpleBooleanProperty(false);
 
-    public MarketChannelItem(BisqEasyOfferbookChannel channel) {
+    MarketChannelItem(BisqEasyOfferbookChannel channel, FavouriteMarketsService favouriteMarketsService) {
         this.channel = channel;
+        this.favouriteMarketsService = favouriteMarketsService;
         market = channel.getMarket();
-
-        String marketCode = market.getQuoteCurrencyCode().toLowerCase();
-        String iconId = String.format("market-%s", marketCode);
-        marketLogo = ImageUtil.getImageViewById(iconId);
+        marketLogo = MarketImageComposition.createMarketLogo(market.getQuoteCurrencyCode());
         marketLogo.setCache(true);
         marketLogo.setCacheHint(CacheHint.SPEED);
-        ColorAdjust colorAdjust = new ColorAdjust();
-        colorAdjust.setBrightness(-0.1);
-        marketLogo.setEffect(colorAdjust);
+
+        setUpColorAdjustments();
+        marketLogo.setEffect(DEFAULT_COLOR_ADJUST);
 
         channel.getChatMessages().addObserver(new WeakReference<Runnable>(this::updateNumOffers).get());
         updateNumOffers();
+    }
+
+    private void setUpColorAdjustments() {
+        DEFAULT_COLOR_ADJUST.setBrightness(-0.4);
+        DEFAULT_COLOR_ADJUST.setSaturation(-0.2);
+        DEFAULT_COLOR_ADJUST.setContrast(-0.1);
+
+        SELECTED_COLOR_ADJUST.setBrightness(-0.1);
     }
 
     private void updateNumOffers() {
@@ -62,16 +78,43 @@ public class MarketChannelItem {
             int numOffers = (int) channel.getChatMessages().stream()
                     .filter(BisqEasyOfferbookMessage::hasBisqEasyOffer)
                     .count();
-            this.getNumOffers().set(numOffers);
+            getNumOffers().set(numOffers);
         });
     }
 
-    public String getMarketString() {
-        return market.toString();
+    void updateMarketLogoEffect(boolean isSelectedMarket) {
+        getMarketLogo().setEffect(isSelectedMarket ? SELECTED_COLOR_ADJUST : DEFAULT_COLOR_ADJUST);
     }
 
     @Override
     public String toString() {
         return market.toString();
+    }
+
+    void toggleFavourite() {
+        if (isFavourite()) {
+            removeFromFavourites();
+        } else {
+            addAsFavourite();
+        }
+    }
+
+    private boolean isFavourite() {
+        return favouriteMarketsService.isFavourite(getMarket());
+    }
+
+    private void addAsFavourite() {
+        if (!favouriteMarketsService.canAddNewFavourite()) {
+            new Popup().information(Res.get("bisqEasy.offerbook.marketListCell.favourites.maxReached.popup"))
+                    .closeButtonText(Res.get("confirmation.ok"))
+                    .show();
+            return;
+        }
+
+        favouriteMarketsService.addFavourite(getMarket());
+    }
+
+    private void removeFromFavourites() {
+        favouriteMarketsService.removeFavourite(getMarket());
     }
 }

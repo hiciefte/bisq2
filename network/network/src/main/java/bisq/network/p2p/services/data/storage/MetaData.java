@@ -43,7 +43,9 @@ public final class MetaData implements NetworkProto {
 
     public static final int MAX_MAP_SIZE_100 = 100;
     public static final int MAX_MAP_SIZE_1000 = 1000;
+    public static final int MAX_MAP_SIZE_5000 = 5000;
     public static final int MAX_MAP_SIZE_10_000 = 10_000;
+    public static final int MAX_MAP_SIZE_50_000 = 50_000;
 
     public static final int LOW_PRIORITY = -1;
     public static final int DEFAULT_PRIORITY = 0;
@@ -86,13 +88,17 @@ public final class MetaData implements NetworkProto {
     }
 
     @Override
-    public bisq.network.protobuf.MetaData toProto() {
+    public bisq.network.protobuf.MetaData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.MetaData.Builder getBuilder(boolean serializeForHash) {
         return bisq.network.protobuf.MetaData.newBuilder()
                 .setTtl(ttl)
                 .setPriority(priority)
                 .setClassName(className)
-                .setMaxMapSize(maxMapSize)
-                .build();
+                .setMaxMapSize(maxMapSize);
     }
 
     public static MetaData fromProto(bisq.network.protobuf.MetaData proto) {

@@ -25,14 +25,16 @@ import bisq.desktop.common.observable.FxBindings;
 import bisq.desktop.common.threading.UIThread;
 import bisq.desktop.common.view.Controller;
 import bisq.desktop.common.view.Navigation;
+import bisq.desktop.components.cathash.CatHash;
 import bisq.desktop.components.overlay.Popup;
-import bisq.desktop.components.robohash.RoboHash;
 import bisq.i18n.Res;
 import bisq.network.p2p.services.data.BroadcastResult;
 import bisq.presentation.formatters.TimeFormatter;
+import bisq.user.UserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
+import bisq.user.profile.UserProfileService;
 import bisq.user.reputation.ProfileAgeService;
 import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
@@ -42,7 +44,6 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.CompletableFuture;
 
 import static bisq.bisq_easy.NavigationTarget.CREATE_PROFILE_STEP1;
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class UserProfileController implements Controller {
@@ -53,11 +54,14 @@ public class UserProfileController implements Controller {
     private final ReputationService reputationService;
     private final ProfileAgeService profileAgeService;
     private final BisqEasyService bisqEasyService;
+    private final UserProfileService userProfileService;
     private Pin userProfilesPin, selectedUserProfilePin, reputationChangedPin;
 
     public UserProfileController(ServiceProvider serviceProvider) {
-        userIdentityService = serviceProvider.getUserService().getUserIdentityService();
-        reputationService = serviceProvider.getUserService().getReputationService();
+        UserService userService = serviceProvider.getUserService();
+        userIdentityService = userService.getUserIdentityService();
+        reputationService = userService.getReputationService();
+        userProfileService = userService.getUserProfileService();
         profileAgeService = reputationService.getProfileAgeService();
         bisqEasyService = serviceProvider.getBisqEasyService();
 
@@ -82,13 +86,15 @@ public class UserProfileController implements Controller {
                         model.getNickName().set(userProfile.getNickName());
                         model.getNymId().set(userProfile.getNym());
                         model.getProfileId().set(userProfile.getId());
-                        model.getRoboHash().set(RoboHash.getImage(userProfile.getPubKeyHash()));
+                        model.getCatHash().set(CatHash.getImage(userProfile));
                         model.getStatement().set(userProfile.getStatement());
                         model.getTerms().set(userProfile.getTerms());
 
                         model.getProfileAge().set(profileAgeService.getProfileAge(userIdentity.getUserProfile())
                                 .map(TimeFormatter::formatAgeInDays)
                                 .orElse(Res.get("data.na")));
+
+                        model.getLastSeen().set(TimeFormatter.formatAge(userProfileService.getLastSeen(userProfile)));
                     });
                 }
         );
@@ -115,7 +121,7 @@ public class UserProfileController implements Controller {
         model.getNickName().set("");
         model.getNymId().set("");
         model.getProfileId().set("");
-        model.getRoboHash().set(null);
+        model.getCatHash().set(null);
         model.getStatement().set("");
         model.getTerms().set("");
         model.getProfileAge().set("");
@@ -159,7 +165,7 @@ public class UserProfileController implements Controller {
     }
 
     public void onDeleteProfile() {
-        String profileName = checkNotNull(userIdentityService.getSelectedUserIdentity()).getUserName();
+        String profileName = userIdentityService.getSelectedUserIdentity().getUserName();
         new Popup().warning(Res.get("user.userProfile.deleteProfile.popup.warning", profileName))
                 .onAction(this::doDeleteProfile)
                 .actionButtonText(Res.get("user.userProfile.deleteProfile.popup.warning.yes"))

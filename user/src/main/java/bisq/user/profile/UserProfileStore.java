@@ -18,6 +18,7 @@
 package bisq.user.profile;
 
 import bisq.common.observable.collection.ObservableSet;
+import bisq.common.observable.map.ObservableHashMap;
 import bisq.common.proto.ProtoResolver;
 import bisq.common.proto.UnresolvableProtobufMessageException;
 import bisq.persistence.PersistableStore;
@@ -38,9 +39,10 @@ import java.util.stream.Collectors;
 @Slf4j
 @Getter
 public final class UserProfileStore implements PersistableStore<UserProfileStore> {
-    private final Map<String, Set<String>> nymsByNickName = new HashMap<>();
+    private final Map<String, Set<String>> nymsByNickName = new ConcurrentHashMap<>();
     private final ObservableSet<String> ignoredUserProfileIds = new ObservableSet<>();
-    private final Map<String, UserProfile> userProfileById = new ConcurrentHashMap<>();
+    private final ObservableHashMap<String, UserProfile> userProfileById = new ObservableHashMap<>();
+    private final Object lock = new Object();
 
     public UserProfileStore() {
     }
@@ -55,17 +57,25 @@ public final class UserProfileStore implements PersistableStore<UserProfileStore
     }
 
     @Override
-    public bisq.user.protobuf.UserProfileStore toProto() {
-        return bisq.user.protobuf.UserProfileStore.newBuilder()
-                .putAllNymListByNickName(nymsByNickName.entrySet().stream()
-                        .collect(Collectors.toMap(Map.Entry::getKey,
-                                entry -> bisq.user.protobuf.NymList.newBuilder()
-                                        .addAllNyms(entry.getValue()).build())))
-                .addAllIgnoredUserProfileIds(ignoredUserProfileIds)
-                .putAllUserProfileById(userProfileById.entrySet().stream()
-                        .collect(Collectors.toMap(Map.Entry::getKey,
-                                entry -> entry.getValue().toProto())))
-                .build();
+    public bisq.user.protobuf.UserProfileStore.Builder getBuilder(boolean serializeForHash) {
+        bisq.user.protobuf.UserProfileStore.Builder protoBuilder;
+        synchronized (lock) {
+            protoBuilder = bisq.user.protobuf.UserProfileStore.newBuilder()
+                    .putAllNymListByNickName(nymsByNickName.entrySet().stream()
+                            .collect(Collectors.toMap(Map.Entry::getKey,
+                                    entry -> bisq.user.protobuf.NymList.newBuilder()
+                                            .addAllNyms(entry.getValue()).build())))
+                    .addAllIgnoredUserProfileIds(ignoredUserProfileIds)
+                    .putAllUserProfileById(userProfileById.entrySet().stream()
+                            .collect(Collectors.toMap(Map.Entry::getKey,
+                                    entry -> entry.getValue().toProto(serializeForHash))));
+        }
+        return protoBuilder;
+    }
+
+    @Override
+    public bisq.user.protobuf.UserProfileStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static UserProfileStore fromProto(bisq.user.protobuf.UserProfileStore proto) {
@@ -92,14 +102,20 @@ public final class UserProfileStore implements PersistableStore<UserProfileStore
 
     @Override
     public UserProfileStore getClone() {
-        return new UserProfileStore(nymsByNickName, ignoredUserProfileIds, userProfileById);
+        UserProfileStore userProfileStore;
+        synchronized (lock) {
+            userProfileStore = new UserProfileStore(new HashMap<>(nymsByNickName), new HashSet<>(ignoredUserProfileIds), new HashMap<>(userProfileById));
+        }
+        return userProfileStore;
     }
 
     @Override
     public void applyPersisted(UserProfileStore persisted) {
-        nymsByNickName.putAll(persisted.getNymsByNickName());
-        ignoredUserProfileIds.clear();
-        ignoredUserProfileIds.addAll(persisted.getIgnoredUserProfileIds());
-        userProfileById.putAll(persisted.getUserProfileById());
+        synchronized (lock) {
+            nymsByNickName.putAll(persisted.getNymsByNickName());
+            ignoredUserProfileIds.clear();
+            ignoredUserProfileIds.addAll(persisted.getIgnoredUserProfileIds());
+            userProfileById.putAll(persisted.getUserProfileById());
+        }
     }
 }

@@ -99,11 +99,12 @@ public class UpdaterService implements Service {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
-        if (executorService != null) {
-            ExecutorFactory.shutdownAndAwaitTermination(executorService, 100);
-        }
-        return CompletableFuture.completedFuture(true);
+        return CompletableFuture.supplyAsync(() -> {
+            if (executorService != null) {
+                ExecutorFactory.shutdownAndAwaitTermination(executorService, 100);
+            }
+            return true;
+        });
     }
 
 
@@ -191,6 +192,7 @@ public class UpdaterService implements Service {
         return CompletableFuture.supplyAsync(() -> {
             for (DownloadItem downloadItem : downloadItemList) {
                 try {
+                    log.info("Download {}", downloadItem);
                     FileUtils.downloadFile(new URL(downloadItem.getUrlPath()), downloadItem.getDestinationFile(), downloadItem.getProgress());
                 } catch (Exception e) {
                     e.printStackTrace();

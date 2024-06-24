@@ -33,7 +33,8 @@ public final class FiatCurrency extends TradeCurrency {
     private final static String PREFIX = "★ ";
 
     @Getter
-    private final Currency currency;
+    @EqualsAndHashCode.Exclude  // transient are excluded by default but let's make it more explicit
+    private transient final Currency currency;
 
     public FiatCurrency(String code) {
         this(Currency.getInstance(code), LocaleRepository.getDefaultLocale());
@@ -54,8 +55,14 @@ public final class FiatCurrency extends TradeCurrency {
         this.currency = Currency.getInstance(code);
     }
 
-    public bisq.common.protobuf.TradeCurrency toProto() {
-        return getTradeCurrencyBuilder().setFiatCurrency(bisq.common.protobuf.FiatCurrency.newBuilder()).build();
+    @Override
+    public bisq.common.protobuf.TradeCurrency.Builder getBuilder(boolean serializeForHash) {
+        return getTradeCurrencyBuilder().setFiatCurrency(bisq.common.protobuf.FiatCurrency.newBuilder());
+    }
+
+    @Override
+    public bisq.common.protobuf.TradeCurrency toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static FiatCurrency fromProto(bisq.common.protobuf.TradeCurrency baseProto, bisq.common.protobuf.FiatCurrency proto) {

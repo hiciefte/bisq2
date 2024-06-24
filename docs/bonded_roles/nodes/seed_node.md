@@ -14,56 +14,7 @@ to run a dev seed node.
 
 ## Install and run a Bisq 2 Seed node
 
-- Checkout and build Bisq 2
-
-```
-git clone https://github.com/bisq-network/bisq2.git
-cd bisq2
-./gradlew build
-```
-
-- Stop gradle as it remains running in background and consumes allocated memory (e.g. `killall java`)
-
-- Set up a systemd service
-
-  - Create the `run_seed.sh` launch script:
-  ```
-  #!/bin/bash
-  java -Xms2000M -Xmx3500M -jar [PATH TO bisq2]/seed_node_app/build/libs/seed_node_app-2.0.0-all.jar
-  ```
-
-  - Set correct permissions: `sudo chmod +x /root/run_seed.sh`
-
-  - Add service `/etc/systemd/system/seed.service`:
-  ```
-  [Unit]
-  Description=seed
-  
-  [Service]
-  ExecStart=/root/run_seed.sh
-  Restart=on-failure
-  
-  [Install]
-  WantedBy=multi-user.target
-  ```
-
-  - Start/Restart/Stop the service:
-  ```
-  systemctl start seed.service
-  systemctl restart seed.service
-  systemctl stop seed.service
-  ```
-
-  - Check the logs: `journalctl --unit seed -n 100 --no-pager` \
-    Or:
-    `tail -100 [USER]/.local/share/Bisq2_seed_node/bisq.log`
-
-For running a localhost dev seed node use following JVM arguments:
-```
-  -Dapplication.appName=bisq2_localhost_seed
-  -Dapplication.network.configByTransportType.clear.defaultNodePort=8000 
-  -Dapplication.network.supportedTransportTypes.0=CLEAR
-```
+See: `https://github.com/bisq-network/bisq2/blob/main/apps/seed-node-app/service-scripts/README.md`
 
 ## Register as seed node operator
 
@@ -102,12 +53,14 @@ For those who operate such a `root node` there are a few extra steps:
 1. Select the user profile you want to use for the registration.
 2. Click the `Show key pair` button below the input fields. This will add 2 fields, one for the public and one for the
    private key which has been created for that user profile.
-3. Copy the public key. Open `bisq.bonded_roles.AuthorizedPubKeys` class and add your pub key to the list of authorized
-   keys and make a GitHub pull request.
+3. Copy the public key. Open `bisq.bonded_roles.AuthorizedPubKeys` class and add your pub key to `SEED_NODE_PUB_KEYS`
+   and make a GitHub pull request.
 4. Currently, the pub key is only used for oracle nodes not for seed nodes, but that might change in the future.
 5. After you have started the seed node copy the onion address (and/or I2P) and add it to the Bisq 2 config files. There
    are several config files for the different applications (desktop, seed, oracle, rest api). Add your network address
    to the `application.network.seedAddressByTransportType` entry and make a GitHub pull request.
+6. Register your seed node at the `Nodes/Seed Node` screen. Seed nodes which are added in the config files will be
+   marked as root nodes.
 
 > _Note: Seed nodes which are not included in the config are not used by first time users. Those seed nodes get
 distributed by the oracle node and only after the first start the users will receive those. Therefor root nodes have

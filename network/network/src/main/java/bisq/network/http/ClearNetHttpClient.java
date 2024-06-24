@@ -53,7 +53,6 @@ public class ClearNetHttpClient extends BaseHttpClient {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         if (connection == null) {
             hasPendingRequest = false;
             return CompletableFuture.completedFuture(true);
@@ -63,19 +62,22 @@ public class ClearNetHttpClient extends BaseHttpClient {
                         if (connection != null) {
                             // blocking call if connection has issues
                             connection.getInputStream().close();
-                            connection.disconnect();
+                            if (connection != null) {
+                                connection.disconnect();
+                            }
                             return true;
                         } else {
                             return false;
                         }
                     } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        log.error("Error at shutdown {}", ExceptionUtil.getMessageOrToString(e));
+                        return false;
                     }
                 }, ExecutorFactory.newSingleThreadExecutor("ClearNetHttpClient-shutdown"))
                 .orTimeout(500, TimeUnit.MILLISECONDS)
                 .whenComplete((result, throwable) -> {
                     if (throwable != null) {
-                        log.warn("Error at shutdown", throwable);
+                        log.warn("Error at shutdown: {}", ExceptionUtil.getMessageOrToString(throwable));
                     }
                 });
         connection = null;
@@ -83,14 +85,13 @@ public class ClearNetHttpClient extends BaseHttpClient {
     }
 
     @Override
-    protected String doRequest(String param, HttpMethod
-            httpMethod, Optional<Pair<String, String>> optionalHeader) throws IOException {
+    protected String doRequest(String param, HttpMethod httpMethod, Optional<Pair<String, String>> optionalHeader) throws IOException {
         checkArgument(!hasPendingRequest, "We got called on the same HttpClient again while a request is still open.");
         hasPendingRequest = true;
 
         long ts = System.currentTimeMillis();
         log.debug("requestWithoutProxy: URL={}, param={}, httpMethod={}", baseUrl, param, httpMethod);
-        String spec = httpMethod == HttpMethod.GET ? baseUrl + param : baseUrl;
+        String spec = httpMethod == HttpMethod.GET ? baseUrl + "/" + param : baseUrl;
         try {
             URL url = new URL(spec);
             if (proxy == null) {
@@ -145,7 +146,7 @@ public class ClearNetHttpClient extends BaseHttpClient {
                 throw new HttpException("Request failed", responseCode);
             }
         } catch (Exception e) {
-            String message = "Request to " + baseUrl + param + " failed with error: " + ExceptionUtil.getMessageOrToString(e);
+            String message = "Request to " + baseUrl + "/" + param + " failed with error: " + ExceptionUtil.getMessageOrToString(e);
             throw new IOException(message, e);
         } finally {
             try {

@@ -26,12 +26,13 @@ import bisq.network.p2p.services.confidential.ack.AckMessage;
 import bisq.network.p2p.services.data.DataRequest;
 import bisq.network.p2p.services.data.inventory.InventoryRequest;
 import bisq.network.p2p.services.data.inventory.InventoryResponse;
-import bisq.network.p2p.services.peergroup.exchange.PeerExchangeRequest;
-import bisq.network.p2p.services.peergroup.exchange.PeerExchangeResponse;
-import bisq.network.p2p.services.peergroup.keepalive.Ping;
-import bisq.network.p2p.services.peergroup.keepalive.Pong;
-import bisq.network.p2p.services.peergroup.network_load.NetworkLoadExchangeRequest;
-import bisq.network.p2p.services.peergroup.network_load.NetworkLoadExchangeResponse;
+import bisq.network.p2p.services.peer_group.exchange.PeerExchangeRequest;
+import bisq.network.p2p.services.peer_group.exchange.PeerExchangeResponse;
+import bisq.network.p2p.services.peer_group.keep_alive.Ping;
+import bisq.network.p2p.services.peer_group.keep_alive.Pong;
+import bisq.network.p2p.services.peer_group.network_load.NetworkLoadExchangeRequest;
+import bisq.network.p2p.services.peer_group.network_load.NetworkLoadExchangeResponse;
+import com.google.protobuf.Message;
 
 /**
  * Interface for any message sent as payload in NetworkEnvelope
@@ -39,11 +40,32 @@ import bisq.network.p2p.services.peergroup.network_load.NetworkLoadExchangeRespo
 public interface EnvelopePayloadMessage extends NetworkProto {
     double getCostFactor();
 
-    default bisq.network.protobuf.EnvelopePayloadMessage.Builder getNetworkMessageBuilder() {
+    default bisq.network.protobuf.EnvelopePayloadMessage.Builder newEnvelopePayloadMessageBuilder() {
         return bisq.network.protobuf.EnvelopePayloadMessage.newBuilder();
     }
 
-    bisq.network.protobuf.EnvelopePayloadMessage toProto();
+    // EnvelopePayloadMessage level
+    @Override
+    default bisq.network.protobuf.EnvelopePayloadMessage toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    bisq.network.protobuf.EnvelopePayloadMessage.Builder getBuilder(boolean serializeForHash);
+
+
+    // Implementation class level (this versus interface)
+    default <T extends Message> T resolveValueProto(boolean serializeForHash) {
+        //noinspection unchecked
+        return (T) resolveBuilder(getValueBuilder(serializeForHash), serializeForHash).build();
+    }
+
+    Message.Builder getValueBuilder(boolean serializeForHash);
+
+    default Message toValueProto(boolean serializeForHash) {
+        return resolveValueProto(serializeForHash);
+    }
+
 
     static EnvelopePayloadMessage fromProto(bisq.network.protobuf.EnvelopePayloadMessage proto) {
         switch (proto.getMessageCase()) {

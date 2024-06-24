@@ -24,12 +24,13 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Slf4j
-public final class TimestampStore  implements PersistableStore<TimestampStore> {
+public final class TimestampStore implements PersistableStore<TimestampStore> {
     @Getter
     private final Map<String, Long> timestampsByProfileId = new ConcurrentHashMap<>();
 
@@ -41,13 +42,17 @@ public final class TimestampStore  implements PersistableStore<TimestampStore> {
     }
 
     @Override
-    public bisq.persistence.protobuf.TimestampStore toProto() {
+    public bisq.persistence.protobuf.TimestampStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.persistence.protobuf.TimestampStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.persistence.protobuf.TimestampStore.newBuilder()
                 .addAllStringLongPairs(timestampsByProfileId.entrySet().stream()
                         .map(entry -> new StringLongPair(entry.getKey(), entry.getValue()))
-                        .map(StringLongPair::toProto)
-                        .collect(Collectors.toSet()))
-                .build();
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toSet()));
     }
 
     public static TimestampStore fromProto(bisq.persistence.protobuf.TimestampStore proto) {
@@ -70,7 +75,7 @@ public final class TimestampStore  implements PersistableStore<TimestampStore> {
 
     @Override
     public TimestampStore getClone() {
-        return new TimestampStore(timestampsByProfileId);
+        return new TimestampStore(new HashMap<>(timestampsByProfileId));
     }
 
     @Override

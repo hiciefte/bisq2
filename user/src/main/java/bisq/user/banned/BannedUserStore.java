@@ -41,12 +41,16 @@ public final class BannedUserStore implements PersistableStore<BannedUserStore> 
     }
 
     @Override
-    public bisq.user.protobuf.BannedUserStore toProto() {
+    public bisq.user.protobuf.BannedUserStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.BannedUserStore.newBuilder()
                 .addAllBannedUserProfileDataSet(bannedUserProfileDataSet.stream()
-                        .map(BannedUserProfileData::toProto)
-                        .collect(Collectors.toList()))
-                .build();
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.user.protobuf.BannedUserStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static BannedUserStore fromProto(bisq.user.protobuf.BannedUserStore proto) {
@@ -68,7 +72,7 @@ public final class BannedUserStore implements PersistableStore<BannedUserStore> 
 
     @Override
     public BannedUserStore getClone() {
-        return new BannedUserStore(bannedUserProfileDataSet);
+        return new BannedUserStore(new HashSet<>(bannedUserProfileDataSet));
     }
 
     @Override

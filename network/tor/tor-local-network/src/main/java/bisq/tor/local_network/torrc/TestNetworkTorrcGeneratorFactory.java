@@ -17,7 +17,6 @@
 
 package bisq.tor.local_network.torrc;
 
-import bisq.common.util.NetworkUtils;
 import bisq.network.tor.common.torrc.*;
 import bisq.tor.local_network.TorNode;
 
@@ -38,7 +37,6 @@ public class TestNetworkTorrcGeneratorFactory {
         var testNetworkTorrcGenerator = testNetworkTorrcGenerator(clientNode);
         return ClientTorrcGenerator.builder()
                 .baseTorrcConfigGenerator(testNetworkTorrcGenerator)
-                .socksPort(NetworkUtils.findFreeSystemPort())
                 .build();
     }
 
@@ -54,7 +52,6 @@ public class TestNetworkTorrcGeneratorFactory {
     private static TorrcConfigGenerator baseTorrcGenerator(TorNode torNode) {
         return BaseTorrcGenerator.builder()
                 .dataDirPath(torNode.getDataDir())
-                .controlPort(torNode.getControlPort())
                 .hashedControlPassword(
                         torNode.getControlConnectionPassword()
                                 .getHashedPassword())

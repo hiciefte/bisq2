@@ -20,6 +20,7 @@ package bisq.network.p2p.node;
 
 import bisq.common.observable.Observable;
 import bisq.common.util.CompletableFutureUtils;
+import bisq.common.util.ExceptionUtil;
 import bisq.common.util.StringUtils;
 import bisq.network.NetworkService;
 import bisq.network.common.Address;
@@ -33,7 +34,7 @@ import bisq.network.p2p.node.handshake.ConnectionHandshake;
 import bisq.network.p2p.node.network_load.NetworkLoadSnapshot;
 import bisq.network.p2p.node.transport.ServerSocketResult;
 import bisq.network.p2p.node.transport.TransportService;
-import bisq.network.p2p.services.peergroup.BanList;
+import bisq.network.p2p.services.peer_group.BanList;
 import bisq.security.keys.KeyBundle;
 import bisq.security.keys.KeyBundleService;
 import com.runjva.sourceforge.jsocks.protocol.Socks5Proxy;
@@ -59,6 +60,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static bisq.network.NetworkService.DISPATCHER;
+import static bisq.network.p2p.node.ConnectionException.Reason.ADDRESS_BANNED;
 import static bisq.network.p2p.node.Node.State.*;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.concurrent.CompletableFuture.runAsync;
@@ -107,28 +109,38 @@ public class Node implements Connection.Handler {
         private final Set<TransportType> supportedTransportTypes;
         private final Set<Feature> features;
         private final TransportConfig transportConfig;
-        private final int defaultNodeSocketTimeout;
-        private final int userNodeSocketTimeout;
+        private final int defaultNodeSocketTimeout; // in ms
+        private final int userNodeSocketTimeout; // in ms
+        private final int devModeDelayInMs;
+        private final int sendMessageThrottleTime;
+        private final int receiveMessageThrottleTime;
 
         public Config(TransportType transportType,
                       Set<TransportType> supportedTransportTypes,
                       Set<Feature> features,
                       TransportConfig transportConfig,
                       int defaultNodeSocketTimeout,
-                      int userNodeSocketTimeout) {
+                      int userNodeSocketTimeout,
+                      int devModeDelayInMs,
+                      int sendMessageThrottleTime,
+                      int receiveMessageThrottleTime) {
             this.transportType = transportType;
             this.supportedTransportTypes = supportedTransportTypes;
             this.features = features;
             this.transportConfig = transportConfig;
             this.defaultNodeSocketTimeout = defaultNodeSocketTimeout;
             this.userNodeSocketTimeout = userNodeSocketTimeout;
+            this.devModeDelayInMs = devModeDelayInMs;
+            this.sendMessageThrottleTime = sendMessageThrottleTime;
+            this.receiveMessageThrottleTime = receiveMessageThrottleTime;
         }
     }
 
     private final BanList banList;
     private final TransportService transportService;
     private final AuthorizationService authorizationService;
-    private final int socketTimeout;
+    private final int socketTimeout; // in ms
+    private final int devModeDelayInMs; // Only set for clearnet, otherwise it is 0
     private final Set<TransportType> supportedTransportTypes;
     private final Set<Feature> features;
     @Getter
@@ -156,6 +168,7 @@ public class Node implements Connection.Handler {
     public final Observable<State> observableState = new Observable<>(State.NEW);
     @Getter
     public final NetworkLoadSnapshot networkLoadSnapshot;
+    private final Config config;
 
     public Node(NetworkId networkId,
                 boolean isDefaultNode,
@@ -168,10 +181,12 @@ public class Node implements Connection.Handler {
         this.networkId = networkId;
         keyBundle = keyBundleService.getOrCreateKeyBundle(networkId.getKeyId());
         this.isDefaultNode = isDefaultNode;
+        this.config = config;
         transportType = config.getTransportType();
         supportedTransportTypes = config.getSupportedTransportTypes();
         features = config.getFeatures();
         socketTimeout = isDefaultNode ? config.getDefaultNodeSocketTimeout() : config.getUserNodeSocketTimeout();
+        devModeDelayInMs = config.getDevModeDelayInMs();
         this.banList = banList;
         this.transportService = transportService;
         this.authorizationService = authorizationService;
@@ -258,7 +273,9 @@ public class Node implements Connection.Handler {
 
             // As time passed we check again if connection is still not available
             if (inboundConnectionsByAddress.containsKey(address)) {
-                log.warn("Node {} have already an InboundConnection from {}. This can happen when a " + "handshake was in progress while we received a new connection from that address. " + "We will close the socket of that new connection and use the existing instead.", this, address);
+                log.warn("Have already an InboundConnection from {}. This can happen when a " +
+                        "handshake was in progress while we received a new connection from that address. " +
+                        "We will close the socket of that new connection and use the existing instead.", address);
                 try {
                     socket.close();
                 } catch (IOException ignore) {
@@ -266,11 +283,14 @@ public class Node implements Connection.Handler {
                 return;
             }
 
+            NetworkLoadSnapshot peersNetworkLoadSnapshot = new NetworkLoadSnapshot(result.getPeersNetworkLoad());
+            ConnectionThrottle connectionThrottle = new ConnectionThrottle(peersNetworkLoadSnapshot, networkLoadSnapshot, config);
             InboundConnection connection = new InboundConnection(socket,
                     serverSocketResult,
                     result.getCapability(),
-                    new NetworkLoadSnapshot(result.getPeersNetworkLoad()),
+                    peersNetworkLoadSnapshot,
                     result.getConnectionMetrics(),
+                    connectionThrottle,
                     this,
                     this::handleException);
             inboundConnectionsByAddress.put(connection.getPeerAddress(), connection);
@@ -326,13 +346,15 @@ public class Node implements Connection.Handler {
             AuthorizationToken token = authorizationService.createToken(envelopePayloadMessage,
                     connection.getPeersNetworkLoadSnapshot().getCurrentNetworkLoad(),
                     connection.getPeerAddress().getFullAddress(),
-                    connection.getSentMessageCounter().incrementAndGet());
+                    connection.getSentMessageCounter().incrementAndGet(),
+                    connection.getPeersCapability().getFeatures());
+            maybeSimulateDelay();
             return connection.send(envelopePayloadMessage, token);
-        } catch (Throwable throwable) {
-            if (connection.isRunning()) {
-                handleException(connection, throwable);
-                log.debug("Send message failed on {}", this, throwable);
-                closeConnection(connection, CloseReason.EXCEPTION.exception(throwable));
+        } catch (Exception exception) {
+            if (connection.isRunning() && !(exception.getCause() instanceof SocketException)) {
+                handleException(connection, exception);
+                log.debug("Send message failed", exception);
+                closeConnection(connection, CloseReason.EXCEPTION.exception(exception));
             }
             throw new ConnectionClosedException(connection);
         }
@@ -374,7 +396,7 @@ public class Node implements Connection.Handler {
 
     private Connection createOutboundConnection(Address address, Capability myCapability) {
         if (banList.isBanned(address)) {
-            throw new ConnectionException("Create outbound connection failed. PeerAddress is banned. address=" + address);
+            throw new ConnectionException(ADDRESS_BANNED, "PeerAddress is banned. address=" + address);
         }
         Socket socket;
         try {
@@ -386,7 +408,9 @@ public class Node implements Connection.Handler {
 
         // As time passed we check again if connection is still not available
         if (outboundConnectionsByAddress.containsKey(address)) {
-            log.warn("Node {} has already an OutboundConnection to {}. This can happen while we " + "we waited for the socket creation at the createOutboundConnection method. " + "We will close the socket and use the existing connection instead.", this, address);
+            log.warn("Has already an OutboundConnection to {}. This can happen while we " +
+                    "we waited for the socket creation at the createOutboundConnection method. " +
+                    "We will close the socket and use the existing connection instead.", address);
             try {
                 socket.close();
             } catch (IOException ignore) {
@@ -411,7 +435,10 @@ public class Node implements Connection.Handler {
 
             // As time passed we check again if connection is still not available
             if (outboundConnectionsByAddress.containsKey(address)) {
-                log.warn("Node {} has already an OutboundConnection to {}. This can happen when a " + "handshake was in progress while we started a new connection to that address and as the " + "handshake was not completed we did not consider that as an available connection. " + "We will close the socket of that new connection and use the existing instead.", this, address);
+                log.warn("Has already an OutboundConnection to {}. This can happen when a " +
+                        "handshake was in progress while we started a new connection to that address and as the " +
+                        "handshake was not completed we did not consider that as an available connection. " +
+                        "We will close the socket of that new connection and use the existing instead.", address);
                 try {
                     socket.close();
                 } catch (IOException ignore) {
@@ -423,11 +450,14 @@ public class Node implements Connection.Handler {
                 log.info("We create an outbound connection to {} from a user node. node={}", address, getNodeInfo());
             }
 
+            NetworkLoadSnapshot peersNetworkLoadSnapshot = new NetworkLoadSnapshot(result.getPeersNetworkLoad());
+            ConnectionThrottle connectionThrottle = new ConnectionThrottle(peersNetworkLoadSnapshot, networkLoadSnapshot, config);
             OutboundConnection connection = new OutboundConnection(socket,
                     address,
                     result.getCapability(),
-                    new NetworkLoadSnapshot(result.getPeersNetworkLoad()),
+                    peersNetworkLoadSnapshot,
                     result.getConnectionMetrics(),
+                    connectionThrottle,
                     this,
                     this::handleException);
             outboundConnectionsByAddress.put(address, connection);
@@ -453,7 +483,7 @@ public class Node implements Connection.Handler {
     }
 
     public Stream<Connection> getAllConnections() {
-        return Stream.concat(inboundConnectionsByAddress.values().stream(), outboundConnectionsByAddress.values().stream());
+        return Stream.concat(outboundConnectionsByAddress.values().stream(), inboundConnectionsByAddress.values().stream());
     }
 
     public Stream<Connection> getAllActiveConnections() {
@@ -477,10 +507,13 @@ public class Node implements Connection.Handler {
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     @Override
-    public void handleNetworkMessage(EnvelopePayloadMessage envelopePayloadMessage, AuthorizationToken authorizationToken, Connection connection) {
+    public void handleNetworkMessage(EnvelopePayloadMessage envelopePayloadMessage,
+                                     AuthorizationToken authorizationToken,
+                                     Connection connection) {
         if (isShutdown()) {
             return;
         }
+        maybeSimulateDelay();
         String myAddress = findMyAddress().orElseThrow().getFullAddress();
         boolean isAuthorized = authorizationService.isAuthorized(envelopePayloadMessage,
                 authorizationToken,
@@ -491,8 +524,8 @@ public class Node implements Connection.Handler {
         if (isAuthorized) {
             if (envelopePayloadMessage instanceof CloseConnectionMessage) {
                 CloseConnectionMessage closeConnectionMessage = (CloseConnectionMessage) envelopePayloadMessage;
-                log.debug("Node {} received CloseConnectionMessage from {} with reason: {}",
-                        this, connection.getPeerAddress(), closeConnectionMessage.getCloseReason());
+                log.debug("Received CloseConnectionMessage from {} with reason: {}",
+                        connection.getPeerAddress(), closeConnectionMessage.getCloseReason());
                 closeConnection(connection, CloseReason.CLOSE_MSG_RECEIVED.details(closeConnectionMessage.getCloseReason().name()));
             } else {
                 // We got called from Connection on the dispatcher thread, so no mapping needed here.
@@ -511,7 +544,9 @@ public class Node implements Connection.Handler {
         }
     }
 
-    public void handleNetworkMessage(EnvelopePayloadMessage envelopePayloadMessage, AuthorizationToken authorizationToken, ConnectionChannel connection) {
+    public void handleNetworkMessage(EnvelopePayloadMessage envelopePayloadMessage,
+                                     AuthorizationToken authorizationToken,
+                                     ConnectionChannel connection) {
         if (isShutdown()) {
             return;
         }
@@ -525,7 +560,7 @@ public class Node implements Connection.Handler {
         if (isAuthorized) {
             if (envelopePayloadMessage instanceof CloseConnectionMessage) {
                 CloseConnectionMessage closeConnectionMessage = (CloseConnectionMessage) envelopePayloadMessage;
-                log.debug("Node {} received CloseConnectionMessage from {} with reason: {}", this, connection.getPeerAddress(), closeConnectionMessage.getCloseReason());
+                log.debug("Received CloseConnectionMessage from {} with reason: {}", connection.getPeerAddress(), closeConnectionMessage.getCloseReason());
                 // closeConnection(connection, CloseReason.CLOSE_MSG_RECEIVED.details(closeConnectionMessage.getCloseReason().name()));
             } else {
                 // We got called from Connection on the dispatcher thread, so no mapping needed here.
@@ -541,17 +576,21 @@ public class Node implements Connection.Handler {
     @Override
     public void handleConnectionClosed(Connection connection, CloseReason closeReason) {
         Address peerAddress = connection.getPeerAddress();
-        log.debug("Node {} got called onConnectionClosed. connection={}, peerAddress={}", this, connection, peerAddress);
+        log.debug("Got called onConnectionClosed. connection={}, peerAddress={}", connection, peerAddress);
         boolean wasRemoved = false;
         if (connection instanceof InboundConnection) {
             wasRemoved = inboundConnectionsByAddress.remove(peerAddress) != null;
             if (!wasRemoved) {
-                log.debug("Node {} did not had entry in inboundConnections at onConnectionClosed. " + "This can happen if different threads triggered a close. connection={}, peerAddress={}", this, connection, peerAddress);
+                log.debug("Did not had entry in inboundConnections at onConnectionClosed. " +
+                                "This can happen if different threads triggered a close. connection={}, peerAddress={}",
+                        connection, peerAddress);
             }
         } else if (connection instanceof OutboundConnection) {
             wasRemoved = outboundConnectionsByAddress.remove(peerAddress) != null;
             if (!wasRemoved) {
-                log.debug("Node {} did not had entry in outboundConnections at onConnectionClosed. " + "This can happen if different threads triggered a close. connection={}, peerAddress={}", this, connection, peerAddress);
+                log.debug("Did not had entry in outboundConnections at onConnectionClosed. " +
+                                "This can happen if different threads triggered a close. connection={}, peerAddress={}",
+                        connection, peerAddress);
             }
         }
         if (wasRemoved) {
@@ -570,28 +609,28 @@ public class Node implements Connection.Handler {
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     public void closeConnection(Connection connection, CloseReason closeReason) {
-        log.debug("Node {} got called closeConnection for {}, closeReason={}", this, connection, closeReason);
-        connection.close(closeReason);
+        log.debug("Got called closeConnection for {}, closeReason={}", connection, closeReason);
+        connection.shutdown(closeReason);
     }
 
     public CompletableFuture<Void> closeConnectionGracefullyAsync(Connection connection, CloseReason closeReason) {
-        return runAsync(() -> closeConnectionGracefully(connection, closeReason), NetworkService.NETWORK_IO_POOL);
+        return runAsync(() -> closeConnectionGracefully(connection, closeReason), NetworkService.NETWORK_IO_POOL)
+                .orTimeout(4, SECONDS);
     }
 
     public void closeConnectionGracefully(Connection connection, CloseReason closeReason) {
+        connection.stopListening();
+        send(new CloseConnectionMessage(closeReason), connection);
         try {
-            connection.stopListening();
-            send(new CloseConnectionMessage(closeReason), connection);
-
             // Give a bit of delay before we close the connection.
             Thread.sleep(100);
         } catch (Throwable ignore) {
         }
-        connection.close(CloseReason.CLOSE_MSG_SENT.details(closeReason.name()));
+        connection.shutdown(CloseReason.CLOSE_MSG_SENT.details(closeReason.name()));
     }
 
     public CompletableFuture<Boolean> shutdown() {
-        log.info("Node {} shutdown", this);
+        log.info("shutdown {}", this);
         if (isShutdown()) {
             return CompletableFuture.completedFuture(true);
         }
@@ -605,7 +644,7 @@ public class Node implements Connection.Handler {
                 .orTimeout(10, SECONDS)
                 .whenComplete((list, throwable) -> {
                     if (throwable != null) {
-                        log.warn("Exception at node shutdown", throwable);
+                        log.warn("Exception at node shutdown {}", ExceptionUtil.getMessageOrToString(throwable));
                     }
                     outboundConnectionsByAddress.clear();
                     inboundConnectionsByAddress.clear();
@@ -648,7 +687,8 @@ public class Node implements Connection.Handler {
 
     @Override
     public String toString() {
-        return findMyAddress().map(Address::toString).orElse("null");
+        return findMyAddress().map(address -> "Node with address " + address.getFullAddress())
+                .orElse("Node with networkId " + networkId.getInfo());
     }
 
     public String getNodeInfo() {
@@ -661,7 +701,7 @@ public class Node implements Connection.Handler {
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     private void handleException(Connection connection, Throwable exception) {
-        log.debug("Node {} got called handleException. connection={}, exception={}", this, connection, exception.getMessage());
+        log.debug("Got called handleException. connection={}, exception={}", connection, exception.getMessage());
         if (isShutdown()) {
             return;
         }
@@ -671,14 +711,14 @@ public class Node implements Connection.Handler {
     }
 
     private void handleException(Throwable exception) {
-        log.debug("Node {} got called handleException. exception={}", this, exception.getMessage());
+        log.debug("Got called handleException. exception={}", exception.getMessage());
 
         if (isShutdown()) {
             return;
         }
-        String msg = "Exception: ";
+        String msg = "Exception:";
         if (exception instanceof EOFException) {
-            log.info(msg, exception);
+            log.info("Exception: {}", ExceptionUtil.getMessageOrToString(exception));
         } else if (exception instanceof ConnectException) {
             log.debug(msg, exception);
         } else if (exception instanceof SocketException) {
@@ -686,9 +726,39 @@ public class Node implements Connection.Handler {
         } else if (exception instanceof UnknownHostException) {
             log.warn("UnknownHostException. Might happen if we try to connect to wrong network type.", exception);
         } else if (exception instanceof SocketTimeoutException) {
-            log.info(msg, exception);
+            log.info("Exception: {}", ExceptionUtil.getMessageOrToString(exception));
+        } else if (exception instanceof ConnectionException) {
+            ConnectionException connectionException = (ConnectionException) exception;
+            if (connectionException.getCause() instanceof SocketTimeoutException) {
+                handleException(connectionException.getCause());
+                return;
+            }
+            if (connectionException.getReason() != null) {
+                switch (connectionException.getReason()) {
+                    case UNSPECIFIED:
+                        log.error("Unspecified connectionException reason. {}", msg, exception);
+                        break;
+                    case INVALID_NETWORK_VERSION:
+                        log.warn(msg, exception);
+                        break;
+                    case PROTOBUF_IS_NULL:
+                        log.info("Exception: {}", ExceptionUtil.getMessageOrToString(exception));
+                        break;
+                    case AUTHORIZATION_FAILED:
+                        log.warn(msg, exception);
+                        break;
+                    case ONION_ADDRESS_VERIFICATION_FAILED:
+                        log.warn(msg, exception);
+                        break;
+                    case ADDRESS_BANNED:
+                        log.warn(msg, exception);
+                        break;
+                    default:
+                        log.error("Unhandled connectionException reason. {}", msg, exception);
+                }
+            }
         } else {
-            log.error(msg, exception);
+            log.error("Unhandled exception type {}", msg, exception);
         }
     }
 
@@ -710,5 +780,15 @@ public class Node implements Connection.Handler {
 
     private boolean isShutdown() {
         return getState().get() == STOPPING || getState().get() == TERMINATED;
+    }
+
+    // Only used for clearnet
+    private void maybeSimulateDelay() {
+        if (devModeDelayInMs > 0) {
+            try {
+                Thread.sleep(devModeDelayInMs);
+            } catch (Throwable t) {
+            }
+        }
     }
 }

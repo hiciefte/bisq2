@@ -21,6 +21,8 @@ import bisq.chat.two_party.TwoPartyPrivateChatChannel;
 import bisq.desktop.common.Layout;
 import bisq.desktop.common.utils.ImageUtil;
 import bisq.desktop.components.containers.Spacer;
+import bisq.desktop.components.controls.Badge;
+import bisq.desktop.components.controls.DropdownMenuItem;
 import bisq.desktop.components.table.BisqTableColumn;
 import bisq.desktop.components.table.BisqTableView;
 import bisq.desktop.main.content.chat.ChatView;
@@ -32,9 +34,14 @@ import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.*;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
 import javafx.scene.image.ImageView;
-import javafx.scene.layout.*;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.util.Callback;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -53,7 +60,7 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
     private Subscription noOpenChatsPin, tableViewSelectionPin, selectedModelItemPin, peersUserProfilePin,
             myUserProfilePin;
     private UserProfileDisplay chatPeerUserProfileDisplay, chatMyUserProfileDisplay;
-    private MenuItem leaveChatButton;
+    private DropdownMenuItem leaveChatButton;
 
     public PrivateChatsView(PrivateChatsModel model,
                             PrivateChatsController controller,
@@ -79,6 +86,8 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
     protected void onViewAttached() {
         super.onViewAttached();
 
+        tableView.initialize();
+
         PrivateChatsModel model = getModel();
 
         selectedModelItemPin = EasyBind.subscribe(model.getSelectedItem(), selected -> {
@@ -100,14 +109,14 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
 
         peersUserProfilePin = EasyBind.subscribe(model.getPeersUserProfile(), userProfile -> {
             if (userProfile != null) {
-                chatPeerUserProfileDisplay.setUserProfile(userProfile);
+                chatPeerUserProfileDisplay.applyData(userProfile, model.getPeerLastSeenAsString(), model.getPeerLastSeen());
                 chatPeerUserProfileDisplay.setReputationScore(model.getPeersReputationScore());
             }
         });
 
         myUserProfilePin = EasyBind.subscribe(model.getMyUserProfile(), userProfile -> {
             if (userProfile != null) {
-                chatMyUserProfileDisplay.setUserProfile(userProfile);
+                chatMyUserProfileDisplay.applyData(userProfile, model.getMyselfLastSeenAsString(), model.getMyselfLastSeen());
                 chatMyUserProfileDisplay.setReputationScore(model.getMyUserReputationScore());
             }
         });
@@ -124,7 +133,7 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
     protected void onViewDetached() {
         super.onViewDetached();
 
-        tableView.removeListeners();
+        tableView.dispose();
 
         selectedModelItemPin.unsubscribe();
         tableViewSelectionPin.unsubscribe();
@@ -147,9 +156,9 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
         chatHeaderVBox = new VBox(0);
         HBox.setHgrow(chatHeaderVBox, Priority.ALWAYS);
 
-        leaveChatButton = new MenuItem(Res.get("bisqEasy.privateChats.leave"));
-        leaveChatButton.getStyleClass().add("leave-chat-item");
-        leaveChatButton.setGraphic(ImageUtil.getImageViewById("exit-door"));
+        leaveChatButton = new DropdownMenuItem("leave-chat-red-lit-10", "leave-chat-red",
+                Res.get("bisqEasy.privateChats.leave"));
+        leaveChatButton.getStyleClass().add("red-menu-item");
 
         headerDropdownMenu.clearMenuItems();
         headerDropdownMenu.addMenuItems(helpButton, leaveChatButton);
@@ -166,7 +175,9 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
         openChatsHeader.getStyleClass().add("chat-header-title");
 
         tableView = new BisqTableView<>(getModel().getSortedList());
+        tableView.getStyleClass().add("private-chats-selection-list");
         tableView.allowVerticalScrollbar();
+        tableView.hideHorizontalScrollbar();
         configTableView();
         VBox.setVgrow(tableView, Priority.ALWAYS);
 
@@ -200,6 +211,8 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
 
     private Callback<TableColumn<ListItem, ListItem>, TableCell<ListItem, ListItem>> getTradePeerCellFactory() {
         return column -> new TableCell<>() {
+            private final HBox hBox = new HBox(5);
+
             @Override
             public void updateItem(final ListItem item, boolean empty) {
                 super.updateItem(item, empty);
@@ -207,7 +220,10 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
                 if (item != null && !empty) {
                     UserProfileDisplay userProfileDisplay = new UserProfileDisplay(item.getChannel().getPeer());
                     userProfileDisplay.setReputationScore(item.getReputationScore());
-                    setGraphic(userProfileDisplay);
+                    getStyleClass().add("user-profile-table-cell");
+                    hBox.getChildren().setAll(userProfileDisplay, Spacer.fillHBox(), item.getNumMessagesBadge());
+
+                    setGraphic(hBox);
                 } else {
                     setGraphic(null);
                 }
@@ -266,6 +282,8 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
         private final long totalReputationScore, profileAge;
         private final String totalReputationScoreString, profileAgeString;
         private final ReputationScore reputationScore;
+        @EqualsAndHashCode.Exclude
+        private final Badge numMessagesBadge;
 
         public ListItem(TwoPartyPrivateChatChannel channel, ReputationService reputationService) {
             this.channel = channel;
@@ -283,6 +301,12 @@ public abstract class PrivateChatsView extends ChatView<PrivateChatsView, Privat
             profileAgeString = optionalProfileAge
                     .map(TimeFormatter::formatAgeInDays)
                     .orElse(Res.get("data.na"));
+
+            numMessagesBadge = new Badge(null, Pos.CENTER_RIGHT);
+        }
+
+        public void setNumNotifications(long numNotifications) {
+            numMessagesBadge.setText(numNotifications == 0 ? "" : String.valueOf(numNotifications));
         }
     }
 }

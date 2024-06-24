@@ -34,12 +34,13 @@ import bisq.network.p2p.node.transport.TransportService;
 import bisq.network.p2p.services.confidential.ConfidentialMessageService;
 import bisq.network.p2p.services.confidential.SendConfidentialMessageResult;
 import bisq.network.p2p.services.confidential.ack.MessageDeliveryStatusService;
+import bisq.network.p2p.services.confidential.resend.ResendMessageService;
 import bisq.network.p2p.services.data.DataNetworkService;
 import bisq.network.p2p.services.data.DataService;
 import bisq.network.p2p.services.data.inventory.InventoryService;
-import bisq.network.p2p.services.peergroup.BanList;
-import bisq.network.p2p.services.peergroup.PeerGroupManager;
-import bisq.network.p2p.services.peergroup.PeerGroupService;
+import bisq.network.p2p.services.peer_group.BanList;
+import bisq.network.p2p.services.peer_group.PeerGroupManager;
+import bisq.network.p2p.services.peer_group.PeerGroupService;
 import bisq.persistence.PersistenceService;
 import bisq.security.keys.KeyBundleService;
 import bisq.security.keys.PubKey;
@@ -54,7 +55,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.concurrent.CompletableFuture.runAsync;
@@ -63,7 +63,7 @@ import static java.util.concurrent.CompletableFuture.runAsync;
  * Creates nodesById, the default node and the services according to the Config.
  */
 @Slf4j
-public class ServiceNode {
+public class ServiceNode implements Node.Listener {
     @Getter
     public static final class Config {
         public static Config from(com.typesafe.config.Config config) {
@@ -106,6 +106,7 @@ public class ServiceNode {
     private final PeerGroupService peerGroupService;
     private final InventoryService.Config inventoryServiceConfig;
     private final Optional<MessageDeliveryStatusService> messageDeliveryStatusService;
+    private final Optional<ResendMessageService> resendMessageService;
     private final KeyBundleService keyBundleService;
     private final Set<Address> seedNodeAddresses;
 
@@ -126,6 +127,8 @@ public class ServiceNode {
     @Getter
     private Optional<DataNetworkService> dataNetworkService = Optional.empty();
     private final Set<Listener> listeners = new CopyOnWriteArraySet<>();
+    private final Set<ConfidentialMessageService.Listener> confidentialMessageListeners = new CopyOnWriteArraySet<>();
+
     @Getter
     public Observable<State> state = new Observable<>(State.NEW);
 
@@ -135,6 +138,7 @@ public class ServiceNode {
                 InventoryService.Config inventoryServiceConfig,
                 Optional<DataService> dataService,
                 Optional<MessageDeliveryStatusService> messageDeliveryStatusService,
+                Optional<ResendMessageService> resendMessageService,
                 KeyBundleService keyBundleService,
                 PersistenceService persistenceService,
                 AuthorizationService authorizationService,
@@ -147,13 +151,39 @@ public class ServiceNode {
         this.inventoryServiceConfig = inventoryServiceConfig;
         this.messageDeliveryStatusService = messageDeliveryStatusService;
         this.dataService = dataService;
+        this.resendMessageService = resendMessageService;
         this.keyBundleService = keyBundleService;
         this.seedNodeAddresses = seedNodeAddresses;
 
         transportService = TransportService.create(transportType, nodeConfig.getTransportConfig());
         nodesById = new NodesById(banList, nodeConfig, keyBundleService, transportService, networkLoadSnapshot, authorizationService);
-
         peerGroupService = new PeerGroupService(persistenceService, transportType, peerGroupServiceConfig.getPeerGroupConfig(), seedNodeAddresses, banList);
+
+        nodesById.addNodeListener(this);
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    // Node.Listener
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    public void onMessage(EnvelopePayloadMessage envelopePayloadMessage, Connection connection, NetworkId networkId) {
+        confidentialMessageListeners.forEach(listener -> {
+            try {
+                listener.onMessage(envelopePayloadMessage);
+            } catch (Exception e) {
+                log.error("Calling onMessage at messageListener {} failed", listener, e);
+            }
+        });
+    }
+
+    @Override
+    public void onConnection(Connection connection) {
+    }
+
+    @Override
+    public void onDisconnect(Connection connection, CloseReason closeReason) {
     }
 
 
@@ -188,7 +218,11 @@ public class ServiceNode {
                 Optional.empty();
 
         confidentialMessageService = supportedServices.contains(SupportedService.CONFIDENTIAL) ?
-                Optional.of(new ConfidentialMessageService(nodesById, keyBundleService, dataService, messageDeliveryStatusService)) :
+                Optional.of(new ConfidentialMessageService(nodesById,
+                        keyBundleService,
+                        dataService,
+                        messageDeliveryStatusService,
+                        resendMessageService)) :
                 Optional.empty();
 
         setState(State.INITIALIZING);
@@ -210,8 +244,6 @@ public class ServiceNode {
         inventoryService.ifPresent(InventoryService::shutdown);
         confidentialMessageService.ifPresent(ConfidentialMessageService::shutdown);
         return nodesById.shutdown()
-                .orTimeout(10, TimeUnit.SECONDS)
-                .handle((result, throwable) -> throwable == null && result)
                 .thenCompose(result -> transportService.shutdown())
                 .whenComplete((result, throwable) -> setState(State.TERMINATED));
     }
@@ -243,12 +275,13 @@ public class ServiceNode {
     }
 
     SendConfidentialMessageResult confidentialSend(EnvelopePayloadMessage envelopePayloadMessage,
+                                                   NetworkId receiverNetworkId,
                                                    Address address,
                                                    PubKey receiverPubKey,
                                                    KeyPair senderKeyPair,
                                                    NetworkId senderNetworkId) {
         checkArgument(confidentialMessageService.isPresent(), "ConfidentialMessageService not present at confidentialSend");
-        return confidentialMessageService.get().send(envelopePayloadMessage, address, receiverPubKey, senderKeyPair, senderNetworkId);
+        return confidentialMessageService.get().send(envelopePayloadMessage, receiverNetworkId, address, receiverPubKey, senderKeyPair, senderNetworkId);
     }
 
     Connection send(NetworkId senderNetworkId, EnvelopePayloadMessage envelopePayloadMessage, Address address) {
@@ -256,30 +289,12 @@ public class ServiceNode {
     }
 
     void addConfidentialMessageListener(ConfidentialMessageService.Listener listener) {
-        //todo (Critical) store nodeListener
-        nodesById.addNodeListener(new Node.Listener() {
-            @Override
-            public void onMessage(EnvelopePayloadMessage envelopePayloadMessage, Connection connection, NetworkId networkId) {
-                try {
-                    listener.onMessage(envelopePayloadMessage);
-                } catch (Exception e) {
-                    log.error("Calling onMessage at messageListener {} failed", listener, e);
-                }
-            }
-
-            @Override
-            public void onConnection(Connection connection) {
-            }
-
-            @Override
-            public void onDisconnect(Connection connection, CloseReason closeReason) {
-            }
-        });
+        confidentialMessageListeners.add(listener);
         confidentialMessageService.ifPresent(service -> service.addListener(listener));
     }
 
     void removeConfidentialMessageListener(ConfidentialMessageService.Listener listener) {
-        //todo (Critical) missing nodesById.removeNodeListener ?
+        confidentialMessageListeners.remove(listener);
         confidentialMessageService.ifPresent(service -> service.removeListener(listener));
     }
 

@@ -17,8 +17,12 @@
 
 package bisq.desktop.main.content.authorized_role.security_manager;
 
-import bisq.bonded_roles.alert.AlertType;
+import bisq.bonded_roles.security_manager.alert.AlertType;
 import bisq.desktop.common.view.Model;
+import bisq.desktop.main.content.authorized_role.security_manager.SecurityManagerView.AlertListItem;
+import bisq.desktop.main.content.authorized_role.security_manager.SecurityManagerView.BondedRoleListItem;
+import bisq.desktop.main.content.authorized_role.security_manager.SecurityManagerView.DifficultyAdjustmentListItem;
+import bisq.desktop.main.content.authorized_role.security_manager.SecurityManagerView.MinRequiredReputationScoreListItem;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -29,18 +33,27 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Getter
 public class SecurityManagerModel implements Model {
+    private final DoubleProperty difficultyAdjustmentFactor = new SimpleDoubleProperty();
+    private final LongProperty minRequiredReputationScore = new SimpleLongProperty();
+    private final BooleanProperty difficultyAdjustmentFactorButtonDisabled = new SimpleBooleanProperty();
+    private final BooleanProperty minRequiredReputationScoreButtonDisabled = new SimpleBooleanProperty();
+    private final ObservableList<DifficultyAdjustmentListItem> difficultyAdjustmentListItems = FXCollections.observableArrayList();
+    private final ObservableList<MinRequiredReputationScoreListItem> minRequiredReputationScoreListItems = FXCollections.observableArrayList();
+
     private final ObjectProperty<AlertType> selectedAlertType = new SimpleObjectProperty<>();
     private final ObservableList<AlertType> alertTypes = FXCollections.observableArrayList();
-    private final ObjectProperty<SecurityManagerView.BondedRoleListItem> selectedBondedRoleListItem = new SimpleObjectProperty<>();
-    private final ObservableList<SecurityManagerView.BondedRoleListItem> bondedRoleListItems = FXCollections.observableArrayList();
+    private final ObjectProperty<BondedRoleListItem> selectedBondedRoleListItem = new SimpleObjectProperty<>();
+    private final ObservableList<BondedRoleListItem> bondedRoleListItems = FXCollections.observableArrayList();
     private final StringProperty actionButtonText = new SimpleStringProperty();
     private final BooleanProperty actionButtonDisabled = new SimpleBooleanProperty();
+    private final StringProperty headline = new SimpleStringProperty();
     private final StringProperty message = new SimpleStringProperty();
     private final StringProperty minVersion = new SimpleStringProperty();
     private final BooleanProperty haltTrading = new SimpleBooleanProperty();
     private final BooleanProperty requireVersionForTrading = new SimpleBooleanProperty();
-    private final ObservableList<SecurityManagerView.AlertListItem> alertListItems = FXCollections.observableArrayList();
-    private final SortedList<SecurityManagerView.AlertListItem> sortedAlertListItems = new SortedList<>(alertListItems);
+
+    private final ObservableList<AlertListItem> alertListItems = FXCollections.observableArrayList();
+    private final SortedList<AlertListItem> sortedAlertListItems = new SortedList<>(alertListItems);
 
     public SecurityManagerModel() {
     }

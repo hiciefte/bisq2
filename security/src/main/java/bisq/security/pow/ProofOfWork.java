@@ -17,7 +17,9 @@
 
 package bisq.security.pow;
 
+import bisq.common.encoding.Hex;
 import bisq.common.proto.NetworkProto;
+import bisq.common.util.MathUtils;
 import bisq.common.validation.NetworkDataValidation;
 import com.google.protobuf.ByteString;
 import lombok.EqualsAndHashCode;
@@ -25,7 +27,6 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
-import java.util.Arrays;
 import java.util.Optional;
 
 // TODO (refactor, low prio) use Optional instead of Nullable
@@ -77,16 +78,20 @@ public final class ProofOfWork implements NetworkProto {
     }
 
     @Override
-    public bisq.security.protobuf.ProofOfWork toProto() {
+    public bisq.security.protobuf.ProofOfWork toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.security.protobuf.ProofOfWork.Builder getBuilder(boolean serializeForHash) {
         bisq.security.protobuf.ProofOfWork.Builder builder = bisq.security.protobuf.ProofOfWork.newBuilder()
                 .setPayload(ByteString.copyFrom(payload))
                 .setCounter(counter)
                 .setDifficulty(difficulty)
                 .setSolution(ByteString.copyFrom(solution))
                 .setDuration(duration);
-
         Optional.ofNullable(challenge).ifPresent(challenge -> builder.setChallenge(ByteString.copyFrom(challenge)));
-        return builder.build();
+        return builder;
     }
 
     public static ProofOfWork fromProto(bisq.security.protobuf.ProofOfWork proto) {
@@ -100,15 +105,19 @@ public final class ProofOfWork implements NetworkProto {
         );
     }
 
+    public double getLog2Difficulty() {
+        return MathUtils.roundDouble(Math.log(difficulty) / MathUtils.LOG2, 2);
+    }
+
     @Override
     public String toString() {
         return "ProofOfWork{" +
-                "duration=" + duration +
-                ", difficulty=" + difficulty +
-                ", counter=" + counter +
-                ", challenge=" + Arrays.toString(challenge) +
-                ", solution=" + Arrays.toString(solution) +
-                ", payload=" + Arrays.toString(payload) +
+                "\nduration=" + duration +
+                "\ndifficulty=2^" + getLog2Difficulty() + " = " + difficulty +
+                "\ncounter=" + counter +
+                "\nchallenge=" + (challenge != null ? Hex.encode(challenge) : "null") +
+                "\nsolution=" + Hex.encode(solution) +
+                "\npayload=" + Hex.encode(payload) +
                 '}';
     }
 }

@@ -26,6 +26,7 @@ import bisq.application.ApplicationService;
 import bisq.application.ShutDownHandler;
 import bisq.bisq_easy.BisqEasyService;
 import bisq.bonded_roles.BondedRolesService;
+import bisq.bonded_roles.security_manager.alert.AlertNotificationsService;
 import bisq.chat.ChatService;
 import bisq.contract.ContractService;
 import bisq.identity.IdentityService;
@@ -34,6 +35,8 @@ import bisq.offer.OfferService;
 import bisq.persistence.PersistenceService;
 import bisq.presentation.notifications.SendNotificationService;
 import bisq.security.SecurityService;
+import bisq.settings.DontShowAgainService;
+import bisq.settings.FavouriteMarketsService;
 import bisq.settings.SettingsService;
 import bisq.support.SupportService;
 import bisq.trade.TradeService;
@@ -67,6 +70,9 @@ public class ServiceProvider {
     private final TradeService tradeService;
     private final UpdaterService updaterService;
     private final BisqEasyService bisqEasyService;
+    private final AlertNotificationsService alertNotificationsService;
+    private final FavouriteMarketsService favouriteMarketsService;
+    private final DontShowAgainService dontShowAgainService;
 
     public ServiceProvider(ShutDownHandler shutDownHandler,
                            ApplicationService.Config config,
@@ -86,7 +92,10 @@ public class ServiceProvider {
                            SendNotificationService sendNotificationService,
                            TradeService tradeService,
                            UpdaterService updaterService,
-                           BisqEasyService bisqEasyService) {
+                           BisqEasyService bisqEasyService,
+                           AlertNotificationsService alertNotificationsService,
+                           FavouriteMarketsService favouriteMarketsService,
+                           DontShowAgainService dontShowAgainService) {
         this.shutDownHandler = shutDownHandler;
         this.config = config;
         this.persistenceService = persistenceService;
@@ -106,5 +115,8 @@ public class ServiceProvider {
         this.tradeService = tradeService;
         this.updaterService = updaterService;
         this.bisqEasyService = bisqEasyService;
+        this.alertNotificationsService = alertNotificationsService;
+        this.favouriteMarketsService = favouriteMarketsService;
+        this.dontShowAgainService = dontShowAgainService;
     }
 }

@@ -43,16 +43,18 @@ import static bisq.network.p2p.services.data.storage.MetaData.*;
 @EqualsAndHashCode
 @Getter
 public final class AuthorizedBondedRole implements AuthorizedDistributedData {
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_100_DAYS, HIGHEST_PRIORITY, getClass().getSimpleName(), MAX_MAP_SIZE_100);
     private final String profileId;
     private final String authorizedPublicKey;
     private final BondedRoleType bondedRoleType;
     private final String bondUserName;
     private final String signatureBase64;
-    private final AddressByTransportTypeMap addressByTransportTypeMap;
+    private final Optional<AddressByTransportTypeMap> addressByTransportTypeMap;
     private final NetworkId networkId;
     // The oracle node which did the validation and publishing
     private final Optional<AuthorizedOracleNode> authorizingOracleNode;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedBondedRole(String profileId,
@@ -60,7 +62,7 @@ public final class AuthorizedBondedRole implements AuthorizedDistributedData {
                                 BondedRoleType bondedRoleType,
                                 String bondUserName,
                                 String signatureBase64,
-                                AddressByTransportTypeMap addressByTransportTypeMap,
+                                Optional<AddressByTransportTypeMap> addressByTransportTypeMap,
                                 NetworkId networkId,
                                 Optional<AuthorizedOracleNode> authorizingOracleNode,
                                 boolean staticPublicKeysProvided) {
@@ -86,18 +88,23 @@ public final class AuthorizedBondedRole implements AuthorizedDistributedData {
     }
 
     @Override
-    public bisq.bonded_roles.protobuf.AuthorizedBondedRole toProto() {
+    public bisq.bonded_roles.protobuf.AuthorizedBondedRole.Builder getBuilder(boolean serializeForHash) {
         bisq.bonded_roles.protobuf.AuthorizedBondedRole.Builder builder = bisq.bonded_roles.protobuf.AuthorizedBondedRole.newBuilder()
                 .setProfileId(profileId)
                 .setAuthorizedPublicKey(authorizedPublicKey)
-                .setBondedRoleType(bondedRoleType.toProto())
+                .setBondedRoleType(bondedRoleType.toProtoEnum())
                 .setBondUserName(bondUserName)
                 .setSignatureBase64(signatureBase64)
-                .setNetworkId(networkId.toProto())
-                .setAddressByTransportTypeMap(addressByTransportTypeMap.toProto())
+                .setNetworkId(networkId.toProto(serializeForHash))
                 .setStaticPublicKeysProvided(staticPublicKeysProvided);
-        authorizingOracleNode.ifPresent(oracleNode -> builder.setAuthorizingOracleNode(oracleNode.toProto()));
-        return builder.build();
+        addressByTransportTypeMap.ifPresent(e -> builder.setAddressByTransportTypeMap(e.toProto(serializeForHash)));
+        authorizingOracleNode.ifPresent(oracleNode -> builder.setAuthorizingOracleNode(oracleNode.toProto(serializeForHash)));
+        return builder;
+    }
+
+    @Override
+    public bisq.bonded_roles.protobuf.AuthorizedBondedRole toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedBondedRole fromProto(bisq.bonded_roles.protobuf.AuthorizedBondedRole proto) {
@@ -106,9 +113,13 @@ public final class AuthorizedBondedRole implements AuthorizedDistributedData {
                 BondedRoleType.fromProto(proto.getBondedRoleType()),
                 proto.getBondUserName(),
                 proto.getSignatureBase64(),
-                AddressByTransportTypeMap.fromProto(proto.getAddressByTransportTypeMap()),
+                proto.hasAddressByTransportTypeMap() ?
+                        Optional.of(AddressByTransportTypeMap.fromProto(proto.getAddressByTransportTypeMap())) :
+                        Optional.empty(),
                 NetworkId.fromProto(proto.getNetworkId()),
-                proto.hasAuthorizingOracleNode() ? Optional.of(AuthorizedOracleNode.fromProto(proto.getAuthorizingOracleNode())) : Optional.empty(),
+                proto.hasAuthorizingOracleNode() ?
+                        Optional.of(AuthorizedOracleNode.fromProto(proto.getAuthorizingOracleNode())) :
+                        Optional.empty(),
                 proto.getStaticPublicKeysProvided());
     }
 
@@ -135,9 +146,9 @@ public final class AuthorizedBondedRole implements AuthorizedDistributedData {
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 
@@ -149,16 +160,16 @@ public final class AuthorizedBondedRole implements AuthorizedDistributedData {
     @Override
     public String toString() {
         return "AuthorizedBondedRole{" +
-                "\r\n                    metaData=" + metaData +
+                "\r\n                    bondedRoleType=" + bondedRoleType +
                 ",\r\n                    profileId='" + profileId + '\'' +
                 ",\r\n                    authorizedPublicKey='" + authorizedPublicKey + '\'' +
-                ",\r\n                    bondedRoleType=" + bondedRoleType +
                 ",\r\n                    bondUserName='" + bondUserName + '\'' +
                 ",\r\n                    signature='" + signatureBase64 + '\'' +
                 ",\r\n                    networkId=" + networkId +
                 ",\r\n                    addressByTransportTypeMap=" + addressByTransportTypeMap +
                 ",\r\n                    authorizedOracleNode=" + authorizingOracleNode +
                 ",\r\n                    staticPublicKeysProvided=" + staticPublicKeysProvided +
+                ",\r\n                    metaData=" + metaData +
                 ",\r\n                    authorizedPublicKeys=" + getAuthorizedPublicKeys() +
                 "\r\n}";
     }

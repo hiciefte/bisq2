@@ -36,8 +36,6 @@ import bisq.common.util.CompletableFutureUtils;
 import bisq.network.NetworkService;
 import bisq.persistence.PersistenceService;
 import bisq.presentation.notifications.SendNotificationService;
-import bisq.security.SecurityService;
-import bisq.security.pow.ProofOfWorkService;
 import bisq.settings.SettingsService;
 import bisq.user.UserService;
 import bisq.user.identity.UserIdentity;
@@ -57,7 +55,6 @@ import java.util.stream.Stream;
 @Getter
 public class ChatService implements Service {
     private final PersistenceService persistenceService;
-    private final ProofOfWorkService proofOfWorkService;
     private final NetworkService networkService;
     private final UserService userService;
     private final UserIdentityService userIdentityService;
@@ -70,13 +67,11 @@ public class ChatService implements Service {
     private final Map<ChatChannelDomain, ChatChannelSelectionService> chatChannelSelectionServices = new HashMap<>();
 
     public ChatService(PersistenceService persistenceService,
-                       SecurityService securityService,
                        NetworkService networkService,
                        UserService userService,
                        SettingsService settingsService,
                        SendNotificationService sendNotificationService) {
         this.persistenceService = persistenceService;
-        this.proofOfWorkService = securityService.getProofOfWorkService();
         this.networkService = networkService;
         this.userService = userService;
         this.userIdentityService = userService.getUserIdentityService();
@@ -89,14 +84,13 @@ public class ChatService implements Service {
                 userIdentityService,
                 userProfileService);
 
-        //BISQ_EASY
+        // BISQ_EASY
         bisqEasyOfferbookChannelService = new BisqEasyOfferbookChannelService(persistenceService,
                 networkService,
                 userService);
         bisqEasyOpenTradeChannelService = new BisqEasyOpenTradeChannelService(persistenceService,
                 networkService,
-                userService,
-                proofOfWorkService);
+                userService);
 
         addToTwoPartyPrivateChatChannelServices(ChatChannelDomain.BISQ_EASY_PRIVATE_CHAT);
 
@@ -161,7 +155,6 @@ public class ChatService implements Service {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         List<CompletableFuture<Boolean>> list = new ArrayList<>(List.of(bisqEasyOfferbookChannelService.shutdown(),
                 bisqEasyOpenTradeChannelService.shutdown()));
         list.addAll(commonPublicChatChannelServices.values().stream()
@@ -246,7 +239,6 @@ public class ChatService implements Service {
                 new TwoPartyPrivateChatChannelService(persistenceService,
                         networkService,
                         userService,
-                        proofOfWorkService,
                         chatChannelDomain));
     }
 

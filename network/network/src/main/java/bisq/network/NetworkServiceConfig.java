@@ -23,13 +23,14 @@ import bisq.network.common.TransportConfig;
 import bisq.network.common.TransportType;
 import bisq.network.p2p.ServiceNode;
 import bisq.network.p2p.node.Feature;
+import bisq.network.p2p.node.authorization.AuthorizationService;
 import bisq.network.p2p.node.transport.ClearNetTransportService;
 import bisq.network.p2p.node.transport.I2PTransportService;
 import bisq.network.p2p.services.data.inventory.InventoryService;
-import bisq.network.p2p.services.peergroup.PeerGroupManager;
-import bisq.network.p2p.services.peergroup.PeerGroupService;
-import bisq.network.p2p.services.peergroup.exchange.PeerExchangeStrategy;
-import bisq.network.p2p.services.peergroup.keepalive.KeepAliveService;
+import bisq.network.p2p.services.peer_group.PeerGroupManager;
+import bisq.network.p2p.services.peer_group.PeerGroupService;
+import bisq.network.p2p.services.peer_group.exchange.PeerExchangeStrategy;
+import bisq.network.p2p.services.peer_group.keep_alive.KeepAliveService;
 import bisq.tor.TorTransportConfig;
 import com.typesafe.config.Config;
 import lombok.Getter;
@@ -45,6 +46,7 @@ public final class NetworkServiceConfig {
     public static NetworkServiceConfig from(Path baseDir, Config config) {
         ServiceNode.Config serviceNodeConfig = ServiceNode.Config.from(config.getConfig("serviceNode"));
         InventoryService.Config inventoryServiceConfig = InventoryService.Config.from(config.getConfig("inventory"));
+        AuthorizationService.Config authorizationServiceConfig = AuthorizationService.Config.from(config.getConfig("authorization"));
         Config seedConfig = config.getConfig("seedAddressByTransportType");
         // Only read seed addresses for explicitly supported address types
         Set<TransportType> supportedTransportTypes = new HashSet<>(config.getEnumList(TransportType.class, "supportedTransportTypes"));
@@ -83,6 +85,7 @@ public final class NetworkServiceConfig {
                 configByTransportType,
                 serviceNodeConfig,
                 inventoryServiceConfig,
+                authorizationServiceConfig,
                 peerGroupServiceConfigByTransport,
                 defaultPortByTransportType,
                 seedAddressesByTransport,
@@ -175,6 +178,7 @@ public final class NetworkServiceConfig {
     private final Set<TransportType> supportedTransportTypes;
     private final Set<Feature> features;
     private final InventoryService.Config inventoryServiceConfig;
+    private final AuthorizationService.Config authorizationServiceConfig;
     private final Map<TransportType, TransportConfig> configByTransportType;
     private final ServiceNode.Config serviceNodeConfig;
     private final Map<TransportType, PeerGroupManager.Config> peerGroupServiceConfigByTransport;
@@ -189,6 +193,7 @@ public final class NetworkServiceConfig {
                                 Map<TransportType, TransportConfig> configByTransportType,
                                 ServiceNode.Config serviceNodeConfig,
                                 InventoryService.Config inventoryServiceConfig,
+                                AuthorizationService.Config authorizationServiceConfig,
                                 Map<TransportType, PeerGroupManager.Config> peerGroupServiceConfigByTransport,
                                 Map<TransportType, Integer> defaultPortByTransportType,
                                 Map<TransportType, Set<Address>> seedAddressesByTransport,
@@ -198,6 +203,7 @@ public final class NetworkServiceConfig {
         this.supportedTransportTypes = supportedTransportTypes;
         this.features = features;
         this.inventoryServiceConfig = inventoryServiceConfig;
+        this.authorizationServiceConfig = authorizationServiceConfig;
         this.configByTransportType = filterMap(supportedTransportTypes, configByTransportType);
         this.serviceNodeConfig = serviceNodeConfig;
         this.peerGroupServiceConfigByTransport = filterMap(supportedTransportTypes, peerGroupServiceConfigByTransport);

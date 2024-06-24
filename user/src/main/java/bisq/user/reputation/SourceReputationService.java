@@ -17,13 +17,13 @@
 
 package bisq.user.reputation;
 
+import bisq.bonded_roles.BondedRoleType;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.common.application.Service;
 import bisq.common.data.ByteArray;
 import bisq.common.observable.Observable;
 import bisq.network.NetworkService;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
-import bisq.network.p2p.services.data.DataService;
 import bisq.network.p2p.services.data.storage.auth.authorized.AuthorizedData;
 import bisq.network.p2p.services.data.storage.auth.authorized.AuthorizedDistributedData;
 import bisq.user.banned.BannedUserService;
@@ -34,10 +34,7 @@ import bisq.user.profile.UserProfileService;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -46,7 +43,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 
 @Slf4j
-public abstract class SourceReputationService<T extends AuthorizedDistributedData> implements DataService.Listener, Service {
+public abstract class SourceReputationService<T extends AuthorizedDistributedData> implements Service, AuthorizedBondedRolesService.Listener {
     protected static final long DAY_AS_MS = TimeUnit.DAYS.toMillis(1);
 
     public static long getAgeInDays(long date) {
@@ -78,34 +75,39 @@ public abstract class SourceReputationService<T extends AuthorizedDistributedDat
     }
 
     public CompletableFuture<Boolean> initialize() {
-        log.info("initialize");
-        networkService.getDataService().ifPresent(dataService -> dataService.getAuthorizedData().forEach(this::onAuthorizedDataAdded));
-        networkService.addDataServiceListener(this);
+        authorizedBondedRolesService.addListener(this);
         return CompletableFuture.completedFuture(true);
     }
 
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
-        networkService.removeDataServiceListener(this);
+        authorizedBondedRolesService.removeListener(this);
         return CompletableFuture.completedFuture(true);
     }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+    // AuthorizedBondedRolesService.Listener
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     @Override
     public void onAuthorizedDataAdded(AuthorizedData authorizedData) {
         findRelevantData(authorizedData.getAuthorizedDistributedData())
                 .ifPresent(data -> {
-                    ByteArray providedHash = getDataKey(data);
-                    userProfileService.getUserProfileById().values().stream()
-                            .filter(userProfile -> getUserProfileKey(userProfile).equals(providedHash))
-                            .forEach(userProfile -> {
-                                ByteArray hash = getUserProfileKey(userProfile);
-                                if (!dataSetByHash.containsKey(hash)) {
-                                    dataSetByHash.put(hash, new HashSet<>());
-                                }
-                                Set<T> dataSet = dataSetByHash.get(hash);
-                                addToDataSet(dataSet, data);
-                                putScore(userProfile.getId(), dataSet);
-                            });
+                    if (isAuthorized(authorizedData)) {
+                        ByteArray providedHash = getDataKey(data);
+                        // To avoid ConcurrentModificationException
+                        List<UserProfile> userProfiles = new ArrayList<>(userProfileService.getUserProfileById().values());
+                        userProfiles.stream()
+                                .filter(userProfile -> getUserProfileKey(userProfile).equals(providedHash))
+                                .forEach(userProfile -> {
+                                    ByteArray hash = getUserProfileKey(userProfile);
+                                    if (!dataSetByHash.containsKey(hash)) {
+                                        dataSetByHash.put(hash, new HashSet<>());
+                                    }
+                                    Set<T> dataSet = dataSetByHash.get(hash);
+                                    addToDataSet(dataSet, data);
+                                    putScore(userProfile.getId(), dataSet);
+                                });
+                    }
                 });
     }
 
@@ -141,4 +143,8 @@ public abstract class SourceReputationService<T extends AuthorizedDistributedDat
     }
 
     public abstract long calculateScore(T data);
+
+    protected boolean isAuthorized(AuthorizedData authorizedData) {
+        return authorizedBondedRolesService.hasAuthorizedPubKey(authorizedData, BondedRoleType.ORACLE_NODE);
+    }
 }

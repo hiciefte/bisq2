@@ -25,16 +25,19 @@ import bisq.i18n.Res;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Date;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Getter
-@ToString
 @EqualsAndHashCode
 public final class MarketPrice implements NetworkProto {
+    private static final long INVALID_AGE = TimeUnit.HOURS.toMillis(12);
+    private static final long STALE_AGE = TimeUnit.MINUTES.toMillis(5);
+
     public enum Source {
         PERSISTED,
         PROPAGATED_IN_NETWORK,
@@ -61,12 +64,16 @@ public final class MarketPrice implements NetworkProto {
     }
 
     @Override
-    public bisq.bonded_roles.protobuf.MarketPrice toProto() {
+    public bisq.bonded_roles.protobuf.MarketPrice.Builder getBuilder(boolean serializeForHash) {
         return bisq.bonded_roles.protobuf.MarketPrice.newBuilder()
-                .setPriceQuote(priceQuote.toProto())
+                .setPriceQuote(priceQuote.toProto(serializeForHash))
                 .setTimestamp(timestamp)
-                .setMarketPriceProvider(marketPriceProvider.toProto())
-                .build();
+                .setMarketPriceProvider(marketPriceProvider.toProtoEnum());
+    }
+
+    @Override
+    public bisq.bonded_roles.protobuf.MarketPrice toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static MarketPrice fromProto(bisq.bonded_roles.protobuf.MarketPrice proto) {
@@ -85,5 +92,23 @@ public final class MarketPrice implements NetworkProto {
 
     public long getAge() {
         return System.currentTimeMillis() - timestamp;
+    }
+
+    public boolean isStale() {
+        return System.currentTimeMillis() - timestamp > STALE_AGE;
+    }
+
+    public boolean isValidDate() {
+        return System.currentTimeMillis() - timestamp < INVALID_AGE;
+    }
+
+    @Override
+    public String toString() {
+        return "MarketPrice{" +
+                "priceQuote=" + priceQuote +
+                ", timestamp=" + new Date(timestamp) +
+                ", marketPriceProvider=" + marketPriceProvider +
+                ", source=" + source +
+                '}';
     }
 }

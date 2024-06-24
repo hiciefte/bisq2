@@ -25,9 +25,7 @@ import bisq.persistence.PersistableStore;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
@@ -46,15 +44,19 @@ public final class NetworkServiceStore implements PersistableStore<NetworkServic
     }
 
     @Override
-    public bisq.network.protobuf.NetworkServiceStore toProto() {
+    public bisq.network.protobuf.NetworkServiceStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.NetworkServiceStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.network.protobuf.NetworkServiceStore.newBuilder()
                 .addAllSeedNodes(seedNodes.stream()
-                        .map(AddressByTransportTypeMap::toProto)
+                        .map(e -> e.toProto(serializeForHash))
                         .collect(Collectors.toList()))
                 .putAllNetworkIdByTag(networkIdByTag.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey,
-                                e -> e.getValue().toProto())))
-                .build();
+                                e -> e.getValue().toProto(serializeForHash))));
     }
 
     public static PersistableStore<?> fromProto(bisq.network.protobuf.NetworkServiceStore proto) {
@@ -89,7 +91,7 @@ public final class NetworkServiceStore implements PersistableStore<NetworkServic
 
     @Override
     public NetworkServiceStore getClone() {
-        return new NetworkServiceStore(seedNodes, networkIdByTag);
+        return new NetworkServiceStore(new HashSet<>(seedNodes), new HashMap<>(networkIdByTag));
     }
 
     Set<AddressByTransportTypeMap> getSeedNodes() {

@@ -3,15 +3,18 @@ plugins {
     id("bisq.gradle.desktop.regtest.BisqDesktopRegtestPlugin")
     application
     alias(libs.plugins.openjfx)
+    alias(libs.plugins.shadow)
 }
 
 application {
     mainClass.set("bisq.desktop_app.DesktopApp")
 }
 
+version = "2.0.4"
+
 javafx {
     version = "17.0.1"
-    modules = listOf("javafx.controls")
+    modules = listOf("javafx.controls", "javafx.media")
 }
 
 dependencies {

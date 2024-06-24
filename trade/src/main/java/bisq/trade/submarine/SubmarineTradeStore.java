@@ -24,6 +24,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,7 +45,7 @@ public final class SubmarineTradeStore implements PersistableStore<SubmarineTrad
 
     @Override
     public SubmarineTradeStore getClone() {
-        return new SubmarineTradeStore(tradeById);
+        return new SubmarineTradeStore(new HashMap<>(tradeById));
     }
 
     @Override
@@ -54,12 +55,16 @@ public final class SubmarineTradeStore implements PersistableStore<SubmarineTrad
     }
 
     @Override
-    public bisq.trade.protobuf.SubmarineTradeStore toProto() {
+    public bisq.trade.protobuf.SubmarineTradeStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.trade.protobuf.SubmarineTradeStore.newBuilder()
                 .putAllTradeById(tradeById.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey,
-                                e -> e.getValue().toProto())))
-                .build();
+                                e -> e.getValue().toProto(serializeForHash))));
+    }
+
+    @Override
+    public bisq.trade.protobuf.SubmarineTradeStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static SubmarineTradeStore fromProto(bisq.trade.protobuf.SubmarineTradeStore proto) {

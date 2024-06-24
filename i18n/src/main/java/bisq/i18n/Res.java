@@ -18,33 +18,47 @@
 package bisq.i18n;
 
 import bisq.common.application.DevMode;
+import com.google.common.base.Joiner;
 import lombok.extern.slf4j.Slf4j;
 
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
 @Slf4j
 public class Res {
+    // We use non-printing characters as separator. See: https://en.wikipedia.org/wiki/Delimiter#ASCII_delimited_text
+    private static final char ARGS_SEPARATOR = 0x1f;
+    private static final char PARAM_SEPARATOR = 0x1e;
+
+    private static final List<String> BUNDLE_NAMES = List.of(
+            "default",
+            "application",
+            "chat",
+            "trade_apps",
+            "bisq_easy",
+            "academy",
+            "user",
+            "authorized_role",
+            "payment_method",
+            "wallet",
+            "settings"
+    );
+
     private static final List<ResourceBundle> bundles = new ArrayList<>();
 
     public static void setLanguage(String languageCode) {
-        Locale locale = Locale.forLanguageTag(languageCode);
+        Locale locale = "en".equalsIgnoreCase(languageCode) ? new Locale("") : Locale.forLanguageTag(languageCode);
+
         bundles.clear();
-        bundles.addAll(List.of(
-                ResourceBundle.getBundle("default", locale),
-                ResourceBundle.getBundle("application", locale),
-                ResourceBundle.getBundle("chat", locale),
-                ResourceBundle.getBundle("trade_apps", locale),
-                ResourceBundle.getBundle("bisq_easy", locale),
-                ResourceBundle.getBundle("academy", locale),
-                ResourceBundle.getBundle("user", locale),
-                ResourceBundle.getBundle("authorized_role", locale),
-                ResourceBundle.getBundle("payment_method", locale),
-                ResourceBundle.getBundle("wallet", locale),
-                ResourceBundle.getBundle("settings", locale)
-        ));
+
+        bundles.addAll(
+                BUNDLE_NAMES.stream()
+                        .map(bundleName -> ResourceBundle.getBundle(bundleName, locale))
+                        .collect(Collectors.toList())
+        );
     }
 
     public static String get(String key, Object... arguments) {
@@ -72,8 +86,61 @@ public class Res {
         }
     }
 
+    // Convenience method for supporting format `{0} get(key)` where key is expected to support singular and plural
+    // cases where the plural key adds a `s` to the singular key. Argument is expected to be integer or long
+
+    /**
+     * @param key   Key which supports singular and plural. By convention, we expect the plural key to have
+     *              a `s` as postfix to the singular key.
+     * @param value The long value
+     * @return The value separated with a space to the postfix which is either singular or plural form
+     */
+    public static String getAsSingularOrPlural(String key, long value) {
+        if (Math.abs(value) != 1) {
+            key = key + "s";
+        }
+        return value + " " + get(key);
+    }
+
+    /**
+     * @param key   Key which supports singular and plural. By convention, we expect the plural key to have
+     *              a `s` as postfix to the singular key.
+     * @param value The integer value
+     * @return The value separated with a space to the postfix which is either singular or plural form
+     */
+    public static String getAsSingularOrPlural(String key, int value) {
+        return getAsSingularOrPlural(key, (long) value);
+    }
+
     public static boolean has(String key) {
         return bundles.stream().anyMatch(bundle -> bundle.containsKey(key));
+    }
+
+
+    public static String encode(String key, Object... arguments) {
+        if (arguments.length == 0) {
+            return key;
+        }
+
+        String args = Joiner.on(ARGS_SEPARATOR).join(arguments);
+        return key + PARAM_SEPARATOR + args;
+    }
+
+    public static String decode(String encoded) {
+        String separator = String.valueOf(Res.PARAM_SEPARATOR);
+        if (!encoded.contains(separator)) {
+            return Res.get(encoded);
+        }
+
+        String[] tokens = encoded.split(separator);
+        String key = tokens[0];
+        if (tokens.length == 1) {
+            return Res.get(key);
+        }
+
+        String argumentList = tokens[1];
+        Object[] arguments = argumentList.split(String.valueOf(ARGS_SEPARATOR));
+        return Res.get(key, arguments);
     }
 }
 

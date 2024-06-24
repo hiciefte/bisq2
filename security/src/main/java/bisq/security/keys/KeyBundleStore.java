@@ -24,6 +24,7 @@ import bisq.persistence.PersistableStore;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,17 +50,21 @@ public final class KeyBundleStore implements PersistableStore<KeyBundleStore> {
 
     @Override
     public KeyBundleStore getClone() {
-        return new KeyBundleStore(secretUid, keyBundleById);
+        return new KeyBundleStore(secretUid, new HashMap<>(keyBundleById));
     }
 
     @Override
-    public bisq.security.protobuf.KeyBundleStore toProto() {
+    public bisq.security.protobuf.KeyBundleStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.security.protobuf.KeyBundleStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.security.protobuf.KeyBundleStore.newBuilder()
                 .setSecretUid(secretUid)
                 .putAllKeyBundleById(keyBundleById.entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey,
-                                entry -> entry.getValue().toProto())))
-                .build();
+                                entry -> entry.getValue().toProto(serializeForHash))));
     }
 
     public static KeyBundleStore fromProto(bisq.security.protobuf.KeyBundleStore proto) {

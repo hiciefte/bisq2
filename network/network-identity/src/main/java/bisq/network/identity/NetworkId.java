@@ -18,9 +18,9 @@
 package bisq.network.identity;
 
 import bisq.common.proto.NetworkProto;
-import bisq.common.util.StringUtils;
 import bisq.network.common.AddressByTransportTypeMap;
 import bisq.security.keys.PubKey;
+import com.google.common.base.Joiner;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -42,11 +42,15 @@ public final class NetworkId implements NetworkProto {
     }
 
     @Override
-    public bisq.network.identity.protobuf.NetworkId toProto() {
+    public bisq.network.identity.protobuf.NetworkId toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.identity.protobuf.NetworkId.Builder getBuilder(boolean serializeForHash) {
         return bisq.network.identity.protobuf.NetworkId.newBuilder()
-                .setAddressByNetworkTypeMap(addressByTransportTypeMap.toProto())
-                .setPubKey(pubKey.toProto())
-                .build();
+                .setAddressByNetworkTypeMap(addressByTransportTypeMap.toProto(serializeForHash))
+                .setPubKey(pubKey.toProto(serializeForHash));
     }
 
     public static NetworkId fromProto(bisq.network.identity.protobuf.NetworkId proto) {
@@ -63,8 +67,8 @@ public final class NetworkId implements NetworkProto {
     }
 
     public String getInfo() {
-        return StringUtils.truncate(getId(), 20) + " " +
-                StringUtils.truncate(addressByTransportTypeMap.values().toString()).replace("[", "");
+        return "ID: " + getId().substring(0, 8) + "; Addresses: " +
+                Joiner.on(", ").join(addressByTransportTypeMap.values());
     }
 
     @Override

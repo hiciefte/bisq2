@@ -37,6 +37,7 @@ import bisq.oracle_node.market_price.MarketPricePropagationService;
 import bisq.oracle_node.timestamp.TimestampService;
 import bisq.persistence.PersistenceService;
 import bisq.security.keys.KeyGeneration;
+import bisq.user.reputation.ReputationDataUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,7 +47,6 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -152,6 +152,7 @@ public class OracleNodeService implements Service {
 
         timestampService = new TimestampService(persistenceService,
                 networkService,
+                authorizedBondedRolesService,
                 authorizedPrivateKey,
                 authorizedPublicKey,
                 staticPublicKeysProvided);
@@ -171,6 +172,9 @@ public class OracleNodeService implements Service {
     @Override
     public CompletableFuture<Boolean> initialize() {
         log.info("initialize");
+
+        ReputationDataUtil.cleanupMap(networkService);
+
         Identity identity = identityService.getOrCreateDefaultIdentity();
 
         bisq1BridgeService.setIdentity(identity);
@@ -196,18 +200,19 @@ public class OracleNodeService implements Service {
                     BondedRoleType.ORACLE_NODE,
                     bondUserName,
                     signatureBase64,
-                    identityService.getOrCreateDefaultIdentity().getNetworkId().getAddressByTransportTypeMap(),
+                    Optional.of(identityService.getOrCreateDefaultIdentity().getNetworkId().getAddressByTransportTypeMap()),
                     networkId,
                     Optional.of(authorizedOracleNode),
                     staticPublicKeysProvided);
 
+            // TODO deactivate republishing until issues are resolved
             // Repeat 3 times at startup to republish to ensure the data gets well distributed
-            startupScheduler = Scheduler.run(() -> publishMyAuthorizedData(authorizedOracleNode, authorizedBondedRole, keyPair))
+           /* startupScheduler = Scheduler.run(() -> publishMyAuthorizedData(authorizedOracleNode, authorizedBondedRole, keyPair))
                     .repeated(1, 10, TimeUnit.SECONDS, 3);
 
-            // We have 30 days TTL for the data, we republish after 25 days to ensure the data does not expire
+            // We have 100 days TTL for the data, we republish after 50 days to ensure the data does not expire
             scheduler = Scheduler.run(() -> publishMyAuthorizedData(authorizedOracleNode, authorizedBondedRole, keyPair))
-                    .periodically(25, TimeUnit.DAYS);
+                    .periodically(50, TimeUnit.DAYS);*/
         }
 
         authorizedBondedRolesService.getBondedRoles().addObserver(new CollectionObserver<>() {

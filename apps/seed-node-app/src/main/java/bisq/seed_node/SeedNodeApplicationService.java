@@ -18,7 +18,7 @@
 package bisq.seed_node;
 
 import bisq.application.ApplicationService;
-import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
+import bisq.bonded_roles.BondedRolesService;
 import bisq.identity.IdentityService;
 import bisq.network.NetworkService;
 import bisq.network.NetworkServiceConfig;
@@ -45,8 +45,8 @@ public class SeedNodeApplicationService extends ApplicationService {
     protected final NetworkService networkService;
     protected final IdentityService identityService;
     protected final SecurityService securityService;
-    private final AuthorizedBondedRolesService authorizedBondedRolesService;
     private final SeedNodeService seedNodeService;
+    private final BondedRolesService bondedRolesService;
 
     public SeedNodeApplicationService(String[] args) {
         super("seed_node", args);
@@ -58,14 +58,17 @@ public class SeedNodeApplicationService extends ApplicationService {
         networkService = new NetworkService(networkServiceConfig,
                 persistenceService,
                 securityService.getKeyBundleService(),
-                securityService.getProofOfWorkService());
+                securityService.getHashCashProofOfWorkService(),
+                securityService.getEquihashProofOfWorkService());
 
         identityService = new IdentityService(persistenceService,
                 securityService.getKeyBundleService(),
                 networkService);
 
-        com.typesafe.config.Config bondedRolesConfig = getConfig("bondedRoles");
-        authorizedBondedRolesService = new AuthorizedBondedRolesService(networkService, bondedRolesConfig.getBoolean("ignoreSecurityManager"));
+        bondedRolesService = new BondedRolesService(BondedRolesService.Config.from(getConfig("bondedRoles")),
+                config.getVersion(),
+                persistenceService,
+                networkService);
 
         Optional<SeedNodeService.Config> seedNodeConfig = hasConfig("seedNode") ? Optional.of(SeedNodeService.Config.from(getConfig("seedNode"))) : Optional.empty();
         seedNodeService = new SeedNodeService(seedNodeConfig, networkService, identityService, securityService.getKeyBundleService());
@@ -76,11 +79,14 @@ public class SeedNodeApplicationService extends ApplicationService {
         return securityService.initialize()
                 .thenCompose(result -> networkService.initialize())
                 .thenCompose(result -> identityService.initialize())
-                .thenCompose(result -> authorizedBondedRolesService.initialize())
+                .thenCompose(result -> bondedRolesService.initialize())
                 .thenCompose(result -> seedNodeService.initialize())
                 .orTimeout(5, TimeUnit.MINUTES)
                 .whenComplete((success, throwable) -> {
                     if (success) {
+                        bondedRolesService.getDifficultyAdjustmentService().getMostRecentValueOrDefault().addObserver(mostRecentValueOrDefault -> {
+                            networkService.getNetworkLoadService().ifPresent(service -> service.setDifficultyAdjustmentFactor(mostRecentValueOrDefault));
+                        });
                         log.info("SeedNodeApplicationService initialized");
                     } else {
                         log.error("Initializing SeedNodeApplicationService failed", throwable);
@@ -90,14 +96,24 @@ public class SeedNodeApplicationService extends ApplicationService {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
+        log.info("shutdown");
         // We shut down services in opposite order as they are initialized
         return supplyAsync(() -> seedNodeService.shutdown()
-                .thenCompose(result -> authorizedBondedRolesService.shutdown())
+                .thenCompose(result -> bondedRolesService.shutdown())
                 .thenCompose(result -> identityService.shutdown())
                 .thenCompose(result -> networkService.shutdown())
                 .thenCompose(result -> securityService.shutdown())
                 .orTimeout(10, TimeUnit.SECONDS)
-                .handle((result, throwable) -> throwable == null)
+                .handle((result, throwable) -> {
+                    if (throwable != null) {
+                        log.error("Error at shutdown", throwable);
+                        return false;
+                    } else if (!result) {
+                        log.error("Shutdown resulted with false");
+                        return false;
+                    }
+                    return true;
+                })
                 .join());
     }
 }

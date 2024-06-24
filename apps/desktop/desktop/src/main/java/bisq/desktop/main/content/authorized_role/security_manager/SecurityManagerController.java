@@ -17,12 +17,16 @@
 
 package bisq.desktop.main.content.authorized_role.security_manager;
 
-import bisq.bonded_roles.alert.AlertService;
-import bisq.bonded_roles.alert.AlertType;
-import bisq.bonded_roles.alert.AuthorizedAlertData;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.bonded_roles.bonded_role.BondedRole;
+import bisq.bonded_roles.security_manager.alert.AlertService;
+import bisq.bonded_roles.security_manager.alert.AlertType;
+import bisq.bonded_roles.security_manager.alert.AuthorizedAlertData;
+import bisq.bonded_roles.security_manager.difficulty_adjustment.AuthorizedDifficultyAdjustmentData;
+import bisq.bonded_roles.security_manager.difficulty_adjustment.DifficultyAdjustmentService;
+import bisq.bonded_roles.security_manager.min_reputation_score.AuthorizedMinRequiredReputationScoreData;
+import bisq.bonded_roles.security_manager.min_reputation_score.MinRequiredReputationScoreService;
 import bisq.common.observable.Pin;
 import bisq.common.util.StringUtils;
 import bisq.desktop.ServiceProvider;
@@ -32,19 +36,19 @@ import bisq.desktop.common.view.Controller;
 import bisq.desktop.components.overlay.Popup;
 import bisq.desktop.main.content.authorized_role.info.RoleInfo;
 import bisq.i18n.Res;
+import bisq.network.p2p.node.network_load.NetworkLoad;
 import bisq.support.security_manager.SecurityManagerService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
+import bisq.user.reputation.ReputationScore;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
 
 import java.util.Optional;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class SecurityManagerController implements Controller {
@@ -56,14 +60,20 @@ public class SecurityManagerController implements Controller {
     private final AlertService alertService;
     private final UserProfileService userProfileService;
     private final AuthorizedBondedRolesService authorizedBondedRolesService;
-    private Pin userIdentityPin, alertsPin, bondedRoleSetPin;
-    private Subscription messagePin, requireVersionForTradingPin, minVersionPin, selectedBondedRolePin;
+    private final DifficultyAdjustmentService difficultyAdjustmentService;
+    private final MinRequiredReputationScoreService minRequiredReputationScoreService;
+    private Pin userIdentityPin, alertsPin, bondedRoleSetPin, difficultyAdjustmentListItemsPin,
+            minRequiredReputationScoreListItemsPin;
+    private Subscription messagePin, requireVersionForTradingPin, minVersionPin, selectedBondedRolePin,
+            difficultyAdjustmentPin, minRequiredReputationScorePin;
 
     public SecurityManagerController(ServiceProvider serviceProvider) {
         securityManagerService = serviceProvider.getSupportService().getSecurityManagerService();
         userIdentityService = serviceProvider.getUserService().getUserIdentityService();
         userProfileService = serviceProvider.getUserService().getUserProfileService();
         alertService = serviceProvider.getBondedRolesService().getAlertService();
+        difficultyAdjustmentService = serviceProvider.getBondedRolesService().getDifficultyAdjustmentService();
+        minRequiredReputationScoreService = serviceProvider.getBondedRolesService().getMinRequiredReputationScoreService();
         authorizedBondedRolesService = serviceProvider.getBondedRolesService().getAuthorizedBondedRolesService();
         RoleInfo roleInfo = new RoleInfo(serviceProvider);
         model = new SecurityManagerModel();
@@ -88,17 +98,39 @@ public class SecurityManagerController implements Controller {
         bondedRoleSetPin = FxBindings.<BondedRole, SecurityManagerView.BondedRoleListItem>bind(model.getBondedRoleListItems())
                 .map(bondedRole -> new SecurityManagerView.BondedRoleListItem(bondedRole, this))
                 .to(authorizedBondedRolesService.getBondedRoles());
+
+        difficultyAdjustmentListItemsPin = FxBindings.<AuthorizedDifficultyAdjustmentData, SecurityManagerView.DifficultyAdjustmentListItem>bind(model.getDifficultyAdjustmentListItems())
+                .map(SecurityManagerView.DifficultyAdjustmentListItem::new)
+                .to(difficultyAdjustmentService.getAuthorizedDifficultyAdjustmentDataSet());
+
+        model.getDifficultyAdjustmentFactor().set(difficultyAdjustmentService.getMostRecentValueOrDefault().get());
+        difficultyAdjustmentPin = EasyBind.subscribe(model.getDifficultyAdjustmentFactor(), difficultyAdjustmentFactor ->
+                model.getDifficultyAdjustmentFactorButtonDisabled().set(difficultyAdjustmentFactor == null ||
+                        !isValidDifficultyAdjustmentFactor(difficultyAdjustmentFactor.doubleValue())));
+
+        minRequiredReputationScoreListItemsPin = FxBindings.<AuthorizedMinRequiredReputationScoreData, SecurityManagerView.MinRequiredReputationScoreListItem>bind(model.getMinRequiredReputationScoreListItems())
+                .map(SecurityManagerView.MinRequiredReputationScoreListItem::new)
+                .to(minRequiredReputationScoreService.getAuthorizedMinRequiredReputationScoreDataSet());
+
+        model.getMinRequiredReputationScore().set(minRequiredReputationScoreService.getMostRecentValueOrDefault().get());
+        minRequiredReputationScorePin = EasyBind.subscribe(model.getMinRequiredReputationScore(), minRequiredReputationScore ->
+                model.getMinRequiredReputationScoreButtonDisabled().set(minRequiredReputationScore == null ||
+                        !isValidMinRequiredRequiredReputationScore(minRequiredReputationScore.doubleValue())));
     }
 
     @Override
     public void onDeactivate() {
         userIdentityPin.unbind();
         bondedRoleSetPin.unbind();
+        alertsPin.unbind();
+        difficultyAdjustmentListItemsPin.unbind();
+        minRequiredReputationScoreListItemsPin.unbind();
         messagePin.unsubscribe();
         requireVersionForTradingPin.unsubscribe();
         minVersionPin.unsubscribe();
         selectedBondedRolePin.unsubscribe();
-        alertsPin.unbind();
+        difficultyAdjustmentPin.unsubscribe();
+        minRequiredReputationScorePin.unsubscribe();
     }
 
     void onSelectAlertType(AlertType alertType) {
@@ -124,7 +156,8 @@ public class SecurityManagerController implements Controller {
         Optional<AuthorizedBondedRole> bannedRole = bondedRoleListItem == null ? Optional.empty() :
                 Optional.ofNullable(bondedRoleListItem.getBondedRole().getAuthorizedBondedRole());
         securityManagerService.publishAlert(model.getSelectedAlertType().get(),
-                        StringUtils.toOptional(model.getMessage().get()),
+                        StringUtils.toOptional(model.getHeadline().get()),
+                        StringUtils.toOptional(message),
                         model.getHaltTrading().get(),
                         model.getRequireVersionForTrading().get(),
                         StringUtils.toOptional(model.getMinVersion().get()),
@@ -135,6 +168,7 @@ public class SecurityManagerController implements Controller {
                             new Popup().error(throwable).show();
                         } else {
                             model.getSelectedAlertType().set(null);
+                            model.getHeadline().set(null);
                             model.getMessage().set(null);
                             model.getHaltTrading().set(false);
                             model.getRequireVersionForTrading().set(false);
@@ -145,15 +179,12 @@ public class SecurityManagerController implements Controller {
                 });
     }
 
-    boolean isRemoveButtonVisible(AuthorizedAlertData authorizedAlertData) {
-        if (userIdentityService.getSelectedUserIdentity() == null) {
-            return false;
-        }
+    boolean isRemoveDifficultyAdjustmentButtonVisible(AuthorizedAlertData authorizedAlertData) {
         return userIdentityService.getSelectedUserIdentity().getId().equals(authorizedAlertData.getSecurityManagerProfileId());
     }
 
     void onRemoveAlert(AuthorizedAlertData authorizedAlertData) {
-        UserIdentity userIdentity = checkNotNull(userIdentityService.getSelectedUserIdentity());
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
         securityManagerService.removeAlert(authorizedAlertData, userIdentity.getNetworkIdWithKeyPair().getKeyPair());
     }
 
@@ -176,6 +207,66 @@ public class SecurityManagerController implements Controller {
         return Res.get("authorizedRole.securityManager.alert.table.bannedRole.value", roleType, nickName, profileId);
     }
 
+    void onPublishDifficultyAdjustmentFactor() {
+        double difficultyAdjustmentFactor = model.getDifficultyAdjustmentFactor().get();
+        if (isValidDifficultyAdjustmentFactor(difficultyAdjustmentFactor)) {
+            securityManagerService.publishDifficultyAdjustment(difficultyAdjustmentFactor)
+                    .whenComplete((result, throwable) -> {
+                        UIThread.run(() -> {
+                            if (throwable != null) {
+                                new Popup().error(throwable).show();
+                            } else {
+                                model.getDifficultyAdjustmentFactor().set(difficultyAdjustmentService.getMostRecentValueOrDefault().get());
+                            }
+                        });
+                    });
+        }
+    }
+
+    void onPublishMinRequiredReputationScore() {
+        long minRequiredReputationScore = model.getMinRequiredReputationScore().get();
+        if (isValidMinRequiredRequiredReputationScore(minRequiredReputationScore)) {
+            securityManagerService.publishMinRequiredReputationScore(minRequiredReputationScore)
+                    .whenComplete((result, throwable) -> {
+                        UIThread.run(() -> {
+                            if (throwable != null) {
+                                new Popup().error(throwable).show();
+                            } else {
+                                model.getMinRequiredReputationScore().set(minRequiredReputationScoreService.getMostRecentValueOrDefault().get());
+                            }
+                        });
+                    });
+        }
+    }
+
+    private static boolean isValidDifficultyAdjustmentFactor(double difficultyAdjustmentFactor) {
+        return difficultyAdjustmentFactor >= 0 && difficultyAdjustmentFactor <= NetworkLoad.MAX_DIFFICULTY_ADJUSTMENT;
+    }
+
+    private static boolean isValidMinRequiredRequiredReputationScore(double minRequiredReputationScore) {
+        return minRequiredReputationScore >= 0 && minRequiredReputationScore <= ReputationScore.MAX_VALUE;
+    }
+
+    boolean isRemoveDifficultyAdjustmentButtonVisible(AuthorizedDifficultyAdjustmentData data) {
+        return userIdentityService.getSelectedUserIdentity().getId().equals(data.getSecurityManagerProfileId());
+    }
+
+    boolean isRemoveMinRequiredReputationScoreButtonVisible(AuthorizedMinRequiredReputationScoreData data) {
+        return userIdentityService.getSelectedUserIdentity().getId().equals(data.getSecurityManagerProfileId());
+    }
+
+    void onRemoveDifficultyAdjustmentListItem(SecurityManagerView.DifficultyAdjustmentListItem item) {
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
+        securityManagerService.removeDifficultyAdjustment(item.getData(), userIdentity.getNetworkIdWithKeyPair().getKeyPair());
+        model.getDifficultyAdjustmentFactor().set(difficultyAdjustmentService.getMostRecentValueOrDefault().get());
+    }
+
+    void onRemoveMinRequiredReputationScoreListItem(SecurityManagerView.MinRequiredReputationScoreListItem item) {
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
+        securityManagerService.removeMinRequiredReputationScore(item.getData(), userIdentity.getNetworkIdWithKeyPair().getKeyPair());
+        model.getMinRequiredReputationScore().set(minRequiredReputationScoreService.getMostRecentValueOrDefault().get());
+    }
+
     private void applySelectAlertType(AlertType alertType) {
         model.getSelectedAlertType().set(alertType);
         switch (alertType) {
@@ -193,6 +284,7 @@ public class SecurityManagerController implements Controller {
                 model.getHaltTrading().set(false);
                 model.getRequireVersionForTrading().set(false);
                 model.getMinVersion().set(null);
+                model.getHeadline().set(null);
                 model.getMessage().set(null);
                 break;
         }
@@ -201,9 +293,9 @@ public class SecurityManagerController implements Controller {
 
     private void updateSendButtonDisabled() {
         AlertType alertType = model.getSelectedAlertType().get();
-        boolean value = userIdentityService.getSelectedUserIdentity() == null || alertType == null;
-        if (value) {
-            model.getActionButtonDisabled().set(value);
+        boolean isInvalid = alertType == null;
+        if (isInvalid) {
+            model.getActionButtonDisabled().set(isInvalid);
             return;
         }
         boolean isMessageEmpty = StringUtils.isEmpty(model.getMessage().get());

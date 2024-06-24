@@ -38,12 +38,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
 
-import java.io.File;
 import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.security.KeyPair;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -71,9 +71,9 @@ public class NodeRegistrationController extends BondedRolesRegistrationControlle
         super.onActivate();
 
         addressInfoPin = EasyBind.subscribe(getNodesRegistrationModel().getAddressInfoJson(), addressInfo -> {
-            model.getAddressByNetworkType().clear();
             if (addressInfo != null) {
-                model.getAddressByNetworkType().putAll(addressByNetworkTypeFromJson(addressInfo));
+                AddressByTransportTypeMap map = addressByNetworkTypeFromJson(addressInfo);
+                model.setAddressByNetworkType(Optional.of(new AddressByTransportTypeMap(map)));
             }
         });
     }
@@ -90,23 +90,23 @@ public class NodeRegistrationController extends BondedRolesRegistrationControlle
 
     void onImportNodeAddress() {
         Path path = serviceProvider.getConfig().getBaseDir();
-        File file = FileChooserUtil.openFile(getView().getRoot().getScene(), path.toAbsolutePath().toString());
-        if (file != null) {
-            try {
-                String json = FileUtils.readStringFromFile(file);
-                checkArgument(StringUtils.isNotEmpty(json));
-                getNodesRegistrationModel().getAddressInfoJson().set(json);
-            } catch (Exception e) {
-                new Popup().error(e).show();
-            }
-        }
+        FileChooserUtil.openFile(getView().getRoot().getScene(), path.toAbsolutePath().toString())
+                .ifPresent(file -> {
+                    try {
+                        String json = FileUtils.readStringFromFile(file);
+                        checkArgument(StringUtils.isNotEmpty(json));
+                        getNodesRegistrationModel().getAddressInfoJson().set(json);
+                    } catch (Exception e) {
+                        new Popup().error(e).show();
+                    }
+                });
     }
 
     void onShowKeyPair() {
         getNodesRegistrationModel().getPubKey().set(null);
         getNodesRegistrationModel().getPrivKey().set(null);
 
-        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentityObservable().get();
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
         KeyPair keyPair = userIdentity.getNetworkIdWithKeyPair().getKeyPair();
         getNodesRegistrationModel().getPubKey().set(Hex.encode(keyPair.getPublic().getEncoded()));
         getNodesRegistrationModel().getPrivKey().set(Hex.encode(keyPair.getPrivate().getEncoded()));

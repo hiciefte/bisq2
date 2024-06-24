@@ -22,13 +22,11 @@ import bisq.common.proto.ProtoResolver;
 import bisq.common.proto.UnresolvableProtobufMessageException;
 import bisq.common.validation.NetworkDataValidation;
 import bisq.network.identity.NetworkId;
-import bisq.network.p2p.message.EnvelopePayloadMessage;
+import bisq.network.p2p.message.ExternalNetworkMessage;
 import bisq.network.p2p.services.confidential.ack.AckRequestingMessage;
 import bisq.network.p2p.services.data.storage.mailbox.MailboxMessage;
-import bisq.network.protobuf.ExternalNetworkMessage;
 import bisq.trade.bisq_easy.protocol.messages.BisqEasyTradeMessage;
 import bisq.trade.submarine.messages.SubmarineTradeMessage;
-import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -39,15 +37,17 @@ import lombok.extern.slf4j.Slf4j;
 @ToString
 @Getter
 @EqualsAndHashCode
-public abstract class TradeMessage implements MailboxMessage, AckRequestingMessage, Event {
+public abstract class TradeMessage implements MailboxMessage, ExternalNetworkMessage, AckRequestingMessage, Event {
     private final String id;
     private final String tradeId;
+    private final String protocolVersion;
     private final NetworkId sender;
     protected final NetworkId receiver;
 
-    protected TradeMessage(String id, String tradeId, NetworkId sender, NetworkId receiver) {
+    protected TradeMessage(String id, String tradeId, String protocolVersion, NetworkId sender, NetworkId receiver) {
         this.id = id;
         this.tradeId = tradeId;
+        this.protocolVersion = protocolVersion;
         this.sender = sender;
         this.receiver = receiver;
     }
@@ -58,22 +58,16 @@ public abstract class TradeMessage implements MailboxMessage, AckRequestingMessa
         NetworkDataValidation.validateTradeId(tradeId);
     }
 
-    public bisq.trade.protobuf.TradeMessage.Builder getTradeMessageBuilder() {
+    protected bisq.trade.protobuf.TradeMessage.Builder getTradeMessageBuilder(boolean serializeForHash) {
         return bisq.trade.protobuf.TradeMessage.newBuilder()
                 .setId(id)
                 .setTradeId(tradeId)
-                .setSender(sender.toProto())
-                .setReceiver(receiver.toProto());
+                .setProtocolVersion(protocolVersion)
+                .setSender(sender.toProto(serializeForHash))
+                .setReceiver(receiver.toProto(serializeForHash));
     }
 
-    @Override
-    public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-        return getNetworkMessageBuilder()
-                .setExternalNetworkMessage(ExternalNetworkMessage.newBuilder().setAny(Any.pack(toTradeMessageProto())))
-                .build();
-    }
-
-    protected abstract bisq.trade.protobuf.TradeMessage toTradeMessageProto();
+    abstract public bisq.trade.protobuf.TradeMessage.Builder getValueBuilder(boolean serializeForHash);
 
     public static TradeMessage fromProto(bisq.trade.protobuf.TradeMessage proto) {
         switch (proto.getMessageCase()) {
@@ -91,7 +85,7 @@ public abstract class TradeMessage implements MailboxMessage, AckRequestingMessa
         throw new UnresolvableProtobufMessageException(proto);
     }
 
-    public static ProtoResolver<EnvelopePayloadMessage> getNetworkMessageResolver() {
+    public static ProtoResolver<ExternalNetworkMessage> getNetworkMessageResolver() {
         return any -> {
             try {
                 return fromProto(any.unpack(bisq.trade.protobuf.TradeMessage.class));

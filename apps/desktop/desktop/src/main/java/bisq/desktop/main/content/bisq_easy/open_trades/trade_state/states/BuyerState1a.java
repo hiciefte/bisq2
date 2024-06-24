@@ -79,7 +79,8 @@ public class BuyerState1a extends BaseState {
         }
 
         private void onSendBtcAddress() {
-            sendSystemMessage(Res.get("bisqEasy.tradeState.info.buyer.phase1a.systemMessage"));
+            sendTradeLogMessage(Res.encode("bisqEasy.tradeState.info.buyer.phase1a.tradeLogMessage",
+                    model.getChannel().getMyUserIdentity().getUserName(), model.getBtcAddress().get()));
             bisqEasyTradeService.buyerSendBtcAddress(model.getBisqEasyTrade(), model.getBtcAddress().get());
         }
 
@@ -127,6 +128,7 @@ public class BuyerState1a extends BaseState {
             super.onViewAttached();
 
             btcAddress.textProperty().bindBidirectional(model.getBtcAddress());
+            btcAddress.validate();
             sendBtcAddressButton.disableProperty().bind(model.getSendBtcAddressButtonDisabled());
             sendBtcAddressButton.setOnAction(e -> controller.onSendBtcAddress());
             walletInfoButton.setOnAction(e -> controller.onOpenWalletHelp());

@@ -43,12 +43,14 @@ import static com.google.common.base.Preconditions.checkArgument;
 @EqualsAndHashCode
 @Getter
 public final class AuthorizedBondedReputationData implements AuthorizedDistributedData {
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_100_DAYS, HIGH_PRIORITY, getClass().getSimpleName());
     private final long amount;
-    private final long lockTime;
-    private final boolean staticPublicKeysProvided;
     private final long time;
     private final byte[] hash;
+    private final long lockTime;
+    @EqualsAndHashCode.Exclude
+    private final boolean staticPublicKeysProvided;
 
     public AuthorizedBondedReputationData(long amount, long time, byte[] hash, long lockTime, boolean staticPublicKeysProvided) {
         this.amount = amount;
@@ -69,14 +71,18 @@ public final class AuthorizedBondedReputationData implements AuthorizedDistribut
     }
 
     @Override
-    public bisq.user.protobuf.AuthorizedBondedReputationData toProto() {
+    public bisq.user.protobuf.AuthorizedBondedReputationData.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.AuthorizedBondedReputationData.newBuilder()
                 .setAmount(amount)
                 .setLockTime(lockTime)
                 .setTime(time)
                 .setHash(ByteString.copyFrom(hash))
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.user.protobuf.AuthorizedBondedReputationData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedBondedReputationData fromProto(bisq.user.protobuf.AuthorizedBondedReputationData proto) {
@@ -111,9 +117,9 @@ public final class AuthorizedBondedReputationData implements AuthorizedDistribut
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

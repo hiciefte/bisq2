@@ -19,6 +19,7 @@ package bisq.desktop.main.content.bisq_easy.open_trades.trade_state;
 
 import bisq.bisq_easy.NavigationTarget;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannel;
+import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannelService;
 import bisq.common.data.Triple;
 import bisq.common.observable.Pin;
 import bisq.desktop.ServiceProvider;
@@ -74,15 +75,21 @@ class TradePhaseBox {
         controller.model.reset();
     }
 
+    int getPhaseIndex() {
+        return controller.model.getPhaseIndex().get();
+    }
+
     private static class Controller implements bisq.desktop.common.view.Controller {
         private final Model model;
         @Getter
         private final View view;
         private final MediationRequestService mediationRequestService;
+        private final BisqEasyOpenTradeChannelService channelService;
         private Pin bisqEasyTradeStatePin, isInMediationPin;
 
         private Controller(ServiceProvider serviceProvider) {
             mediationRequestService = serviceProvider.getSupportService().getMediationRequestService();
+            channelService = serviceProvider.getChatService().getBisqEasyOpenTradeChannelService();
 
             model = new Model();
             view = new View(model, this);
@@ -218,15 +225,14 @@ class TradePhaseBox {
         void onReportToMediator() {
             OpenTradesUtils.reportToMediator(model.getSelectedChannel(),
                     model.getBisqEasyTrade().getContract(),
-                    mediationRequestService);
+                    mediationRequestService, channelService);
         }
 
         void onRequestMediation() {
             OpenTradesUtils.requestMediation(model.getSelectedChannel(),
                     model.getBisqEasyTrade().getContract(),
-                    mediationRequestService);
+                    mediationRequestService, channelService);
         }
-
     }
 
     @Getter
@@ -290,7 +296,7 @@ class TradePhaseBox {
             walletHelp = new Hyperlink(Res.get("bisqEasy.walletGuide.open"), ImageUtil.getImageViewById("icon-wallet"));
             walletHelp.setGraphicTextGap(5);
 
-            openTradeGuide = new Hyperlink(Res.get("bisqEasy.tradeGuide.open"), ImageUtil.getImageViewById("icon-help"));
+            openTradeGuide = new Hyperlink(Res.get("bisqEasy.tradeGuide.open"), ImageUtil.getImageViewById("icon-help-grey"));
             openTradeGuide.setGraphicTextGap(5);
 
             reportToMediator = new Hyperlink(Res.get("bisqEasy.tradeState.reportToMediator"), ImageUtil.getImageViewById("icon-report"));

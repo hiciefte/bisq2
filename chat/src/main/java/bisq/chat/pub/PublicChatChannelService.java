@@ -50,8 +50,6 @@ public abstract class PublicChatChannelService<M extends PublicChatMessage, C ex
 
     @Override
     public CompletableFuture<Boolean> initialize() {
-        log.info("initialize");
-
         maybeAddDefaultChannels();
 
         networkService.addDataServiceListener(this);
@@ -65,7 +63,6 @@ public abstract class PublicChatChannelService<M extends PublicChatMessage, C ex
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         networkService.removeDataServiceListener(this);
         return CompletableFuture.completedFuture(true);
     }
@@ -88,6 +85,9 @@ public abstract class PublicChatChannelService<M extends PublicChatMessage, C ex
         if (bannedUserService.isUserProfileBanned(message.getAuthorUserProfileId())) {
             return CompletableFuture.failedFuture(new RuntimeException());
         }
+        // Sender adds the message at sending to avoid the delayed display if using the received message from the network.
+        findChannel(message.getChannelId()).ifPresent(channel -> addMessage(message, channel));
+
         KeyPair keyPair = userIdentity.getNetworkIdWithKeyPair().getKeyPair();
         return userIdentityService.maybePublishUserProfile(userIdentity.getUserProfile(), keyPair)
                 .thenCompose(nil -> networkService.publishAuthenticatedData(message, keyPair));

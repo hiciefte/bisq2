@@ -19,6 +19,7 @@ package bisq.desktop.main.content.bisq_easy.open_trades.trade_state.states;
 
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannel;
 import bisq.desktop.ServiceProvider;
+import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.components.controls.MaterialTextArea;
 import bisq.desktop.components.controls.MaterialTextField;
 import bisq.desktop.components.controls.WrappingText;
@@ -68,7 +69,8 @@ public class BuyerState2a extends BaseState {
         }
 
         private void onConfirmFiatSent() {
-            sendSystemMessage(Res.get("bisqEasy.tradeState.info.buyer.phase2a.systemMessage", model.getQuoteCode()));
+            sendTradeLogMessage(Res.encode("bisqEasy.tradeState.info.buyer.phase2a.tradeLogMessage",
+                    model.getChannel().getMyUserIdentity().getUserName(), model.getQuoteCode()));
             bisqEasyTradeService.buyerConfirmFiatSent(model.getBisqEasyTrade());
         }
     }
@@ -113,7 +115,9 @@ public class BuyerState2a extends BaseState {
 
             headline.setText(Res.get("bisqEasy.tradeState.info.buyer.phase2a.headline", model.getFormattedQuoteAmount()));
             quoteAmount.setText(model.getFormattedQuoteAmount());
+            quoteAmount.getIconButton().setOnAction(e -> ClipboardUtil.copyToClipboard(model.getQuoteAmount()));
             account.setText(model.getBisqEasyTrade().getPaymentAccountData().get());
+            account.validate();
             confirmFiatSentButton.setText(Res.get("bisqEasy.tradeState.info.buyer.phase2a.confirmFiatSent", model.getFormattedQuoteAmount()));
             confirmFiatSentButton.setOnAction(e -> controller.onConfirmFiatSent());
         }
@@ -123,6 +127,7 @@ public class BuyerState2a extends BaseState {
             super.onViewDetached();
 
             confirmFiatSentButton.setOnAction(null);
+            quoteAmount.getIconButton().setOnAction(null);
         }
     }
 }

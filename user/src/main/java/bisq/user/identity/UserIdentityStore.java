@@ -28,9 +28,9 @@ import com.google.protobuf.Any;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -59,7 +59,7 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
     public UserIdentityStore() {
     }
 
-    private UserIdentityStore(@Nullable String selectedUserIdentityId,
+    private UserIdentityStore(String selectedUserIdentityId,
                               Set<UserIdentity> userIdentities,
                               long lastUserProfilePublishingDate) {
         this.userIdentities.setAll(userIdentities);
@@ -75,7 +75,7 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
         this.lastUserProfilePublishingDate = lastUserProfilePublishingDate;
     }
 
-    private UserIdentityStore(@Nullable String selectedUserIdentityId,
+    private UserIdentityStore(String selectedUserIdentityId,
                               Set<UserIdentity> userIdentities,
                               Optional<EncryptedData> encryptedData,
                               Optional<ScryptParameters> scryptParameters,
@@ -96,31 +96,36 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     @Override
-    public bisq.user.protobuf.UserIdentityStore toProto() {
+    public bisq.user.protobuf.UserIdentityStore.Builder getBuilder(boolean serializeForHash) {
         if (aesSecretKey.isPresent()) {
             long ts = System.currentTimeMillis();
             // We put the data we want to encrypt into a protobuf object.
-            bisq.user.protobuf.UserIdentityStore.Builder plainTextProtoBuilder = bisq.user.protobuf.UserIdentityStore.newBuilder()
-                    .addAllUserIdentities(userIdentities.stream().map(UserIdentity::toProto).collect(Collectors.toSet()));
-            Optional.ofNullable(getSelectedUserIdentityId()).ifPresent(plainTextProtoBuilder::setSelectedUserIdentityId);
-            bisq.user.protobuf.UserIdentityStore plainTextProto = plainTextProtoBuilder.build();
-            encryptedData = Optional.of(encryptPlainTextProto(plainTextProto));
+            encryptedData = Optional.of(encryptPlainTextProto(getPlainTextBuilder().build()));
 
             log.info("Encryption at toProto took {} ms", System.currentTimeMillis() - ts);
             checkArgument(scryptParameters.isPresent());
-            bisq.user.protobuf.UserIdentityStore.Builder builder = bisq.user.protobuf.UserIdentityStore.newBuilder()
-                    .setEncryptedData(encryptedData.get().toProto())
-                    .setScryptParameters(scryptParameters.get().toProto())
+            return bisq.user.protobuf.UserIdentityStore.newBuilder()
+                    .setEncryptedData(encryptedData.get().toProto(serializeForHash))
+                    .setScryptParameters(scryptParameters.get().toProto(serializeForHash))
                     .setLastUserProfilePublishingDate(lastUserProfilePublishingDate);
-            return builder.build();
         } else {
-            bisq.user.protobuf.UserIdentityStore.Builder builder = bisq.user.protobuf.UserIdentityStore.newBuilder()
-                    .addAllUserIdentities(userIdentities.stream().map(UserIdentity::toProto).collect(Collectors.toSet()));
-            Optional.ofNullable(getSelectedUserIdentityId()).ifPresent(builder::setSelectedUserIdentityId);
-            return builder
-                    .setLastUserProfilePublishingDate(lastUserProfilePublishingDate)
-                    .build();
+            return getPlainTextBuilder()
+                    .setLastUserProfilePublishingDate(lastUserProfilePublishingDate);
         }
+    }
+
+    private bisq.user.protobuf.UserIdentityStore.Builder getPlainTextBuilder() {
+        var builder = bisq.user.protobuf.UserIdentityStore.newBuilder()
+                .addAllUserIdentities(userIdentities.stream()
+                        .map(userIdentity -> userIdentity.toProto(false))
+                        .collect(Collectors.toSet()));
+        Optional.ofNullable(getSelectedUserIdentityId()).ifPresent(builder::setSelectedUserIdentityId);
+        return builder;
+    }
+
+    @Override
+    public bisq.user.protobuf.UserIdentityStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static UserIdentityStore fromProto(bisq.user.protobuf.UserIdentityStore proto) {
@@ -138,9 +143,7 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
             Set<UserIdentity> userIdentitySet = proto.getUserIdentitiesList().stream()
                     .map(UserIdentity::fromProto)
                     .collect(Collectors.toSet());
-            return new UserIdentityStore(selectedUserIdentityId,
-                    userIdentitySet,
-                    lastUserProfilePublishingDate);
+            return new UserIdentityStore(selectedUserIdentityId, userIdentitySet, lastUserProfilePublishingDate);
         }
     }
 
@@ -163,7 +166,7 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
     @Override
     public UserIdentityStore getClone() {
         return new UserIdentityStore(getSelectedUserIdentityId(),
-                userIdentities,
+                new HashSet<>(userIdentities),
                 encryptedData,
                 scryptParameters,
                 aesSecretKey,
@@ -220,11 +223,7 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
         checkArgument(scryptParameters.isPresent(), "scryptParameters must be present at encrypt.");
         long ts = System.currentTimeMillis();
         return CompletableFuture.supplyAsync(() -> {
-            bisq.user.protobuf.UserIdentityStore.Builder builder = bisq.user.protobuf.UserIdentityStore.newBuilder()
-                    .addAllUserIdentities(userIdentities.stream().map(UserIdentity::toProto).collect(Collectors.toSet()));
-            Optional.ofNullable(getSelectedUserIdentityId()).ifPresent(builder::setSelectedUserIdentityId);
-            bisq.user.protobuf.UserIdentityStore plainTextProto = builder.build();
-            EncryptedData encryptedData = encryptPlainTextProto(plainTextProto);
+            EncryptedData encryptedData = encryptPlainTextProto(getPlainTextBuilder().build());
             log.info("encrypt took {} ms", System.currentTimeMillis() - ts);
             return encryptedData;
         }).whenComplete((encrypted, throwable) -> {
@@ -287,7 +286,6 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
         return selectedUserIdentityObservable;
     }
 
-    @Nullable
     UserIdentity getSelectedUserIdentity() {
         return selectedUserIdentityObservable.get();
     }
@@ -297,11 +295,29 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
     }
 
     // We want to ensure that the selected object is the same as the one in the userIdentities set.
-    void setSelectedUserIdentity(@Nullable UserIdentity userIdentity) {
-        selectedUserIdentityObservable.set(userIdentities.stream()
+    void setSelectedUserIdentity(UserIdentity userIdentity) {
+        if (userIdentities.isEmpty()) {
+            log.error("userIdentities must not be empty. userIdentity={}", userIdentity);
+            return;
+        }
+
+        Optional<UserIdentity> optionalUserIdentity = userIdentities.stream()
                 .filter(e -> e.equals(userIdentity))
-                .findAny()
-                .orElse(null));
+                .findAny();
+        if (optionalUserIdentity.isPresent()) {
+            selectedUserIdentityObservable.set(optionalUserIdentity.get());
+        } else {
+            log.warn("Could not find user identity in userIdentities.\n" +
+                            "userIdentity={}\n" +
+                            "userIdentities={}",
+                    userIdentity, userIdentities);
+            if (selectedUserIdentityObservable.get() == null) {
+                log.warn("As selectedUserIdentity is null we select the fist found userIdentity from userIdentities.");
+                selectedUserIdentityObservable.set(userIdentities.stream().findFirst().orElseThrow());
+            } else {
+                log.warn("As selectedUserIdentity is not null we ignore the call.");
+            }
+        }
     }
 
     Optional<EncryptedData> getEncryptedData() {
@@ -324,16 +340,32 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
     // Private
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-    @Nullable
     private String getSelectedUserIdentityId() {
         return getSelectedUserIdentity() != null ? getSelectedUserIdentity().getId() : null;
     }
 
-    private void setSelectedUserIdentityId(@Nullable String selectedUserIdentityId) {
-        selectedUserIdentityObservable.set(userIdentities.stream()
-                .filter(userIdentity -> userIdentity.getId().equals(selectedUserIdentityId))
-                .findAny()
-                .orElse(null));
+    private void setSelectedUserIdentityId(String selectedUserIdentityId) {
+        if (userIdentities.isEmpty()) {
+            log.error("userIdentities must not be empty. userIdentity={}", selectedUserIdentityId);
+            return;
+        }
+        Optional<UserIdentity> optionalUserIdentity = userIdentities.stream()
+                .filter(e -> e.getId().equals(selectedUserIdentityId))
+                .findAny();
+        if (optionalUserIdentity.isPresent()) {
+            selectedUserIdentityObservable.set(optionalUserIdentity.get());
+        } else {
+            log.warn("Could not find user identity in userIdentities.\n" +
+                            "selectedUserIdentityId={}\n" +
+                            "userIdentities={}",
+                    selectedUserIdentityId, userIdentities);
+            if (selectedUserIdentityObservable.get() == null) {
+                log.warn("As selectedUserIdentity is null we select the fist found userIdentity from userIdentities.");
+                selectedUserIdentityObservable.set(userIdentities.stream().findFirst().orElseThrow());
+            } else {
+                log.warn("As selectedUserIdentity is not null we ignore the call.");
+            }
+        }
     }
 
     private void deleteAesSecretKey() {
@@ -351,11 +383,11 @@ public final class UserIdentityStore implements PersistableStore<UserIdentitySto
 
     private EncryptedData encryptPlainTextProto(bisq.user.protobuf.UserIdentityStore plainTextProto) {
         try {
-            byte[] plainText = ProtobufUtils.getByteArrayFromProto(Any.pack(plainTextProto));
+            byte[] plainText = Any.pack(plainTextProto).toByteArray();
             byte[] iv = AesGcm.generateIv().getIV();
             byte[] cipherText = AesGcm.encrypt(aesSecretKey.orElseThrow(), iv, plainText);
             return new EncryptedData(iv, cipherText);
-        } catch (IOException | GeneralSecurityException e) {
+        } catch (GeneralSecurityException e) {
             throw new RuntimeException(e);
         }
     }

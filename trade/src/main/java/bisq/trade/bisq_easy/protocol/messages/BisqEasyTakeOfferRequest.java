@@ -35,11 +35,12 @@ public final class BisqEasyTakeOfferRequest extends BisqEasyTradeMessage {
 
     public BisqEasyTakeOfferRequest(String id,
                                     String tradeId,
+                                    String protocolVersion,
                                     NetworkId sender,
                                     NetworkId receiver,
                                     BisqEasyContract bisqEasyContract,
                                     ContractSignatureData contractSignatureData) {
-        super(id, tradeId, sender, receiver);
+        super(id, tradeId, protocolVersion, sender, receiver);
 
         this.bisqEasyContract = bisqEasyContract;
         this.contractSignatureData = contractSignatureData;
@@ -53,14 +54,20 @@ public final class BisqEasyTakeOfferRequest extends BisqEasyTradeMessage {
     }
 
     @Override
-    protected bisq.trade.protobuf.TradeMessage toTradeMessageProto() {
-        return getTradeMessageBuilder()
-                .setBisqEasyTradeMessage(bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
-                        .setBisqEasyTakeOfferRequest(
-                                bisq.trade.protobuf.BisqEasyTakeOfferRequest.newBuilder()
-                                        .setBisqEasyContract(bisqEasyContract.toProto())
-                                        .setContractSignatureData(contractSignatureData.toProto())))
-                .build();
+    protected bisq.trade.protobuf.BisqEasyTradeMessage.Builder getBisqEasyTradeMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
+                .setBisqEasyTakeOfferRequest(toBisqEasyTakeOfferRequestProto(serializeForHash));
+    }
+
+    private bisq.trade.protobuf.BisqEasyTakeOfferRequest toBisqEasyTakeOfferRequestProto(boolean serializeForHash) {
+        bisq.trade.protobuf.BisqEasyTakeOfferRequest.Builder builder = getBisqEasyTakeOfferRequestBuilder(serializeForHash);
+        return resolveBuilder(builder, serializeForHash).build();
+    }
+
+    private bisq.trade.protobuf.BisqEasyTakeOfferRequest.Builder getBisqEasyTakeOfferRequestBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyTakeOfferRequest.newBuilder()
+                .setBisqEasyContract(bisqEasyContract.toProto(serializeForHash))
+                .setContractSignatureData(contractSignatureData.toProto(serializeForHash));
     }
 
     public static BisqEasyTakeOfferRequest fromProto(bisq.trade.protobuf.TradeMessage proto) {
@@ -68,6 +75,7 @@ public final class BisqEasyTakeOfferRequest extends BisqEasyTradeMessage {
         return new BisqEasyTakeOfferRequest(
                 proto.getId(),
                 proto.getTradeId(),
+                proto.getProtocolVersion(),
                 NetworkId.fromProto(proto.getSender()),
                 NetworkId.fromProto(proto.getReceiver()),
                 BisqEasyContract.fromProto(bisqEasyTakeOfferRequest.getBisqEasyContract()),

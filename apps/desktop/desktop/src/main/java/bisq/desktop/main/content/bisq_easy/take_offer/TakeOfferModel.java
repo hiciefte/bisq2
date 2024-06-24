@@ -19,7 +19,14 @@ package bisq.desktop.main.content.bisq_easy.take_offer;
 
 import bisq.bisq_easy.NavigationTarget;
 import bisq.desktop.common.view.NavigationModel;
-import javafx.beans.property.*;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +46,7 @@ public class TakeOfferModel extends NavigationModel {
     private final BooleanProperty takeOfferButtonVisible = new SimpleBooleanProperty();
     private final BooleanProperty backButtonVisible = new SimpleBooleanProperty();
     private final BooleanProperty showProgressBox = new SimpleBooleanProperty();
-    @Setter
-    private boolean priceVisible;
+    private final ObjectProperty<NavigationTarget> selectedChildTarget = new SimpleObjectProperty<>();
     @Setter
     private boolean amountVisible;
     @Setter
@@ -54,6 +60,6 @@ public class TakeOfferModel extends NavigationModel {
 
     @Override
     public NavigationTarget getDefaultNavigationTarget() {
-        return NavigationTarget.TAKE_OFFER_PRICE;
+        return NavigationTarget.TAKE_OFFER_AMOUNT;
     }
 }

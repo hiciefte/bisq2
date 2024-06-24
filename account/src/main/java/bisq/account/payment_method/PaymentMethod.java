@@ -43,6 +43,7 @@ import java.util.List;
 public abstract class PaymentMethod<R extends PaymentRail> implements Comparable<PaymentMethod<R>>, NetworkProto {
     public final static int MAX_NAME_LENGTH = 50;
 
+    // Only name is used for protobuf, thus we do not need to mark the other fields with ExcludeForHash.
     protected final String name;
 
     // We do not persist the paymentRail but still include it in EqualsAndHashCode.
@@ -97,11 +98,10 @@ public abstract class PaymentMethod<R extends PaymentRail> implements Comparable
     }
 
     @Override
-    public abstract bisq.account.protobuf.PaymentMethod toProto();
+    public abstract bisq.account.protobuf.PaymentMethod toProto(boolean serializeForHash);
 
-    protected bisq.account.protobuf.PaymentMethod.Builder getPaymentMethodBuilder() {
-        return bisq.account.protobuf.PaymentMethod.newBuilder()
-                .setName(name);
+    protected bisq.account.protobuf.PaymentMethod.Builder getPaymentMethodBuilder(boolean serializeForHash) {
+        return bisq.account.protobuf.PaymentMethod.newBuilder().setName(name);
     }
 
     public static PaymentMethod<? extends PaymentRail> fromProto(bisq.account.protobuf.PaymentMethod proto) {

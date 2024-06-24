@@ -18,6 +18,7 @@
 package bisq.network.p2p.services.data.inventory;
 
 import bisq.common.util.ByteUnit;
+import bisq.common.util.ExceptionUtil;
 import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
@@ -70,15 +71,27 @@ public class InventoryResponseService implements Node.Listener {
 
     private void handleInventoryRequest(InventoryRequest request, Connection connection) {
         InventoryFilter inventoryFilter = request.getInventoryFilter();
-        double size = ByteUnit.BYTE.toKB(inventoryFilter.toProto().getSerializedSize());
+        double size = ByteUnit.BYTE.toKB(inventoryFilter.getSerializedSize());
         log.info("Received an InventoryRequest from peer {}. Size: {} kb. Filter details: {}",
                 connection.getPeerAddress(), size, inventoryFilter.getDetails());
 
         InventoryFilterType inventoryFilterType = inventoryFilter.getInventoryFilterType();
         if (filterServiceMap.containsKey(inventoryFilterType)) {
             FilterService<? extends InventoryFilter> filterService = filterServiceMap.get(inventoryFilterType);
+            long ts = System.currentTimeMillis();
             Inventory inventory = filterService.createInventory(inventoryFilter);
-            NetworkService.NETWORK_IO_POOL.submit(() -> node.send(new InventoryResponse(inventory, request.getNonce()), connection));
+            NetworkService.NETWORK_IO_POOL.submit(() -> {
+                try {
+                    node.send(new InventoryResponse(inventory, request.getNonce()), connection);
+                    log.info("Successfully sent an InventoryResponse to peer {} with {} kb. Took {} ms",
+                            connection.getPeerAddress(),
+                            ByteUnit.BYTE.toKB(inventory.getSerializedSize()),
+                            System.currentTimeMillis() - ts);
+                } catch (Exception e) {
+                    log.warn("Error at sending InventoryResponse to {}. {}", connection.getPeerAddress(),
+                            ExceptionUtil.getMessageOrToString(e));
+                }
+            });
         } else {
             log.warn("We got an inventoryRequest with filterType {} which we do not support." +
                             "This should never happen if our feature entries are correct and if the peers code is executed as expected.",

@@ -17,6 +17,7 @@
 
 package bisq.bonded_roles.release;
 
+import bisq.bonded_roles.AuthorizedPubKeys;
 import bisq.common.application.DevMode;
 import bisq.common.proto.ProtoResolver;
 import bisq.common.proto.UnresolvableProtobufMessageException;
@@ -42,13 +43,8 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_100_DAYS;
 @Getter
 public final class ReleaseNotification implements AuthorizedDistributedData {
     public final static int MAX_MESSAGE_LENGTH = 10_000;
-    // FIXME
-    // TODO (Critical) add production keys
-    public static final Set<String> AUTHORIZED_PUBLIC_KEYS = Set.of(
-            // ReleaseManager1
-            "3056301006072a8648ce3d020106052b8104000a0342000498742bc67190380704173a3db345b7a7281a6d57fc754bd006740d99b8d5dcce8556034b61ce974ce95a708482d2921609d93b83361266fa209157ebc3f62983"
-    );
 
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_100_DAYS, HIGH_PRIORITY, getClass().getSimpleName());
     private final String id;
     private final long date;
@@ -57,8 +53,9 @@ public final class ReleaseNotification implements AuthorizedDistributedData {
     private final String releaseNotes;
     private final String versionString;
     private final String releaseManagerProfileId;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
-
+    @EqualsAndHashCode.Exclude  // transient are excluded by default but let's make it more explicit
     private transient final Version version;
 
     public ReleaseNotification(String id,
@@ -93,7 +90,7 @@ public final class ReleaseNotification implements AuthorizedDistributedData {
     }
 
     @Override
-    public bisq.bonded_roles.protobuf.ReleaseNotification toProto() {
+    public bisq.bonded_roles.protobuf.ReleaseNotification.Builder getBuilder(boolean serializeForHash) {
         return bisq.bonded_roles.protobuf.ReleaseNotification.newBuilder()
                 .setId(id)
                 .setDate(date)
@@ -102,8 +99,12 @@ public final class ReleaseNotification implements AuthorizedDistributedData {
                 .setReleaseNotes(releaseNotes)
                 .setVersionString(versionString)
                 .setReleaseManagerProfileId(releaseManagerProfileId)
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.bonded_roles.protobuf.ReleaseNotification toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static ReleaseNotification fromProto(bisq.bonded_roles.protobuf.ReleaseNotification proto) {
@@ -130,9 +131,9 @@ public final class ReleaseNotification implements AuthorizedDistributedData {
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AUTHORIZED_PUBLIC_KEYS;
+            return AuthorizedPubKeys.RELEASE_MANAGER_PUB_KEYS;
         }
     }
 

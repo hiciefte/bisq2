@@ -17,8 +17,10 @@
 
 package bisq.network.p2p.node.handshake;
 
+import bisq.common.encoding.Hex;
 import bisq.common.util.StringUtils;
 import bisq.network.common.Address;
+import bisq.network.common.DefaultPeerSocket;
 import bisq.network.common.PeerSocket;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.network.p2p.message.NetworkEnvelope;
@@ -29,9 +31,8 @@ import bisq.network.p2p.node.authorization.AuthorizationToken;
 import bisq.network.p2p.node.envelope.NetworkEnvelopeSocket;
 import bisq.network.p2p.node.network_load.ConnectionMetrics;
 import bisq.network.p2p.node.network_load.NetworkLoad;
-import bisq.network.p2p.services.peergroup.BanList;
+import bisq.network.p2p.services.peer_group.BanList;
 import bisq.security.keys.KeyBundle;
-import bisq.tor.TorSocket;
 import com.google.protobuf.ByteString;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -40,9 +41,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Optional;
 
+import static bisq.network.p2p.node.ConnectionException.Reason.*;
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
@@ -91,15 +93,23 @@ public final class ConnectionHandshake {
         }
 
         @Override
-        public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-            var builder = bisq.network.protobuf.ConnectionHandshake.Request.newBuilder()
-                    .setCapability(capability.toProto())
-                    .setNetworkLoad(networkLoad.toProto())
+        public bisq.network.protobuf.EnvelopePayloadMessage.Builder getBuilder(boolean serializeForHash) {
+            return newEnvelopePayloadMessageBuilder().setConnectionHandshakeRequest(toValueProto(serializeForHash));
+        }
+
+        @Override
+        public bisq.network.protobuf.ConnectionHandshake.Request toValueProto(boolean serializeForHash) {
+            return resolveValueProto(serializeForHash);
+        }
+
+        @Override
+        public bisq.network.protobuf.ConnectionHandshake.Request.Builder getValueBuilder(boolean serializeForHash) {
+            bisq.network.protobuf.ConnectionHandshake.Request.Builder builder = bisq.network.protobuf.ConnectionHandshake.Request.newBuilder()
+                    .setCapability(capability.toProto(serializeForHash))
+                    .setNetworkLoad(networkLoad.toProto(serializeForHash))
                     .setSignatureDate(signatureDate);
             addressOwnershipProof.ifPresent(e -> builder.setAddressOwnershipProof(ByteString.copyFrom(e)));
-            return getNetworkMessageBuilder()
-                    .setConnectionHandshakeRequest(builder.build())
-                    .build();
+            return builder;
         }
 
         public static Request fromProto(bisq.network.protobuf.ConnectionHandshake.Request proto) {
@@ -134,12 +144,20 @@ public final class ConnectionHandshake {
         }
 
         @Override
-        public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-            return getNetworkMessageBuilder().setConnectionHandshakeResponse(
-                            bisq.network.protobuf.ConnectionHandshake.Response.newBuilder()
-                                    .setCapability(capability.toProto())
-                                    .setNetworkLoad(networkLoad.toProto()))
-                    .build();
+        public bisq.network.protobuf.EnvelopePayloadMessage.Builder getBuilder(boolean serializeForHash) {
+            return newEnvelopePayloadMessageBuilder().setConnectionHandshakeResponse(toValueProto(serializeForHash));
+        }
+
+        @Override
+        public bisq.network.protobuf.ConnectionHandshake.Response toValueProto(boolean serializeForHash) {
+            return resolveValueProto(serializeForHash);
+        }
+
+        @Override
+        public bisq.network.protobuf.ConnectionHandshake.Response.Builder getValueBuilder(boolean serializeForHash) {
+            return bisq.network.protobuf.ConnectionHandshake.Response.newBuilder()
+                    .setCapability(capability.toProto(serializeForHash))
+                    .setNetworkLoad(networkLoad.toProto(serializeForHash));
         }
 
         public static Response fromProto(bisq.network.protobuf.ConnectionHandshake.Response proto) {
@@ -184,7 +202,7 @@ public final class ConnectionHandshake {
             // socket.setSoLinger(true, 100);
             socket.setSoTimeout(socketTimeout);
 
-            PeerSocket peerSocket = new TorSocket(socket);
+            PeerSocket peerSocket = new DefaultPeerSocket(socket);
             this.networkEnvelopeSocket = new NetworkEnvelopeSocket(peerSocket);
         } catch (IOException e) {
             e.printStackTrace();
@@ -203,9 +221,10 @@ public final class ConnectionHandshake {
             Request request = new Request(capability, signature, myNetworkLoad, signatureDate);
             // As we do not know he peers load yet, we use the NetworkLoad.INITIAL_LOAD
             AuthorizationToken token = authorizationService.createToken(request,
-                    NetworkLoad.INITIAL_LOAD,
+                    NetworkLoad.INITIAL_NETWORK_LOAD,
                     peerAddress.getFullAddress(),
-                    0);
+                    0,
+                    new ArrayList<>());
             NetworkEnvelope requestNetworkEnvelope = new NetworkEnvelope(token, request);
             long ts = System.currentTimeMillis();
             networkEnvelopeSocket.send(requestNetworkEnvelope);
@@ -213,7 +232,8 @@ public final class ConnectionHandshake {
 
             bisq.network.protobuf.NetworkEnvelope responseProto = networkEnvelopeSocket.receiveNextEnvelope();
             if (responseProto == null) {
-                throw new ConnectionException("Response NetworkEnvelope protobuf is null");
+                throw new ConnectionException(PROTOBUF_IS_NULL,
+                        "Response NetworkEnvelope protobuf is null. peerAddress=" + peerAddress);
             }
 
             long startDeserializeTs = System.currentTimeMillis();
@@ -226,8 +246,9 @@ public final class ConnectionHandshake {
                         responseNetworkEnvelope);
             }
             Response response = (Response) responseNetworkEnvelope.getEnvelopePayloadMessage();
-            if (banList.isBanned(response.getCapability().getAddress())) {
-                throw new ConnectionException("Peers address is in quarantine. response=" + response);
+            Address address = response.getCapability().getAddress();
+            if (banList.isBanned(address)) {
+                throw new ConnectionException(ADDRESS_BANNED, "PeerAddress is banned. address=" + address);
             }
 
             boolean isAuthorized = authorizationService.isAuthorized(response,
@@ -237,7 +258,7 @@ public final class ConnectionHandshake {
                     myAddress.getFullAddress());
 
             if (!isAuthorized) {
-                throw new ConnectionException("Request authorization failed. request=" + request);
+                throw new ConnectionException(AUTHORIZATION_FAILED, "ConnectionHandshake.Response authorization failed at outbound connection attempt. AuthorizationToken=" + responseNetworkEnvelope.getAuthorizationToken());
             }
 
             connectionMetrics.onReceived(responseNetworkEnvelope, deserializeTime);
@@ -266,7 +287,8 @@ public final class ConnectionHandshake {
             ConnectionMetrics connectionMetrics = new ConnectionMetrics();
             bisq.network.protobuf.NetworkEnvelope requestProto = networkEnvelopeSocket.receiveNextEnvelope();
             if (requestProto == null) {
-                throw new ConnectionException("Request NetworkEnvelope protobuf is null");
+                throw new ConnectionException(PROTOBUF_IS_NULL,
+                        "Request NetworkEnvelope protobuf is null");
             }
             long ts = System.currentTimeMillis();
             NetworkEnvelope requestNetworkEnvelope = NetworkEnvelope.fromProto(requestProto);
@@ -279,9 +301,10 @@ public final class ConnectionHandshake {
                         requestNetworkEnvelope);
             }
             Request request = (Request) requestNetworkEnvelope.getEnvelopePayloadMessage();
-            Address peerAddress = request.getCapability().getAddress();
+            Capability requestersCapability = request.getCapability();
+            Address peerAddress = requestersCapability.getAddress();
             if (banList.isBanned(peerAddress)) {
-                throw new ConnectionException("Peers address is in quarantine. request=" + request);
+                throw new ConnectionException(ADDRESS_BANNED, "PeerAddress is banned. address=" + peerAddress);
             }
 
             Address myAddress = capability.getAddress();
@@ -289,31 +312,33 @@ public final class ConnectionHandshake {
             // AuthorizationToken.
             boolean isAuthorized = authorizationService.isAuthorized(request,
                     requestNetworkEnvelope.getAuthorizationToken(),
-                    NetworkLoad.INITIAL_LOAD,
+                    NetworkLoad.INITIAL_NETWORK_LOAD,
                     StringUtils.createUid(),
                     myAddress.getFullAddress());
-            if (isAuthorized) {
-                log.info("Peer {} proofed ownership of its onion address successfully.", peerAddress.getFullAddress());
-            } else {
-                throw new ConnectionException("Request authorization failed. request=" + request);
+            if (!isAuthorized) {
+                throw new ConnectionException(AUTHORIZATION_FAILED, "Authorization of inbound connection request failed. AuthorizationToken=" + requestNetworkEnvelope.getAuthorizationToken());
             }
 
             if (!OnionAddressValidation.verify(myAddress, peerAddress, request.getSignatureDate(), request.getAddressOwnershipProof())) {
-                throw new ConnectionException("Peer couldn't proof its onion address: " + peerAddress.getFullAddress() +
-                        ", Proof: " + Arrays.toString(request.getAddressOwnershipProof().orElseThrow()));
+                throw new ConnectionException(ONION_ADDRESS_VERIFICATION_FAILED, "Peer couldn't proof its onion address: " + peerAddress.getFullAddress() +
+                        ", Proof: " + Hex.encode(request.getAddressOwnershipProof().orElseThrow()));
             }
 
-            log.debug("Clients capability {}, load={}", request.getCapability(), request.getNetworkLoad());
+            log.debug("Clients capability {}, load={}", requestersCapability, request.getNetworkLoad());
             connectionMetrics.onReceived(requestNetworkEnvelope, deserializeTime);
 
             Response response = new Response(capability, myNetworkLoad);
-            AuthorizationToken token = authorizationService.createToken(response, request.getNetworkLoad(), peerAddress.getFullAddress(), 0);
+            AuthorizationToken token = authorizationService.createToken(response,
+                    request.getNetworkLoad(),
+                    peerAddress.getFullAddress(),
+                    0,
+                    requestersCapability.getFeatures());
             NetworkEnvelope responseNetworkEnvelope = new NetworkEnvelope(token, response);
             long startSendTs = System.currentTimeMillis();
             networkEnvelopeSocket.send(responseNetworkEnvelope);
             connectionMetrics.onSent(responseNetworkEnvelope, System.currentTimeMillis() - startSendTs);
             connectionMetrics.addRtt(System.currentTimeMillis() - ts);
-            return new Result(request.getCapability(), request.getNetworkLoad(), connectionMetrics);
+            return new Result(requestersCapability, request.getNetworkLoad(), connectionMetrics);
         } catch (Exception e) {
             try {
                 networkEnvelopeSocket.close();

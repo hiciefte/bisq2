@@ -37,11 +37,12 @@ public final class BisqEasyReportErrorMessage extends BisqEasyTradeMessage {
 
     public BisqEasyReportErrorMessage(String id,
                                       String tradeId,
+                                      String protocolVersion,
                                       NetworkId sender,
                                       NetworkId receiver,
                                       String errorMessage,
                                       String stackTrace) {
-        super(id, tradeId, sender, receiver);
+        super(id, tradeId, protocolVersion, sender, receiver);
         this.errorMessage = errorMessage;
         this.stackTrace = stackTrace;
 
@@ -57,14 +58,20 @@ public final class BisqEasyReportErrorMessage extends BisqEasyTradeMessage {
     }
 
     @Override
-    protected bisq.trade.protobuf.TradeMessage toTradeMessageProto() {
-        return getTradeMessageBuilder()
-                .setBisqEasyTradeMessage(bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
-                        .setBisqEasyReportErrorMessage(
-                                bisq.trade.protobuf.BisqEasyReportErrorMessage.newBuilder()
-                                        .setErrorMessage(errorMessage)
-                                        .setStackTrace(stackTrace)))
-                .build();
+    protected bisq.trade.protobuf.BisqEasyTradeMessage.Builder getBisqEasyTradeMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
+                .setBisqEasyReportErrorMessage(toBisqEasyReportErrorMessageProto(serializeForHash));
+    }
+
+    private bisq.trade.protobuf.BisqEasyReportErrorMessage toBisqEasyReportErrorMessageProto(boolean serializeForHash) {
+        bisq.trade.protobuf.BisqEasyReportErrorMessage.Builder builder = getBisqEasyReportErrorMessageBuilder(serializeForHash);
+        return resolveBuilder(builder, serializeForHash).build();
+    }
+
+    private bisq.trade.protobuf.BisqEasyReportErrorMessage.Builder getBisqEasyReportErrorMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyReportErrorMessage.newBuilder()
+                .setErrorMessage(errorMessage)
+                .setStackTrace(stackTrace);
     }
 
     public static BisqEasyReportErrorMessage fromProto(bisq.trade.protobuf.TradeMessage proto) {
@@ -72,6 +79,7 @@ public final class BisqEasyReportErrorMessage extends BisqEasyTradeMessage {
         return new BisqEasyReportErrorMessage(
                 proto.getId(),
                 proto.getTradeId(),
+                proto.getProtocolVersion(),
                 NetworkId.fromProto(proto.getSender()),
                 NetworkId.fromProto(proto.getReceiver()),
                 bisqEasyReportErrorMessage.getErrorMessage(),

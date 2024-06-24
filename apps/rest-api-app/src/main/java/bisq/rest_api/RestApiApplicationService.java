@@ -60,7 +60,6 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 @Getter
 @Slf4j
 public class RestApiApplicationService extends ApplicationService {
-
     public enum State {
         INITIALIZE_APP,
         INITIALIZE_NETWORK,
@@ -110,7 +109,8 @@ public class RestApiApplicationService extends ApplicationService {
                 getConfig("network")),
                 persistenceService,
                 securityService.getKeyBundleService(),
-                securityService.getProofOfWorkService());
+                securityService.getHashCashProofOfWorkService(),
+                securityService.getEquihashProofOfWorkService());
 
         identityService = new IdentityService(persistenceService,
                 securityService.getKeyBundleService(),
@@ -127,10 +127,10 @@ public class RestApiApplicationService extends ApplicationService {
 
         userService = new UserService(UserService.Config.from(getConfig("user")),
                 persistenceService,
+                securityService,
                 identityService,
                 networkService,
-                bondedRolesService,
-                securityService.getProofOfWorkService());
+                bondedRolesService);
 
         settingsService = new SettingsService(persistenceService);
 
@@ -139,7 +139,6 @@ public class RestApiApplicationService extends ApplicationService {
         offerService = new OfferService(networkService, identityService, persistenceService);
 
         chatService = new ChatService(persistenceService,
-                securityService,
                 networkService,
                 userService,
                 settingsService,
@@ -215,6 +214,11 @@ public class RestApiApplicationService extends ApplicationService {
                     if (throwable == null) {
                         if (success) {
                             setState(State.APP_INITIALIZED);
+
+                            bondedRolesService.getDifficultyAdjustmentService().getMostRecentValueOrDefault().addObserver(mostRecentValueOrDefault -> {
+                                networkService.getNetworkLoadService().ifPresent(service -> service.setDifficultyAdjustmentFactor(mostRecentValueOrDefault));
+                            });
+
                             log.info("ApplicationService initialized");
                         } else {
                             setState(State.FAILED);

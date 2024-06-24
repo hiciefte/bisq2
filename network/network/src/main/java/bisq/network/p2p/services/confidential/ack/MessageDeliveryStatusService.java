@@ -1,7 +1,25 @@
+/*
+ * This file is part of Bisq.
+ *
+ * Bisq is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * Bisq is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package bisq.network.p2p.services.confidential.ack;
 
 import bisq.common.observable.Observable;
 import bisq.common.observable.map.ObservableHashMap;
+import bisq.common.timer.Scheduler;
 import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
 import bisq.network.identity.NetworkIdWithKeyPair;
@@ -15,9 +33,11 @@ import bisq.security.keys.KeyBundleService;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -26,10 +46,13 @@ import java.util.stream.Collectors;
  * relevant delivery state of all transports.
  * This service depends on the ConfidentialMessageService is only enabled if the ServiceNode.Service.ACK and
  * the ServiceNode.Service.CONFIDENTIAL are set in the config.
+ * <br/>
  */
 @Slf4j
 @Getter
 public class MessageDeliveryStatusService implements PersistenceClient<MessageDeliveryStatusStore>, ConfidentialMessageService.Listener {
+    private static final long MAX_AGE = TimeUnit.DAYS.toMillis(30);
+
     private final MessageDeliveryStatusStore persistableStore = new MessageDeliveryStatusStore();
     private final Persistence<MessageDeliveryStatusStore> persistence;
     private final KeyBundleService keyBundleService;
@@ -45,8 +68,21 @@ public class MessageDeliveryStatusService implements PersistenceClient<MessageDe
         persistence = persistenceService.getOrCreatePersistence(this, DbSubDirectory.SETTINGS, persistableStore);
     }
 
+    @Override
+    public MessageDeliveryStatusStore prunePersisted(MessageDeliveryStatusStore persisted) {
+        long cutOffDate = System.currentTimeMillis() - MAX_AGE;
+        Map<String, Long> creationDateByMessageId = new HashMap<>(persisted.getCreationDateByMessageId());
+        Map<String, Observable<MessageDeliveryStatus>> prunedMessageDeliveryStatusByMessageId = persisted.getMessageDeliveryStatusByMessageId().entrySet().stream()
+                .filter(e -> creationDateByMessageId.containsKey(e.getKey()) && creationDateByMessageId.get(e.getKey()) > cutOffDate)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, Long> prunedCreationDateByMessageId = persisted.getCreationDateByMessageId().entrySet().stream()
+                .filter(e -> creationDateByMessageId.containsKey(e.getKey()) && creationDateByMessageId.get(e.getKey()) > cutOffDate)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        return new MessageDeliveryStatusStore(prunedMessageDeliveryStatusByMessageId, prunedCreationDateByMessageId);
+    }
+
     public void initialize() {
-        checkPending();
+        Scheduler.run(this::checkPending).after(1000);
 
         networkService.addConfidentialMessageListener(this);
     }
@@ -54,6 +90,7 @@ public class MessageDeliveryStatusService implements PersistenceClient<MessageDe
     public void shutdown() {
         networkService.removeConfidentialMessageListener(this);
     }
+
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // ConfidentialMessageService.Listener
@@ -87,6 +124,7 @@ public class MessageDeliveryStatusService implements PersistenceClient<MessageDe
 
                 observableStatus.set(status);
             } else {
+                persistableStore.getCreationDateByMessageId().putIfAbsent(messageId, System.currentTimeMillis());
                 messageDeliveryStatusByMessageId.put(messageId, new Observable<>(status));
             }
             log.info("Persist MessageDeliveryStatus {} with message ID {}",
@@ -125,6 +163,7 @@ public class MessageDeliveryStatusService implements PersistenceClient<MessageDe
                     observableStatus.set(MessageDeliveryStatus.MAILBOX_MSG_RECEIVED);
                 }
             } else {
+                persistableStore.getCreationDateByMessageId().putIfAbsent(messageId, System.currentTimeMillis());
                 messageDeliveryStatusByMessageId.put(messageId, new Observable<>(MessageDeliveryStatus.ACK_RECEIVED));
             }
             log.info("Received AckMessage for message with ID {} and set status to {}",
@@ -156,7 +195,10 @@ public class MessageDeliveryStatusService implements PersistenceClient<MessageDe
                         e.getValue().get() == MessageDeliveryStatus.SENT ||
                         e.getValue().get() == MessageDeliveryStatus.TRY_ADD_TO_MAILBOX)
                 .collect(Collectors.toSet());
-        pendingItems.forEach(e -> persistableStore.getMessageDeliveryStatusByMessageId().get(e.getKey()).set(MessageDeliveryStatus.FAILED));
-        persist();
+        if (!pendingItems.isEmpty()) {
+            log.warn("We have pending messages which have not been successfully sent. pendingItems={}", pendingItems);
+            pendingItems.forEach(e -> persistableStore.getMessageDeliveryStatusByMessageId().get(e.getKey()).set(MessageDeliveryStatus.FAILED));
+            persist();
+        }
     }
 }

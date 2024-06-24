@@ -22,10 +22,12 @@ import bisq.application.ApplicationService;
 import bisq.application.ShutDownHandler;
 import bisq.bisq_easy.BisqEasyService;
 import bisq.bonded_roles.BondedRolesService;
+import bisq.bonded_roles.security_manager.alert.AlertNotificationsService;
 import bisq.chat.ChatService;
 import bisq.common.application.Service;
 import bisq.common.observable.Observable;
 import bisq.common.util.CompletableFutureUtils;
+import bisq.common.util.ExceptionUtil;
 import bisq.contract.ContractService;
 import bisq.desktop.ServiceProvider;
 import bisq.desktop.State;
@@ -35,6 +37,8 @@ import bisq.network.NetworkServiceConfig;
 import bisq.offer.OfferService;
 import bisq.presentation.notifications.SendNotificationService;
 import bisq.security.SecurityService;
+import bisq.settings.DontShowAgainService;
+import bisq.settings.FavouriteMarketsService;
 import bisq.settings.SettingsService;
 import bisq.support.SupportService;
 import bisq.trade.TradeService;
@@ -63,10 +67,17 @@ import static java.util.concurrent.CompletableFuture.supplyAsync;
 
 @Slf4j
 public class DesktopApplicationService extends ApplicationService {
+    public static final long STARTUP_TIMEOUT_SEC = 300;
+    public static final long SHUTDOWN_TIMEOUT_SEC = 10;
+
     @Getter
     private final ServiceProvider serviceProvider;
     @Getter
     private final Observable<State> state = new Observable<>(State.INITIALIZE_APP);
+    @Getter
+    private final Observable<String> shutDownErrorMessage = new Observable<>();
+    @Getter
+    private final Observable<String> startupErrorMessage = new Observable<>();
 
     private final SecurityService securityService;
     private final Optional<WalletService> walletService;
@@ -84,6 +95,9 @@ public class DesktopApplicationService extends ApplicationService {
     private final TradeService tradeService;
     private final UpdaterService updaterService;
     private final BisqEasyService bisqEasyService;
+    private final AlertNotificationsService alertNotificationsService;
+    private final FavouriteMarketsService favouriteMarketsService;
+    private final DontShowAgainService dontShowAgainService;
 
     public DesktopApplicationService(String[] args, ShutDownHandler shutDownHandler) {
         super("desktop", args);
@@ -108,7 +122,8 @@ public class DesktopApplicationService extends ApplicationService {
                 getConfig("network")),
                 persistenceService,
                 securityService.getKeyBundleService(),
-                securityService.getProofOfWorkService());
+                securityService.getHashCashProofOfWorkService(),
+                securityService.getEquihashProofOfWorkService());
 
         identityService = new IdentityService(persistenceService,
                 securityService.getKeyBundleService(),
@@ -125,10 +140,10 @@ public class DesktopApplicationService extends ApplicationService {
 
         userService = new UserService(UserService.Config.from(getConfig("user")),
                 persistenceService,
+                securityService,
                 identityService,
                 networkService,
-                bondedRolesService,
-                securityService.getProofOfWorkService());
+                bondedRolesService);
 
         settingsService = new SettingsService(persistenceService);
 
@@ -137,7 +152,6 @@ public class DesktopApplicationService extends ApplicationService {
         offerService = new OfferService(networkService, identityService, persistenceService);
 
         chatService = new ChatService(persistenceService,
-                securityService,
                 networkService,
                 userService,
                 settingsService,
@@ -171,6 +185,12 @@ public class DesktopApplicationService extends ApplicationService {
                 sendNotificationService,
                 tradeService);
 
+        alertNotificationsService = new AlertNotificationsService(settingsService, bondedRolesService.getAlertService());
+
+        favouriteMarketsService = new FavouriteMarketsService(settingsService);
+
+        dontShowAgainService = new DontShowAgainService(settingsService);
+
         // TODO (refactor, low prio): Not sure if ServiceProvider is still needed as we added BisqEasyService which exposes most of the services.
         serviceProvider = new ServiceProvider(shutDownHandler,
                 getConfig(),
@@ -190,7 +210,10 @@ public class DesktopApplicationService extends ApplicationService {
                 sendNotificationService,
                 tradeService,
                 updaterService,
-                bisqEasyService);
+                bisqEasyService,
+                alertNotificationsService,
+                favouriteMarketsService,
+                dontShowAgainService);
     }
 
     @Override
@@ -230,12 +253,15 @@ public class DesktopApplicationService extends ApplicationService {
                 .thenCompose(result -> settingsService.initialize())
                 .thenCompose(result -> offerService.initialize())
                 .thenCompose(result -> chatService.initialize())
-                .thenCompose(result -> sendNotificationService.initialize()) // We initialize after chatService to avoid flooding the notification center
+                .thenCompose(result -> sendNotificationService.initialize())
                 .thenCompose(result -> supportService.initialize())
                 .thenCompose(result -> tradeService.initialize())
                 .thenCompose(result -> updaterService.initialize())
                 .thenCompose(result -> bisqEasyService.initialize())
-                .orTimeout(5, TimeUnit.MINUTES)
+                .thenCompose(result -> alertNotificationsService.initialize())
+                .thenCompose(result -> favouriteMarketsService.initialize())
+                .thenCompose(result -> dontShowAgainService.initialize())
+                .orTimeout(STARTUP_TIMEOUT_SEC, TimeUnit.SECONDS)
                 .handle((result, throwable) -> {
                     if (throwable == null) {
                         if (result != null && result) {
@@ -243,10 +269,12 @@ public class DesktopApplicationService extends ApplicationService {
                             log.info("ApplicationService initialized");
                             return true;
                         } else {
-                            log.error("Initializing applicationService failed");
+                            startupErrorMessage.set("Initializing applicationService failed with result=false");
+                            log.error(startupErrorMessage.get());
                         }
                     } else {
                         log.error("Initializing applicationService failed", throwable);
+                        startupErrorMessage.set(ExceptionUtil.getMessageOrToString(throwable));
                     }
                     setState(State.FAILED);
                     return false;
@@ -255,14 +283,18 @@ public class DesktopApplicationService extends ApplicationService {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
+        log.info("shutdown");
         // We shut down services in opposite order as they are initialized
-        return supplyAsync(() -> bisqEasyService.shutdown()
+        return supplyAsync(() -> dontShowAgainService.shutdown()
+                .thenCompose(result -> favouriteMarketsService.shutdown())
+                .thenCompose(result -> alertNotificationsService.shutdown())
+                .thenCompose(result -> bisqEasyService.shutdown())
                 .thenCompose(result -> updaterService.shutdown())
                 .thenCompose(result -> tradeService.shutdown())
                 .thenCompose(result -> supportService.shutdown())
+                .thenCompose(result -> sendNotificationService.shutdown())
                 .thenCompose(result -> chatService.shutdown())
                 .thenCompose(result -> offerService.shutdown())
-                .thenCompose(result -> sendNotificationService.shutdown())
                 .thenCompose(result -> settingsService.shutdown())
                 .thenCompose(result -> userService.shutdown())
                 .thenCompose(result -> contractService.shutdown())
@@ -270,13 +302,22 @@ public class DesktopApplicationService extends ApplicationService {
                 .thenCompose(result -> bondedRolesService.shutdown())
                 .thenCompose(result -> identityService.shutdown())
                 .thenCompose(result -> networkService.shutdown())
-                .thenCompose(result -> {
-                    return walletService.map(Service::shutdown)
-                            .orElse(CompletableFuture.completedFuture(true));
-                })
+                .thenCompose(result -> walletService.map(Service::shutdown)
+                        .orElse(CompletableFuture.completedFuture(true)))
                 .thenCompose(result -> securityService.shutdown())
-                .orTimeout(10, TimeUnit.SECONDS)
-                .handle((result, throwable) -> throwable == null && result != null && result)
+                .orTimeout(SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS)
+                .handle((result, throwable) -> {
+                    if (throwable != null) {
+                        log.error("Error at shutdown", throwable);
+                        shutDownErrorMessage.set(ExceptionUtil.getMessageOrToString(throwable));
+                        return false;
+                    } else if (!result) {
+                        shutDownErrorMessage.set("Shutdown failed with result=false");
+                        log.error(startupErrorMessage.get());
+                        return false;
+                    }
+                    return true;
+                })
                 .join());
     }
 

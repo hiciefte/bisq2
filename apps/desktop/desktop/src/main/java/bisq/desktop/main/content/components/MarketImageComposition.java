@@ -7,6 +7,7 @@ import bisq.desktop.common.utils.ImageUtil;
 import bisq.security.DigestUtil;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.effect.ColorAdjust;
@@ -20,12 +21,25 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigInteger;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
 public class MarketImageComposition {
-    private static final List<String> MARKETS_WITH_IMAGE = List.of("bsq", "btc", "eur", "usd", "xmr", "any-base", "any-quote");
+    private static final List<String> CRYPTO_MARKETS_WITH_LOGO = List.of("bsq", "btc", "xmr");
+    private static final Set<String> FIAT_MARKETS_WITH_LOGO = Stream.of("aed", "afn", "all", "amd", "aoa", "ars", "aud",
+                    "awg", "azn", "bam", "bbd", "bdt", "bgn", "bhd", "bif", "bmd", "bnd", "bob", "brl", "bsd", "btn", "bwp",
+                    "byn", "bzd", "cad", "chf", "clp", "cny", "cop", "crc", "cup", "cve", "czk", "djf", "dkk", "dop", "dzd",
+                    "egp", "ern", "etb", "eur", "fjd", "fkp", "gbp", "gel", "ghs", "gip", "gmd", "gnf", "gtq", "gyd", "hkd",
+                    "hnl", "htg", "huf", "idr", "ils", "inr", "iqd", "irr", "isk", "jmd", "jod", "jpy", "kes", "kgs", "khr",
+                    "kmf", "kpw", "krw", "kwd", "kyd", "kzt", "lak", "lbp", "lkr", "lrd", "lsl", "lyd", "mad", "mdl", "mga",
+                    "mmk", "mnt", "mop", "mru", "mur", "mvr", "mwk", "mxn", "myr", "mzn", "nad", "ngn", "nio", "nok", "npr",
+                    "nzd", "omr", "pab", "pen", "pgk", "php", "pkr", "pln", "pyg", "qar", "ron", "rsd", "rub", "rwf", "sar",
+                    "sbd", "scr", "sdg", "sek", "sgd", "sle", "sos", "srd", "ssp", "stn", "svc", "syp", "szl", "thb", "tjs",
+                    "tmt", "tnd", "top", "try", "ttd", "twd", "tzs", "uah", "ugx", "usd", "uyu", "uzs", "ves", "vnd", "vuv",
+                    "wst", "xaf", "yer", "zar", "zmw", "zwl")
+            .collect(Collectors.toUnmodifiableSet());
 
     public static Pair<StackPane, List<ImageView>> imageBoxForMarket(String baseCurrencyCode, String quoteCurrencyCode) {
         StackPane pane = new StackPane();
@@ -50,7 +64,7 @@ public class MarketImageComposition {
             StackPane.setAlignment(imageView, alignment);
             pane.getChildren().add(imageView);
 
-            if (MARKETS_WITH_IMAGE.contains(code)) {
+            if (CRYPTO_MARKETS_WITH_LOGO.contains(code) || FIAT_MARKETS_WITH_LOGO.contains(code)) {
                 imageView.setId("market-" + code);
             } else {
                 boolean isFiat = TradeCurrency.isFiat(code.toUpperCase());
@@ -87,6 +101,37 @@ public class MarketImageComposition {
         }).collect(Collectors.toList());
 
         return new Pair<>(pane, imageViews);
+    }
+
+    public static StackPane imageBoxForMarkets(String baseCurrencyCode, String quoteCurrencyCode) {
+        StackPane pane = new StackPane();
+        pane.setPrefWidth(61);
+
+        Stream<String> stream = baseCurrencyCode.equals("btc")
+                ? Stream.of(baseCurrencyCode, quoteCurrencyCode)
+                : Stream.of(quoteCurrencyCode, baseCurrencyCode);
+        stream.forEach(code -> {
+            if (quoteCurrencyCode.equals(code)) {
+                double radius = 18;
+                Circle circle = new Circle(radius);
+                circle.getStyleClass().add("quote-currency-market-logo");
+                StackPane.setAlignment(circle, Pos.CENTER);
+
+                Node node = createMarketLogo(code);
+                StackPane.setAlignment(node, Pos.CENTER);
+
+                StackPane quoteLogo = new StackPane();
+                quoteLogo.setMaxWidth(radius*2);
+                quoteLogo.getChildren().addAll(circle, node);
+                StackPane.setAlignment(quoteLogo, Pos.CENTER_RIGHT);
+                pane.getChildren().add(quoteLogo);
+            } else {
+                Node node = createMarketLogo(code);
+                StackPane.setAlignment(node, Pos.CENTER_LEFT);
+                pane.getChildren().add(node);
+            }
+        });
+        return pane;
     }
 
     public static StackPane getCurrencyIcon(String code) {
@@ -130,17 +175,24 @@ public class MarketImageComposition {
         return pane;
     }
 
-    public static Label createMarketLogoPlaceholder(String marketCode) {
-        Circle circle = new Circle(15);
+    public static Node createMarketLogo(String marketCode) {
+        String market = marketCode.toLowerCase();
+        String iconId = String.format("market-%s", market);
+        return FIAT_MARKETS_WITH_LOGO.contains(market) || CRYPTO_MARKETS_WITH_LOGO.contains(market)
+                ? ImageUtil.getImageViewById(iconId)
+                : createMarketLogoPlaceholder(marketCode);
+    }
+
+    private static Label createMarketLogoPlaceholder(String marketCode) {
+        Circle circle = new Circle(16);
         circle.setFill(Paint.valueOf("#FF0000"));
         circle.setEffect(createColorAdjust(marketCode));
 
-        Text text = new Text(marketCode.substring(0, Math.min(3, marketCode.length())));
-        text.getStyleClass().setAll("fiat-code");
-
-        Label label = new Label("", new Circle(15, Color.LIGHTGRAY));
+        Text text = new Text(marketCode.substring(0, Math.min(3, marketCode.length())).toUpperCase());
+        Label label = new Label(text.getText(), new Circle(16, Color.TRANSPARENT));
+        label.getStyleClass().add("fiat-code");
+        label.setAlignment(Pos.CENTER);
         label.setGraphic(circle);
-        label.setText(text.getText());
         label.setContentDisplay(ContentDisplay.CENTER);
         return label;
     }

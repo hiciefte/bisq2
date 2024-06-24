@@ -25,6 +25,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -43,7 +44,7 @@ public final class MyMultisigOffersStore implements PersistableStore<MyMultisigO
 
     @Override
     public MyMultisigOffersStore getClone() {
-        return new MyMultisigOffersStore(offers);
+        return new MyMultisigOffersStore(new HashSet<>(offers));
     }
 
     @Override
@@ -53,10 +54,16 @@ public final class MyMultisigOffersStore implements PersistableStore<MyMultisigO
     }
 
     @Override
-    public bisq.offer.protobuf.MyMultisigOffersStore toProto() {
+    public bisq.offer.protobuf.MyMultisigOffersStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.offer.protobuf.MyMultisigOffersStore.newBuilder()
-                .addAllOffers(offers.stream().map(MultisigOffer::toProto).collect(Collectors.toList()))
-                .build();
+                .addAllOffers(offers.stream()
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.offer.protobuf.MyMultisigOffersStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static MyMultisigOffersStore fromProto(bisq.offer.protobuf.MyMultisigOffersStore proto) {

@@ -21,10 +21,9 @@ import bisq.bonded_roles.market_price.MarketPriceService;
 import bisq.common.data.Pair;
 import bisq.common.monetary.Monetary;
 import bisq.common.monetary.PriceQuote;
-import bisq.desktop.common.utils.ImageUtil;
 import bisq.desktop.common.view.View;
+import bisq.desktop.components.cathash.CatHash;
 import bisq.desktop.components.containers.Spacer;
-import bisq.desktop.components.robohash.RoboHash;
 import bisq.desktop.components.table.BisqTableColumn;
 import bisq.desktop.components.table.BisqTableView;
 import bisq.desktop.main.content.components.ReputationScoreDisplay;
@@ -44,7 +43,6 @@ import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.TextAlignment;
 import javafx.util.Callback;
@@ -52,19 +50,18 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.fxmisc.easybind.EasyBind;
-import org.fxmisc.easybind.Subscription;
 
 import java.util.Comparator;
 import java.util.Optional;
 
 @Slf4j
 class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel, TradeWizardSelectOfferController> {
-    private final static int TABLE_WIDTH = 800;
-    private final HBox noMatchingOffersBox;
+    private static final int TABLE_WIDTH = 800;
 
+    private final HBox noMatchingOffersBox;
     private final BisqTableView<ListItem> tableView;
     private final Label headlineLabel, subtitleLabel;
+    private final VBox tableContainer;
     private Button goBackButton, browseOfferbookButton;
     private boolean isTableViewConfigured;
 
@@ -85,22 +82,25 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
         tableView = new BisqTableView<>(model.getSortedList());
         tableView.getStyleClass().add("bisq-easy-trade-wizard-select-offer");
         tableView.setMinWidth(TABLE_WIDTH);
-        tableView.setMaxWidth(tableView.getMinWidth());
         // fits 4 rows
-        tableView.setMaxHeight(262); // 4 * 55 (row height) + 40 (header height) + 2 (border)
+        tableView.setMaxHeight(260); // 4 * 55 (row height) + 40 (header height)
+
+        tableContainer = new VBox(tableView);
+        tableContainer.getStyleClass().add("matching-offers-table-container");
 
         noMatchingOffersBox = new HBox(25);
 
         VBox.setMargin(noMatchingOffersBox, new Insets(10, 0, 0, 0));
-        root.getChildren().addAll(Spacer.fillVBox(), headlineLabel, subtitleLabel, tableView, noMatchingOffersBox, Spacer.fillVBox());
+        root.getChildren().addAll(Spacer.fillVBox(), headlineLabel, subtitleLabel, tableContainer, noMatchingOffersBox, Spacer.fillVBox());
     }
 
     @Override
     protected void onViewAttached() {
+        tableView.initialize();
         boolean showOffers = model.getShowOffers().get();
 
-        tableView.setVisible(showOffers);
-        tableView.setManaged(showOffers);
+        tableContainer.setVisible(showOffers);
+        tableContainer.setManaged(showOffers);
         noMatchingOffersBox.setVisible(!showOffers);
         noMatchingOffersBox.setManaged(!showOffers);
         if (showOffers) {
@@ -135,6 +135,7 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
 
     @Override
     protected void onViewDetached() {
+        tableView.dispose();
         if (goBackButton != null) {
             goBackButton.setOnAction(null);
         }
@@ -169,10 +170,11 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
             return;
         }
 
+        // Selection marker
+        tableView.getColumns().add(tableView.getSelectionMarkerColumn());
+
         // Maker 
-        String peer = model.getDirection() == Direction.BUY ?
-                Res.get("offer.seller") :
-                Res.get("offer.buyer");
+        String peer = model.getDirection() == Direction.BUY ? Res.get("offer.seller") : Res.get("offer.buyer");
         tableView.getColumns().add(new BisqTableColumn.Builder<ListItem>()
                 .title(peer)
                 .left()
@@ -193,19 +195,28 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
         tableView.getSortOrder().add(reputationColumn);
 
         // Price
+        Comparator<ListItem> comparator = (o1, o2) -> {
+            if (o1.getBisqEasyOffer().getDirection().isSell()) {
+                return Long.compare(o1.getPriceAsLong(), o2.getPriceAsLong());
+            } else {
+                return Long.compare(o2.getPriceAsLong(), o1.getPriceAsLong());
+            }
+        };
         if (model.getDirection().isBuy()) {
-            tableView.getColumns().add(new BisqTableColumn.Builder<ListItem>()
+            BisqTableColumn<ListItem> priceColumn = new BisqTableColumn.Builder<ListItem>()
                     .title(Res.get("bisqEasy.tradeWizard.review.table.price", model.getMarket().getMarketCodes()))
                     .minWidth(160)
                     .valueSupplier(ListItem::getPriceDisplayString)
-                    .comparator(Comparator.comparing(ListItem::getPriceAsLong))
-                    .build());
+                    .comparator(comparator)
+                    .build();
+            tableView.getColumns().add(priceColumn);
+            tableView.getSortOrder().add(priceColumn);
         }
 
         // BTC amount
-        String baseAmountTitle = model.getDirection().isBuy() ?
-                Res.get("bisqEasy.tradeWizard.review.table.baseAmount.buyer") :
-                Res.get("bisqEasy.tradeWizard.review.table.baseAmount.seller");
+        String baseAmountTitle = model.getDirection().isBuy()
+                ? Res.get("bisqEasy.tradeWizard.review.table.baseAmount.buyer")
+                : Res.get("bisqEasy.tradeWizard.review.table.baseAmount.seller");
         tableView.getColumns().add(new BisqTableColumn.Builder<ListItem>()
                 .title(baseAmountTitle)
                 .minWidth(160)
@@ -213,15 +224,8 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
                 .comparator(Comparator.comparing(ListItem::getBaseAmountAsLong))
                 .build());
 
-        tableView.getColumns().add(new BisqTableColumn.Builder<ListItem>()
-                .minWidth(170)
-                .isSortable(false)
-                .setCellFactory(getSelectButtonCellFactory())
-                .right()
-                .build());
         isTableViewConfigured = true;
     }
-
 
     private Callback<TableColumn<ListItem, ListItem>, TableCell<ListItem, ListItem>> getMakerCellFactory() {
         return new Callback<>() {
@@ -229,17 +233,17 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
             public TableCell<ListItem, ListItem> call(TableColumn<ListItem, ListItem> column) {
                 return new TableCell<>() {
                     private final Label userName = new Label();
-                    private final ImageView roboIcon = new ImageView();
+                    private final ImageView catIcon = new ImageView();
                     private final HBox hBox;
 
                     {
                         userName.setId("chat-user-name");
-                        int size = 20;
-                        roboIcon.setFitWidth(size);
-                        roboIcon.setFitHeight(size);
-                        StackPane roboIconWithRing = ImageUtil.addRingToNode(roboIcon, size, 1.5, "-bisq-dark-grey-50");
-                        hBox = new HBox(10, roboIconWithRing, userName);
-                        hBox.setAlignment(Pos.CENTER_LEFT);
+                        int size = 30;
+                        catIcon.setFitWidth(size);
+                        catIcon.setFitHeight(size);
+                        //StackPane catIconWithRing = ImageUtil.addRingToNode(catIcon, size, 1.5, "-bisq-dark-grey-50");
+                        hBox = new HBox(10, catIcon, userName);
+                        hBox.setAlignment(Pos.CENTER);
                     }
 
                     @Override
@@ -249,7 +253,7 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
                         if (item != null && !empty) {
                             userName.setText(item.getMakerUserName());
                             item.getAuthorUserProfile().ifPresent(userProfile ->
-                                    roboIcon.setImage(RoboHash.getImage(userProfile.getPubKeyHash())));
+                                    catIcon.setImage(CatHash.getImage(userProfile)));
                             setGraphic(hBox);
                         } else {
                             setGraphic(null);
@@ -262,111 +266,34 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
 
     private Callback<TableColumn<ListItem, ListItem>, TableCell<ListItem, ListItem>> getReputationCellFactory() {
         return new Callback<>() {
-
-
             @Override
             public TableCell<ListItem, ListItem> call(TableColumn<ListItem, ListItem> column) {
                 return new TableCell<>() {
                     private final ReputationScoreDisplay reputationScoreDisplay = new ReputationScoreDisplay();
-                    private Subscription selectedItemPin;
+                    private TableRow<ListItem> tableRow;
+
+                    {
+                        reputationScoreDisplay.setAlignment(Pos.CENTER);
+                    }
 
                     @Override
                     public void updateItem(final ListItem item, boolean empty) {
                         super.updateItem(item, empty);
+
                         if (item != null && !empty) {
-                            getTableRow().setOnMouseClicked(e -> reputationScoreDisplay.useWhiteAcceptStar());
-
-                            selectedItemPin = EasyBind.subscribe(tableView.getSelectionModel().selectedItemProperty(),
-                                    selectedItem -> {
-                                        if (item.equals(selectedItem)) {
-                                            reputationScoreDisplay.useWhiteAcceptStar();
-                                        } else {
-                                            reputationScoreDisplay.useGreenAcceptStar();
-                                        }
-                                    });
-
+                            tableRow = getTableRow();
+                            tableRow.setOnMouseClicked(e -> controller.onSelectRow(item));
                             reputationScoreDisplay.setReputationScore(item.getReputationScore());
                             setGraphic(reputationScoreDisplay);
                         } else {
-                            setGraphic(null);
-                            if (selectedItemPin != null) {
-                                selectedItemPin.unsubscribe();
+                            if (tableRow != null) {
+                                tableRow.setOnMouseClicked(null);
+                                tableRow = null;
                             }
+                            setGraphic(null);
                         }
                     }
                 };
-            }
-        };
-    }
-
-    private Callback<TableColumn<ListItem, ListItem>, TableCell<ListItem, ListItem>> getSelectButtonCellFactory() {
-        return column -> new TableCell<>() {
-
-            private final Button button = new Button(Res.get("bisqEasy.tradeWizard.selectOffer.table.select"));
-            private TableRow<ListItem> tableRow;
-            private Subscription selectedItemPin;
-
-            {
-                button.setMinWidth(160);
-                button.setMaxWidth(160);
-            }
-
-            @Override
-            public void updateItem(final ListItem item, boolean empty) {
-                super.updateItem(item, empty);
-
-                if (item != null && !empty) {
-                    button.setOnAction(e -> {
-                        tableView.getSelectionModel().select(item);
-                        controller.onSelect(item);
-                    });
-
-                    tableRow = getTableRow();
-                    tableRow.setOnMouseEntered(e -> {
-                        if (!tableRow.isSelected()) {
-                            button.setVisible(true);
-                            button.getStyleClass().remove("white-button");
-                            button.getStyleClass().add("outlined-button");
-                        }
-                    });
-                    tableRow.setOnMouseExited(e -> {
-                        button.getStyleClass().remove("outlined-button");
-                        if (!tableRow.isSelected()) {
-                            button.setVisible(tableView.getSelectionModel().getSelectedItem() == null);
-                            button.getStyleClass().remove("white-button");
-                        }
-                    });
-                    tableRow.setOnMouseClicked(e -> controller.onSelectRow(item));
-
-                    selectedItemPin = EasyBind.subscribe(tableView.getSelectionModel().selectedItemProperty(),
-                            selectedItem -> {
-                                if (item.equals(selectedItem)) {
-                                    button.setVisible(true);
-                                    button.getStyleClass().remove("outlined-button");
-                                    button.getStyleClass().add("white-button");
-                                    button.setText(Res.get("bisqEasy.tradeWizard.selectOffer.table.reviewTakeOffer"));
-                                } else {
-                                    button.setVisible(selectedItem == null);
-                                    button.getStyleClass().remove("white-button");
-                                    button.setText(Res.get("bisqEasy.tradeWizard.selectOffer.table.select"));
-                                }
-                            });
-
-                    setGraphic(button);
-                } else {
-                    button.setOnAction(null);
-                    if (tableRow != null) {
-                        tableRow.setOnMouseEntered(null);
-                        tableRow.setOnMouseExited(null);
-                        tableRow.setOnMouseClicked(null);
-                        tableRow = null;
-                    }
-                    if (selectedItemPin != null) {
-                        selectedItemPin.unsubscribe();
-                        selectedItemPin = null;
-                    }
-                    setGraphic(null);
-                }
             }
         };
     }
@@ -382,6 +309,7 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
         private final ReputationScore reputationScore;
         private final BisqEasyOffer bisqEasyOffer;
 
+
         public ListItem(BisqEasyOffer bisqEasyOffer,
                         TradeWizardSelectOfferModel model,
                         UserProfileService userProfileService,
@@ -393,7 +321,7 @@ class TradeWizardSelectOfferView extends View<VBox, TradeWizardSelectOfferModel,
             priceAsLong = PriceUtil.findQuote(marketPriceService, bisqEasyOffer).map(PriceQuote::getValue).orElse(0L);
             priceDisplayString = OfferPriceFormatter.formatQuote(marketPriceService, bisqEasyOffer, false);
             Monetary baseAmountAsMonetary = OfferAmountUtil.findBaseSideFixedAmount(marketPriceService,
-                            model.getAmountSpec(),
+                            model.getQuoteSideAmountSpec(),
                             bisqEasyOffer.getPriceSpec(),
                             bisqEasyOffer.getMarket())
                     .orElse(Monetary.from(0, model.getMarket().getBaseCurrencyCode()));

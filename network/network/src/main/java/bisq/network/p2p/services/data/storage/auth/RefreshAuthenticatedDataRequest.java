@@ -43,7 +43,7 @@ public final class RefreshAuthenticatedDataRequest implements DataRequest {
                                                        AuthenticatedData authenticatedData,
                                                        KeyPair keyPair)
             throws GeneralSecurityException {
-        byte[] hash = DigestUtil.hash(authenticatedData.serialize());
+        byte[] hash = DigestUtil.hash(authenticatedData.serializeForHash());
         byte[] signature = SignatureUtil.sign(hash, keyPair.getPrivate());
         int newSequenceNumber = store.getSequenceNumber(hash) + 1;
         return new RefreshAuthenticatedDataRequest(authenticatedData.getMetaData(),
@@ -97,15 +97,23 @@ public final class RefreshAuthenticatedDataRequest implements DataRequest {
     }
 
     @Override
-    public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-        return getNetworkMessageBuilder().setDataRequest(getDataRequestBuilder().setRefreshAuthenticatedDataRequest(
-                        bisq.network.protobuf.RefreshAuthenticatedDataRequest.newBuilder()
-                                .setMetaData(metaData.toProto())
-                                .setHash(ByteString.copyFrom(hash))
-                                .setOwnerPublicKeyBytes(ByteString.copyFrom(ownerPublicKeyBytes))
-                                .setSequenceNumber(sequenceNumber)
-                                .setSignature(ByteString.copyFrom(signature))))
-                .build();
+    public bisq.network.protobuf.DataRequest.Builder getDataRequestBuilder(boolean serializeForHash) {
+        return newDataRequestBuilder().setRefreshAuthenticatedDataRequest(toValueProto(serializeForHash));
+    }
+
+    @Override
+    public bisq.network.protobuf.RefreshAuthenticatedDataRequest toValueProto(boolean serializeForHash) {
+        return resolveValueProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.RefreshAuthenticatedDataRequest.Builder getValueBuilder(boolean serializeForHash) {
+        return bisq.network.protobuf.RefreshAuthenticatedDataRequest.newBuilder()
+                .setMetaData(metaData.toProto(serializeForHash))
+                .setHash(ByteString.copyFrom(hash))
+                .setOwnerPublicKeyBytes(ByteString.copyFrom(ownerPublicKeyBytes))
+                .setSequenceNumber(sequenceNumber)
+                .setSignature(ByteString.copyFrom(signature));
     }
 
     public static RefreshAuthenticatedDataRequest fromProto(bisq.network.protobuf.RefreshAuthenticatedDataRequest proto) {
@@ -167,6 +175,10 @@ public final class RefreshAuthenticatedDataRequest implements DataRequest {
     @Override
     public int getMaxMapSize() {
         return metaData.getMaxMapSize();
+    }
+
+    public String getClassName() {
+        return metaData.getClassName();
     }
 
     @Override

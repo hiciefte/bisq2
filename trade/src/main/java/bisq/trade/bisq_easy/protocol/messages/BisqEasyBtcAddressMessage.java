@@ -37,11 +37,12 @@ public final class BisqEasyBtcAddressMessage extends BisqEasyTradeMessage {
 
     public BisqEasyBtcAddressMessage(String id,
                                      String tradeId,
+                                     String protocolVersion,
                                      NetworkId sender,
                                      NetworkId receiver,
                                      String btcAddress,
                                      BisqEasyOffer bisqEasyOffer) {
-        super(id, tradeId, sender, receiver);
+        super(id, tradeId, protocolVersion, sender, receiver);
 
         this.btcAddress = btcAddress;
         this.bisqEasyOffer = bisqEasyOffer;
@@ -59,14 +60,20 @@ public final class BisqEasyBtcAddressMessage extends BisqEasyTradeMessage {
     }
 
     @Override
-    protected bisq.trade.protobuf.TradeMessage toTradeMessageProto() {
-        return getTradeMessageBuilder()
-                .setBisqEasyTradeMessage(bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
-                        .setBisqEasyBtcAddressMessage(
-                                bisq.trade.protobuf.BisqEasyBtcAddressMessage.newBuilder()
-                                        .setBtcAddress(btcAddress)
-                                        .setBisqEasyOffer(bisqEasyOffer.toProto())))
-                .build();
+    protected bisq.trade.protobuf.BisqEasyTradeMessage.Builder getBisqEasyTradeMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
+                .setBisqEasyBtcAddressMessage(toBisqEasyBtcAddressMessageProto(serializeForHash));
+    }
+
+    private bisq.trade.protobuf.BisqEasyBtcAddressMessage toBisqEasyBtcAddressMessageProto(boolean serializeForHash) {
+        bisq.trade.protobuf.BisqEasyBtcAddressMessage.Builder builder = getBisqEasyBtcAddressMessageBuilder(serializeForHash);
+        return resolveBuilder(builder, serializeForHash).build();
+    }
+
+    private bisq.trade.protobuf.BisqEasyBtcAddressMessage.Builder getBisqEasyBtcAddressMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyBtcAddressMessage.newBuilder()
+                .setBtcAddress(btcAddress)
+                .setBisqEasyOffer(bisqEasyOffer.toProto(serializeForHash));
     }
 
     public static BisqEasyBtcAddressMessage fromProto(bisq.trade.protobuf.TradeMessage proto) {
@@ -74,6 +81,7 @@ public final class BisqEasyBtcAddressMessage extends BisqEasyTradeMessage {
         return new BisqEasyBtcAddressMessage(
                 proto.getId(),
                 proto.getTradeId(),
+                proto.getProtocolVersion(),
                 NetworkId.fromProto(proto.getSender()),
                 NetworkId.fromProto(proto.getReceiver()),
                 bisqEasyBtcAddressMessage.getBtcAddress(),

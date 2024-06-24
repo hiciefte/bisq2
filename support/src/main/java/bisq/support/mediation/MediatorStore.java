@@ -25,6 +25,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -41,12 +42,16 @@ final class MediatorStore implements PersistableStore<MediatorStore> {
     }
 
     @Override
-    public bisq.support.protobuf.MediatorStore toProto() {
+    public bisq.support.protobuf.MediatorStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.support.protobuf.MediatorStore.newBuilder()
                 .addAllMediationCases(mediationCases.stream()
-                        .map((MediationCase::toProto))
-                        .collect(Collectors.toSet()))
-                .build();
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toSet()));
+    }
+
+    @Override
+    public bisq.support.protobuf.MediatorStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static MediatorStore fromProto(bisq.support.protobuf.MediatorStore proto) {
@@ -68,7 +73,7 @@ final class MediatorStore implements PersistableStore<MediatorStore> {
 
     @Override
     public MediatorStore getClone() {
-        return new MediatorStore(mediationCases);
+        return new MediatorStore(new HashSet<>(mediationCases));
     }
 
     @Override

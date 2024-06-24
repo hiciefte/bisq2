@@ -17,7 +17,6 @@
 
 package bisq.desktop.main.content.components;
 
-import bisq.desktop.components.controls.BisqTooltip;
 import bisq.user.profile.UserProfile;
 import bisq.user.reputation.ReputationScore;
 import javafx.geometry.Pos;
@@ -34,8 +33,6 @@ import javax.annotation.Nullable;
 @Slf4j
 public class UserProfileDisplay extends HBox {
     public static final double DEFAULT_ICON_SIZE = 30;
-    @Getter
-    private final BisqTooltip tooltip;
     private final UserProfileIcon userProfileIcon;
     private final ReputationScoreDisplay reputationScoreDisplay;
     @Getter
@@ -56,6 +53,7 @@ public class UserProfileDisplay extends HBox {
 
     public UserProfileDisplay(@Nullable UserProfile userProfile, double size) {
         super(10);
+
         setAlignment(Pos.CENTER_LEFT);
 
         userProfileIcon = new UserProfileIcon(size);
@@ -66,38 +64,51 @@ public class UserProfileDisplay extends HBox {
         VBox vBox = new VBox(userName, reputationScoreDisplay);
         vBox.setFillWidth(true);
         vBox.setAlignment(Pos.CENTER_LEFT);
-        
         HBox.setHgrow(vBox, Priority.ALWAYS);
         getChildren().addAll(userProfileIcon, vBox);
-
-        tooltip = new BisqTooltip();
-        tooltip.getStyleClass().add("medium-dark-tooltip");
-        Tooltip.install(this, tooltip);
 
         if (userProfile != null) {
             setUserProfile(userProfile);
         }
     }
 
+    public void applyData(@Nullable UserProfile userProfile, @Nullable String lastSeenAsString, long lastSeen) {
+        if (userProfile != null) {
+            this.userProfile = userProfile;
+            userName.setText(userProfile.getUserName());
+        }
+        userProfileIcon.applyData(userProfile, lastSeenAsString, lastSeen);
+        applyTooltip();
+    }
+
+    public void setLastSeenAsString(String lastSeen) {
+        userProfileIcon.setLastSeenAsString(lastSeen);
+        applyTooltip();
+    }
+
+    public void setLastSeen(long lastSeen) {
+        userProfileIcon.setLastSeen(lastSeen);
+    }
+
     public void setUserProfile(@Nullable UserProfile userProfile) {
+        if (userProfile == null) {
+            return;
+        }
         this.userProfile = userProfile;
-        userName.setText(userProfile != null ? userProfile.getUserName() : null);
+        userName.setText(userProfile.getUserName());
         userProfileIcon.setUserProfile(userProfile);
         applyTooltip();
     }
 
     private void applyTooltip() {
-        tooltip.setText(getTooltipText());
+        userProfileIcon.getTooltip().setText(getTooltipText());
     }
 
     public String getTooltipText() {
-        String userProfileTooltip = userProfile != null
-                ? userProfile.getTooltipString() :
-                "";
         String reputationTooltip = reputationScoreDisplay != null ?
                 "\n" + reputationScoreDisplay.getTooltipString() :
                 "";
-        return userProfileTooltip + reputationTooltip;
+        return userProfileIcon.getTooltipText() + reputationTooltip;
     }
 
     public void setReputationScoreScale(double scale) {
@@ -105,12 +116,15 @@ public class UserProfileDisplay extends HBox {
     }
 
     public void setIconSize(double size) {
-        userProfileIcon.setFitWidth(size);
-        userProfileIcon.setFitHeight(size);
+        userProfileIcon.setSize(size);
     }
 
     public void setReputationScore(@Nullable ReputationScore reputationScore) {
         reputationScoreDisplay.setReputationScore(reputationScore);
         applyTooltip();
+    }
+
+    public Tooltip getTooltip() {
+        return userProfileIcon.getTooltip();
     }
 }

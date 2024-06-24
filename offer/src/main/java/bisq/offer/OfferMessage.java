@@ -34,6 +34,7 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_2_DAYS;
 @Getter
 @EqualsAndHashCode
 public final class OfferMessage implements DistributedData {
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_2_DAYS, getClass().getSimpleName());
     private final Offer<?, ?> offer;
 
@@ -48,10 +49,14 @@ public final class OfferMessage implements DistributedData {
     }
 
     @Override
-    public bisq.offer.protobuf.OfferMessage toProto() {
+    public bisq.offer.protobuf.OfferMessage.Builder getBuilder(boolean serializeForHash) {
         return bisq.offer.protobuf.OfferMessage.newBuilder()
-                .setOffer(offer.toProto())
-                .build();
+                .setOffer(offer.toProto(serializeForHash));
+    }
+
+    @Override
+    public bisq.offer.protobuf.OfferMessage toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static OfferMessage fromProto(bisq.offer.protobuf.OfferMessage proto) {

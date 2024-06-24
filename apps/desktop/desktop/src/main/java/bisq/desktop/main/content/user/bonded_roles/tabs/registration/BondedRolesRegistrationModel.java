@@ -26,6 +26,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Optional;
+
 @Slf4j
 @Getter
 public abstract class BondedRolesRegistrationModel implements Model {
@@ -36,8 +38,9 @@ public abstract class BondedRolesRegistrationModel implements Model {
     protected final StringProperty signature = new SimpleStringProperty();
     protected final BooleanProperty requestButtonDisabled = new SimpleBooleanProperty();
     protected final BooleanProperty requestCancellationButtonVisible = new SimpleBooleanProperty();
-    private final BooleanProperty isCollapsed = new SimpleBooleanProperty();
-    protected final AddressByTransportTypeMap addressByNetworkType = new AddressByTransportTypeMap();
+    private final BooleanProperty isExpanded = new SimpleBooleanProperty();
+    @Setter
+    protected Optional<AddressByTransportTypeMap> addressByNetworkType = Optional.empty();
     @Setter
     protected String authorizedPublicKey;
 

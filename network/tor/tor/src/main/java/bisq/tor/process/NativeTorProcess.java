@@ -17,19 +17,15 @@
 
 package bisq.tor.process;
 
-import bisq.common.FileCreationWatcher;
-import bisq.common.scanner.FileScanner;
+import bisq.network.tor.common.torrc.BaseTorrcGenerator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class NativeTorProcess {
@@ -39,31 +35,32 @@ public class NativeTorProcess {
     private final Path torBinaryPath;
     private final Path torrcPath;
     private Optional<Process> process = Optional.empty();
-    private Optional<Future<Path>> logFileCreationWaiter = Optional.empty();
 
-    public NativeTorProcess(Path torDataDirPath) {
+    public NativeTorProcess(Path torBinaryPath, Path torDataDirPath) {
+        this.torBinaryPath = torBinaryPath;
         this.torDataDirPath = torDataDirPath;
-        this.torBinaryPath = torDataDirPath.resolve("tor");
         this.torrcPath = torDataDirPath.resolve("torrc");
     }
 
     public void start() {
+        createTorControlDirectory();
         String absoluteTorrcPathAsString = torrcPath.toAbsolutePath().toString();
 
         String ownerPid = Pid.getMyPid();
         var processBuilder = new ProcessBuilder(
                 torBinaryPath.toAbsolutePath().toString(),
-                "-f", absoluteTorrcPathAsString,
+                "--torrc-file", absoluteTorrcPathAsString,
+                "--defaults-torrc", absoluteTorrcPathAsString,
                 ARG_OWNER_PID, ownerPid
         );
 
-        Map<String, String> environment = processBuilder.environment();
-        environment.put("LD_PRELOAD", computeLdPreloadVariable());
+        if (torBinaryPath.startsWith(torDataDirPath)) {
+            Map<String, String> environment = processBuilder.environment();
+            environment.put("LD_PRELOAD", LdPreload.computeLdPreloadVariable(torDataDirPath));
+        }
 
         processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
         processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
-
-        logFileCreationWaiter = Optional.of(createLogFileCreationWaiter());
 
         try {
             Process torProcess = processBuilder.start();
@@ -73,30 +70,15 @@ public class NativeTorProcess {
         }
     }
 
-    public void waitUntilControlPortReady() {
-        try {
-            if (logFileCreationWaiter.isPresent()) {
-                Future<Path> pathFuture = logFileCreationWaiter.get();
-
-                FileScanner fileScanner = new FileScanner(
-                        Set.of("[notice] Opened Control listener connection (ready) on "),
-                        pathFuture
-                );
-                fileScanner.waitUntilLogContainsLines();
-            }
-
-        } catch (ExecutionException | IOException | InterruptedException | TimeoutException e) {
-            log.error("Couldn't wait for log file creation.", e);
-            throw new IllegalStateException("Couldn't wait for log file creation.");
-        }
-    }
-
     public void waitUntilExited() {
+        log.info("Wait until tor process has exited");
         process.ifPresent(process -> {
             try {
-                boolean isSuccess = process.waitFor(2, TimeUnit.MINUTES);
+                boolean isSuccess = process.waitFor(5, TimeUnit.SECONDS);
                 if (!isSuccess) {
-                    throw new CouldNotWaitForTorShutdownException("Tor still running after 2 minutes timeout.");
+                    throw new CouldNotWaitForTorShutdownException("Tor process has not exited after 5 seconds.");
+                } else {
+                    log.info("Tor process has exited successfully");
                 }
             } catch (InterruptedException e) {
                 throw new CouldNotWaitForTorShutdownException(e);
@@ -104,22 +86,27 @@ public class NativeTorProcess {
         });
     }
 
-    private String computeLdPreloadVariable() {
-        File[] sharedLibraries = torDataDirPath.toFile()
-                .listFiles((file, fileName) -> fileName.contains(".so."));
-        Objects.requireNonNull(sharedLibraries);
+    public static Optional<Path> getSystemTorPath() {
+        String pathEnvironmentVariable = System.getenv("PATH");
+        String[] searchPaths = pathEnvironmentVariable.split(":");
 
-        return Arrays.stream(sharedLibraries)
-                .map(File::getAbsolutePath)
-                .collect(Collectors.joining(":"));
+        for (var path : searchPaths) {
+            File torBinary = new File(path, "tor");
+            if (torBinary.exists()) {
+                return Optional.of(torBinary.toPath());
+            }
+        }
+
+        return Optional.empty();
     }
 
-    private Future<Path> createLogFileCreationWaiter() {
-        Path dataDir = torrcPath.getParent();
-        Path logFilePath = torrcPath.getParent().resolve("debug.log");
-
-        FileCreationWatcher fileCreationWatcher = new FileCreationWatcher(dataDir);
-        return fileCreationWatcher.waitForFile(logFilePath);
+    private void createTorControlDirectory() {
+        File controlDirFile = torDataDirPath.resolve(BaseTorrcGenerator.CONTROL_DIR_NAME).toFile();
+        if (!controlDirFile.exists()) {
+            boolean isSuccess = controlDirFile.mkdirs();
+            if (!isSuccess) {
+                throw new TorStartupFailedException("Couldn't create Tor control directory.");
+            }
+        }
     }
-
 }

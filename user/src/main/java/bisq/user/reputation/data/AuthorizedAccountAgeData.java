@@ -42,9 +42,11 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_100_DAYS;
 public final class AuthorizedAccountAgeData implements AuthorizedDistributedData {
     public static final long TTL = TTL_100_DAYS;
 
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL, HIGHEST_PRIORITY, getClass().getSimpleName());
     private final String profileId;
     private final long date;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedAccountAgeData(String profileId, long date, boolean staticPublicKeysProvided) {
@@ -62,12 +64,16 @@ public final class AuthorizedAccountAgeData implements AuthorizedDistributedData
     }
 
     @Override
-    public bisq.user.protobuf.AuthorizedAccountAgeData toProto() {
+    public bisq.user.protobuf.AuthorizedAccountAgeData.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.AuthorizedAccountAgeData.newBuilder()
                 .setProfileId(profileId)
                 .setDate(date)
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.user.protobuf.AuthorizedAccountAgeData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedAccountAgeData fromProto(bisq.user.protobuf.AuthorizedAccountAgeData proto) {
@@ -100,9 +106,9 @@ public final class AuthorizedAccountAgeData implements AuthorizedDistributedData
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

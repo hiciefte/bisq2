@@ -38,6 +38,7 @@ import javafx.scene.control.TextInputControl;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
+import javafx.util.StringConverter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,8 +58,13 @@ public class MaterialTextField extends Pane {
     @Getter
     protected final Label helpLabel = new Label();
     @Getter
+    protected final Label errorLabel = new Label();
+    @Getter
     private final BisqIconButton iconButton = new BisqIconButton();
     private ChangeListener<Number> iconButtonHeightListener;
+    protected ValidationControl validationControl;
+    private final BooleanProperty isValid = new SimpleBooleanProperty(false);
+    private Optional<StringConverter<Number>> stringConverter = Optional.empty();
 
     public MaterialTextField() {
         this(null, null, null);
@@ -90,7 +96,6 @@ public class MaterialTextField extends Pane {
 
         descriptionLabel.setLayoutX(16);
         descriptionLabel.setMouseTransparent(true);
-        // descriptionLabel.setStyle("-fx-font-family: \"IBM Plex Sans Light\";");
         if (StringUtils.isNotEmpty(description)) {
             descriptionLabel.setText(description);
         }
@@ -118,7 +123,13 @@ public class MaterialTextField extends Pane {
             helpLabel.setText(help);
         }
 
-        getChildren().addAll(bg, line, selectionLine, descriptionLabel, textInputControl, iconButton, helpLabel);
+        errorLabel.setLayoutX(16);
+        errorLabel.setMouseTransparent(true);
+        errorLabel.getStyleClass().add("material-text-field-error");
+        errorLabel.setManaged(false);
+        errorLabel.setVisible(false);
+
+        getChildren().addAll(bg, line, selectionLine, descriptionLabel, textInputControl, iconButton, helpLabel, errorLabel);
 
         widthProperty().addListener(new WeakReference<ChangeListener<Number>>((observable, oldValue, newValue) ->
                 onWidthChanged((double) newValue)).get());
@@ -127,10 +138,9 @@ public class MaterialTextField extends Pane {
                 onInputTextFieldFocus(newValue)).get());
         descriptionLabel.textProperty().addListener(new WeakReference<ChangeListener<String>>((observable, oldValue, newValue) ->
                 update()).get());
-
         promptTextProperty().addListener(new WeakReference<ChangeListener<String>>((observable, oldValue, newValue) ->
                 update()).get());
-        helpHelpProperty().addListener(new WeakReference<ChangeListener<String>>((observable, oldValue, newValue) ->
+        helpProperty().addListener(new WeakReference<ChangeListener<String>>((observable, oldValue, newValue) ->
                 update()).get());
         textInputControl.editableProperty().addListener(new WeakReference<ChangeListener<Boolean>>((observable, oldValue, newValue) ->
                 update()).get());
@@ -153,11 +163,10 @@ public class MaterialTextField extends Pane {
         update();
     }
 
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // Validation
     ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-    protected ValidationControl validationControl;
 
     public Optional<ValidatorBase> getActiveValidator() {
         return Optional.ofNullable(validationControl.getActiveValidator());
@@ -176,18 +185,17 @@ public class MaterialTextField extends Pane {
     }
 
     public boolean validate() {
-        isValid.set(validationControl.validate());
-        selectionLine.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, !isValid.get());
-        descriptionLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, !isValid.get());
-        getActiveValidator().ifPresentOrElse(validator -> {
-                    helpLabel.setText(validator.getMessage());
-                    helpLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, true);
-                },
-                () -> {
-                    helpLabel.setText("");
-                    helpLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, false);
-                });
-        return isValid.get();
+        resetValidation();
+        boolean valid = validationControl.validate();
+        isValid.set(valid);
+        selectionLine.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, !valid);
+        descriptionLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, !valid);
+        errorLabel.setVisible(!valid);
+        errorLabel.setManaged(errorLabel.isVisible());
+        Optional<ValidatorBase> activeValidator = getActiveValidator();
+        errorLabel.setText(activeValidator.map(ValidatorBase::getMessage).orElse(""));
+        update();
+        return valid;
     }
 
     public void resetValidation() {
@@ -195,15 +203,14 @@ public class MaterialTextField extends Pane {
         isValid.set(false);
         selectionLine.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, false);
         descriptionLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, false);
-        helpLabel.pseudoClassStateChanged(PSEUDO_CLASS_ERROR, false);
-        helpLabel.setText("");
+        errorLabel.setText("");
     }
-
-    private final BooleanProperty isValid = new SimpleBooleanProperty();
 
     public BooleanProperty isValidProperty() {
         return isValid;
     }
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // Description
     ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -259,10 +266,14 @@ public class MaterialTextField extends Pane {
         //todo
     }
 
+    public void setStringConverter(StringConverter<Number> stringConverter) {
+        this.stringConverter = Optional.of(stringConverter);
+    }
+
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // PromptText
     ///////////////////////////////////////////////////////////////////////////////////////////////////
-
 
     public String getPromptText() {
         return textInputControl.getPromptText();
@@ -289,7 +300,7 @@ public class MaterialTextField extends Pane {
         helpLabel.setText(value);
     }
 
-    public final StringProperty helpHelpProperty() {
+    public final StringProperty helpProperty() {
         return helpLabel.textProperty();
     }
 
@@ -390,6 +401,12 @@ public class MaterialTextField extends Pane {
             Transitions.animateWidth(selectionLine, getWidth());
         } else {
             Transitions.fadeOut(selectionLine, 200);
+            stringConverter.ifPresent(stringConverter -> {
+                try {
+                    setText(stringConverter.toString(stringConverter.fromString(getText())));
+                } catch (Exception ignore) {
+                }
+            });
             validate();
         }
         onMouseExited();
@@ -405,6 +422,7 @@ public class MaterialTextField extends Pane {
             double iconWidth = iconButton.isVisible() ? 25 : 0;
             textInputControl.setPrefWidth(width - 2 * textInputControl.getLayoutX() - iconWidth);
             helpLabel.setPrefWidth(width - 2 * helpLabel.getLayoutX());
+            errorLabel.setPrefWidth(width - 2 * errorLabel.getLayoutX());
         }
     }
 
@@ -431,6 +449,7 @@ public class MaterialTextField extends Pane {
         selectionLine.setLayoutY(getBgHeight() - 2);
         textInputControl.setLayoutY(getFieldLayoutY());
         helpLabel.setLayoutY(getBgHeight() + 3.5);
+        errorLabel.setLayoutY(getBgHeight() + 3.5);
     }
 
     private void layoutIconButton() {
@@ -464,8 +483,9 @@ public class MaterialTextField extends Pane {
                 Transitions.animateLayoutY(descriptionLabel, 16.5, Transitions.DEFAULT_DURATION / 6d, null);
             }
         }
-        helpLabel.setVisible(StringUtils.isNotEmpty(helpHelpProperty().get()));
-        helpLabel.setManaged(StringUtils.isNotEmpty(helpHelpProperty().get()));
+
+        helpLabel.setVisible(isValid.get() && StringUtils.isNotEmpty(getHelpText()));
+        helpLabel.setManaged(helpLabel.isVisible());
 
         descriptionLabel.getStyleClass().remove("material-text-field-description-read-only");
         textInputControl.getStyleClass().remove("material-text-field-read-only");
@@ -500,8 +520,10 @@ public class MaterialTextField extends Pane {
             descriptionLabel.getStyleClass().add("material-text-field-description-read-only");
             textInputControl.getStyleClass().add("material-text-field-read-only");
         }
+
         setOpacity(textInputControl.isDisabled() ? 0.35 : 1);
         UIThread.runOnNextRenderFrame(this::layoutIconButton);
+        layout();
     }
 
     protected void removeBgStyles() {
@@ -528,6 +550,8 @@ public class MaterialTextField extends Pane {
     protected double computeMinHeight(double width) {
         if (helpLabel.isManaged()) {
             return helpLabel.getLayoutY() + helpLabel.getHeight();
+        } else if (errorLabel.isManaged()) {
+            return errorLabel.getLayoutY() + errorLabel.getHeight();
         } else {
             return getBgHeight();
         }

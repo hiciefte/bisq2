@@ -24,6 +24,7 @@ import bisq.persistence.PersistableStore;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,10 +40,16 @@ public class TwoPartyPrivateChatChannelStore implements PersistableStore<TwoPart
     }
 
     @Override
-    public bisq.chat.protobuf.TwoPartyPrivateChatChannelStore toProto() {
-        bisq.chat.protobuf.TwoPartyPrivateChatChannelStore.Builder builder = bisq.chat.protobuf.TwoPartyPrivateChatChannelStore.newBuilder()
-                .addAllChannels(channels.stream().map(TwoPartyPrivateChatChannel::toProto).collect(Collectors.toList()));
-        return builder.build();
+    public bisq.chat.protobuf.TwoPartyPrivateChatChannelStore.Builder getBuilder(boolean serializeForHash) {
+        return bisq.chat.protobuf.TwoPartyPrivateChatChannelStore.newBuilder()
+                .addAllChannels(channels.stream()
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.chat.protobuf.TwoPartyPrivateChatChannelStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static TwoPartyPrivateChatChannelStore fromProto(bisq.chat.protobuf.TwoPartyPrivateChatChannelStore proto) {
@@ -70,7 +77,7 @@ public class TwoPartyPrivateChatChannelStore implements PersistableStore<TwoPart
 
     @Override
     public TwoPartyPrivateChatChannelStore getClone() {
-        return new TwoPartyPrivateChatChannelStore(channels);
+        return new TwoPartyPrivateChatChannelStore(new ArrayList<>(channels));
     }
 
     public void setAll(List<TwoPartyPrivateChatChannel> twoPartyPrivateChatChannels) {

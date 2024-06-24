@@ -17,6 +17,7 @@
 
 package bisq.desktop.main.content.bisq_easy.components;
 
+import bisq.desktop.common.threading.UIScheduler;
 import bisq.desktop.common.utils.ImageUtil;
 import javafx.animation.FadeTransition;
 import javafx.animation.RotateTransition;
@@ -29,8 +30,13 @@ import javafx.scene.layout.StackPane;
 import javafx.util.Duration;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
 public class WaitingAnimation extends StackPane {
+    public static final int INTERVAL = 1000;
+
+    private final ImageView spinningCircle;
     private ImageView waitingStateIcon;
     private WaitingState waitingState;
     private final RotateTransition rotate;
@@ -38,27 +44,25 @@ public class WaitingAnimation extends StackPane {
     private Scene scene;
     private ChangeListener<Scene> sceneListener;
     private ChangeListener<Boolean> focusListener;
+    private UIScheduler uiScheduler;
 
     public WaitingAnimation(WaitingState waitingState) {
-        this();
         setState(waitingState);
-    }
 
-    public WaitingAnimation() {
         setAlignment(Pos.CENTER);
-        ImageView spinningCircle = ImageUtil.getImageViewById("spinning-circle");
 
+        spinningCircle = ImageUtil.getImageViewById(getSpinningCircleIconId(waitingState));
         spinningCircle.setFitHeight(78);
         spinningCircle.setFitWidth(78);
         spinningCircle.setPreserveRatio(true);
 
         getChildren().add(spinningCircle);
 
-        fadeTransition = new FadeTransition(Duration.millis(1000), spinningCircle);
+        fadeTransition = new FadeTransition(Duration.millis(INTERVAL), spinningCircle);
         fadeTransition.setFromValue(0);
         fadeTransition.setToValue(1);
 
-        rotate = new RotateTransition(Duration.millis(1000), spinningCircle);
+        rotate = new RotateTransition(Duration.millis(INTERVAL), spinningCircle);
         rotate.setByAngle(360);
 
         sceneListener = (observable, oldValue, newValue) -> {
@@ -100,13 +104,15 @@ public class WaitingAnimation extends StackPane {
         }
 
         if (waitingState != null) {
-            waitingStateIcon = ImageUtil.getImageViewById(getIconId(waitingState));
+            waitingStateIcon = ImageUtil.getImageViewById(getWaitingStateIconId(waitingState));
             getChildren().add(waitingStateIcon);
         }
     }
 
-    private String getIconId(WaitingState waitingState) {
+    private String getWaitingStateIconId(WaitingState waitingState) {
         switch (waitingState) {
+            case TAKE_BISQ_EASY_OFFER:
+                return "take-bisq-easy-offer";
             case ACCOUNT_DATA:
                 return "account-data";
             case FIAT_PAYMENT:
@@ -124,13 +130,30 @@ public class WaitingAnimation extends StackPane {
         }
     }
 
+    private String getSpinningCircleIconId(WaitingState waitingState) {
+        return waitingState == WaitingState.TAKE_BISQ_EASY_OFFER ? "take-bisq-easy-offer-circle" : "spinning-circle";
+    }
+
     public void play() {
         rotate.play();
         fadeTransition.play();
     }
 
+    public void playIndefinitely() {
+        playRepeated(0, 4 * INTERVAL, TimeUnit.MILLISECONDS, Long.MAX_VALUE);
+    }
+
+    public void playRepeated(long initialDelay, long delay, TimeUnit timeUnit, long cycles) {
+        stop();
+        uiScheduler = UIScheduler.run((this::play)).repeated(initialDelay, delay, timeUnit, cycles);
+    }
+
     public void stop() {
         rotate.stop();
         fadeTransition.stop();
+        if (uiScheduler != null) {
+            uiScheduler.stop();
+            uiScheduler = null;
+        }
     }
 }

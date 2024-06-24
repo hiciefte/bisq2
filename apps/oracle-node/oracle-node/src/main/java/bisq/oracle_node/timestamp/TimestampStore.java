@@ -25,6 +25,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -42,13 +43,17 @@ public final class TimestampStore implements PersistableStore<TimestampStore> {
     }
 
     @Override
-    public bisq.oracle_node.protobuf.TimestampStore toProto() {
+    public bisq.oracle_node.protobuf.TimestampStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.oracle_node.protobuf.TimestampStore.newBuilder()
                 .addAllStringLongPairs(timestampsByProfileId.entrySet().stream()
                         .map(entry -> new StringLongPair(entry.getKey(), entry.getValue()))
-                        .map(StringLongPair::toProto)
-                        .collect(Collectors.toSet()))
-                .build();
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toSet()));
+    }
+
+    @Override
+    public bisq.oracle_node.protobuf.TimestampStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static TimestampStore fromProto(bisq.oracle_node.protobuf.TimestampStore proto) {
@@ -71,7 +76,7 @@ public final class TimestampStore implements PersistableStore<TimestampStore> {
 
     @Override
     public TimestampStore getClone() {
-        return new TimestampStore(timestampsByProfileId);
+        return new TimestampStore(new HashMap<>(timestampsByProfileId));
     }
 
     @Override

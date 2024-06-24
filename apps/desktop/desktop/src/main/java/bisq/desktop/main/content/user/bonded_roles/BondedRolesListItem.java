@@ -21,9 +21,13 @@ import bisq.bonded_roles.BondedRoleType;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.bonded_role.BondedRole;
 import bisq.i18n.Res;
+import bisq.network.NetworkService;
+import bisq.network.common.Address;
 import bisq.network.common.AddressByTransportTypeMap;
+import bisq.presentation.formatters.TimeFormatter;
 import bisq.user.UserService;
 import bisq.user.profile.UserProfile;
+import bisq.user.profile.UserProfileService;
 import com.google.common.base.Joiner;
 import com.google.gson.GsonBuilder;
 import lombok.EqualsAndHashCode;
@@ -31,45 +35,77 @@ import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
-@EqualsAndHashCode
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @Getter
 @ToString
 public class BondedRolesListItem {
+    @EqualsAndHashCode.Include
     private final Optional<UserProfile> userProfile;
+    @EqualsAndHashCode.Include
     private final String roleTypeString;
-    private final String bondUserName;
-    private final String signature;
-    private final String userProfileId;
-    private final String userName;
+    @EqualsAndHashCode.Include
     private final BondedRoleType bondedRoleType;
+    @EqualsAndHashCode.Include
+    private final String bondUserName;
+    private final String userProfileId;
+    private final String signature;
+    private final String userName;
     private final String address;
     private final String addressInfoJson;
-    @EqualsAndHashCode.Exclude
     private final String isBanned;
     private final boolean staticPublicKeysProvided;
+    private final boolean isRootNode;
+    private final boolean isRootSeedNode;
+    private final long lastSeen;
+    private final String lastSeenAsString;
 
-    public BondedRolesListItem(BondedRole bondedRole, UserService userService) {
+    public BondedRolesListItem(BondedRole bondedRole, UserService userService, NetworkService networkService) {
         AuthorizedBondedRole authorizedBondedRoleData = bondedRole.getAuthorizedBondedRole();
         isBanned = bondedRole.isBanned() ? Res.get("confirmation.yes") : "";
-        userProfile = userService.getUserProfileService().findUserProfile(authorizedBondedRoleData.getProfileId());
+        UserProfileService userProfileService = userService.getUserProfileService();
+        userProfile = userProfileService.findUserProfile(authorizedBondedRoleData.getProfileId());
         userProfileId = userProfile.map(UserProfile::getId).orElse(Res.get("data.na"));
         userName = userProfile.map(UserProfile::getUserName).orElse(Res.get("data.na"));
         bondUserName = authorizedBondedRoleData.getBondUserName();
         signature = authorizedBondedRoleData.getSignatureBase64();
         bondedRoleType = authorizedBondedRoleData.getBondedRoleType();
-        AddressByTransportTypeMap addressByTransportTypeMap = authorizedBondedRoleData.getAddressByTransportTypeMap();
-        List<String> list = addressByTransportTypeMap.entrySet().stream()
-                .map(e -> e.getKey().name() + ": " + e.getValue().getFullAddress())
-                .collect(Collectors.toList());
-        address = Joiner.on("\n").join(list);
-        addressInfoJson = new GsonBuilder().setPrettyPrinting().create().toJson(addressByTransportTypeMap);
         staticPublicKeysProvided = authorizedBondedRoleData.staticPublicKeysProvided();
-        roleTypeString = staticPublicKeysProvided ?
+
+        lastSeen = userProfile.map(userProfileService::getLastSeen).orElse(-1L);
+        lastSeenAsString = TimeFormatter.formatAge(lastSeen);
+
+        Optional<AddressByTransportTypeMap> addressByTransportTypeMap = authorizedBondedRoleData.getAddressByTransportTypeMap();
+        if (addressByTransportTypeMap.isPresent()) {
+            AddressByTransportTypeMap addressMap = addressByTransportTypeMap.get();
+            List<String> list = addressMap.entrySet().stream()
+                    .map(e -> e.getKey().name() + ": " + e.getValue().getFullAddress())
+                    .collect(Collectors.toList());
+            address = Joiner.on("\n").join(list);
+            addressInfoJson = new GsonBuilder().setPrettyPrinting().create().toJson(addressMap);
+
+            Set<String> bondedRoleAddresses = addressMap.values().stream()
+                    .map(Address::getFullAddress)
+                    .collect(Collectors.toSet());
+            Set<String> seedAddressesFromConfig = networkService.getSeedAddressesByTransportFromConfig().values().stream()
+                    .flatMap(Collection::stream)
+                    .map(Address::getFullAddress)
+                    .collect(Collectors.toSet());
+            isRootSeedNode = bondedRoleAddresses.stream().anyMatch(seedAddressesFromConfig::contains);
+        } else {
+            address = "";
+            addressInfoJson = "";
+            isRootSeedNode = false;
+        }
+
+        isRootNode = staticPublicKeysProvided || isRootSeedNode;
+        roleTypeString = isRootNode ?
                 bondedRoleType.getDisplayString() + " (root)" :
                 bondedRoleType.getDisplayString();
         // oracleNodePublicKeyHash = authorizedBondedRoleData.getAuthorizedOracleNode().map(AuthorizedOracleNode::getPublicKeyHash).orElseGet(() -> Res.get("data.na"));

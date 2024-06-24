@@ -26,11 +26,13 @@ import bisq.network.p2p.services.data.inventory.filter.InventoryFilter;
 import bisq.network.p2p.services.data.inventory.filter.InventoryFilterType;
 import bisq.network.p2p.services.data.inventory.filter.hash_set.HashSetFilterService;
 import bisq.network.p2p.services.data.storage.StorageService;
-import bisq.network.p2p.services.peergroup.PeerGroupManager;
+import bisq.network.p2p.services.peer_group.PeerGroupManager;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * Manages Inventory data requests and response and apply it to the data service.
@@ -40,25 +42,47 @@ import java.util.*;
  */
 @Slf4j
 public class InventoryService {
-
     @Getter
     public static final class Config {
-        // Default config value is 2000 (about 2MB)
-        private final int maxSizeInKb;
+        private final int maxSizeInKb;  // Default config value is 2000 (about 2MB)
+        private final long repeatRequestInterval; // Default 10 min
+        private final int maxSeedsForRequest;
+        private final int maxPeersForRequest;
+        private final int maxPendingRequestsAtStartup; // Default 5
+        private final int maxPendingRequestsAtPeriodicRequests; // Default 2
         private final List<InventoryFilterType> myPreferredFilterTypes; // Lower list index means higher preference
 
         public static Config from(com.typesafe.config.Config config) {
             return new Config(config.getInt("maxSizeInKb"),
+                    SECONDS.toMillis(config.getLong("repeatRequestIntervalInSeconds")),
+                    config.getInt("maxSeedsForRequest"),
+                    config.getInt("maxPeersForRequest"),
+                    config.getInt("maxPendingRequestsAtStartup"),
+                    config.getInt("maxPendingRequestsAtPeriodicRequests"),
                     new ArrayList<>(config.getEnumList(InventoryFilterType.class, "myPreferredFilterTypes")));
         }
 
-        public Config(int maxSizeInKb, List<InventoryFilterType> myPreferredFilterTypes) {
+        public Config(int maxSizeInKb,
+                      long repeatRequestInterval,
+                      int maxSeedsForRequest,
+                      int maxPeersForRequest,
+                      int maxPendingRequestsAtStartup,
+                      int maxPendingRequestsAtPeriodicRequests,
+                      List<InventoryFilterType> myPreferredFilterTypes) {
             this.maxSizeInKb = maxSizeInKb;
+            this.repeatRequestInterval = repeatRequestInterval;
+            this.maxSeedsForRequest = maxSeedsForRequest;
+            this.maxPeersForRequest = maxPeersForRequest;
+            this.maxPendingRequestsAtStartup = maxPendingRequestsAtStartup;
+            this.maxPendingRequestsAtPeriodicRequests = maxPendingRequestsAtPeriodicRequests;
             this.myPreferredFilterTypes = myPreferredFilterTypes;
         }
     }
 
+    @Getter
+    private final Config config;
     private final InventoryResponseService inventoryResponseService;
+    @Getter
     private final InventoryRequestService inventoryRequestService;
 
     public InventoryService(Config config,
@@ -66,13 +90,14 @@ public class InventoryService {
                             PeerGroupManager peerGroupManager,
                             DataService dataService,
                             Set<Feature> features) {
+        this.config = config;
         int maxSize = (int) Math.round(ByteUnit.KB.toBytes(config.getMaxSizeInKb()));
         Inventory.setMaxSize(maxSize);
         Map<InventoryFilterType, FilterService<? extends InventoryFilter>> supportedFilterServices = new HashMap<>();
         StorageService storageService = dataService.getStorageService();
 
         features.stream()
-                .flatMap(feature -> InventoryFilter.fromFeature(feature).stream())
+                .flatMap(feature -> InventoryFilterType.fromFeature(feature).stream())
                 .forEach(supportedFilterType -> {
                     switch (supportedFilterType) {
                         case HASH_SET:
@@ -92,8 +117,7 @@ public class InventoryService {
                 peerGroupManager,
                 dataService,
                 supportedFilterServices,
-                config.getMyPreferredFilterTypes(),
-                maxSize);
+                config);
     }
 
 

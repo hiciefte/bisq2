@@ -140,7 +140,7 @@ public class ReportToModeratorWindow {
             root.setAlignment(Pos.TOP_CENTER);
             root.setPadding(new Insets(50, 30, 50, 30));
             root.setPrefWidth(OverlayModel.WIDTH);
-            root.setPrefHeight(400);
+            root.setPrefHeight(430);
 
             Label headline = new Label(Res.get("chat.reportToModerator.headline"));
             headline.getStyleClass().addAll("bisq-text-headline-2");
@@ -148,6 +148,7 @@ public class ReportToModeratorWindow {
             Label info = new Label(Res.get("chat.reportToModerator.info"));
             info.setWrapText(true);
             info.getStyleClass().addAll("bisq-text-3");
+            info.setMinHeight(100);
 
             message = new MaterialTextArea(Res.get("chat.reportToModerator.message"), Res.get("chat.reportToModerator.message.prompt"));
             reportButton = new Button(Res.get("chat.reportToModerator.report"));

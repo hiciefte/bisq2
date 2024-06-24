@@ -17,12 +17,14 @@
 
 package bisq.bonded_roles;
 
-import bisq.bonded_roles.alert.AlertService;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.bonded_roles.explorer.ExplorerService;
 import bisq.bonded_roles.market_price.MarketPriceService;
 import bisq.bonded_roles.registration.BondedRoleRegistrationService;
 import bisq.bonded_roles.release.ReleaseNotificationsService;
+import bisq.bonded_roles.security_manager.alert.AlertService;
+import bisq.bonded_roles.security_manager.difficulty_adjustment.DifficultyAdjustmentService;
+import bisq.bonded_roles.security_manager.min_reputation_score.MinRequiredReputationScoreService;
 import bisq.common.application.Service;
 import bisq.common.util.Version;
 import bisq.network.NetworkService;
@@ -61,20 +63,22 @@ public class BondedRolesService implements Service {
     private final MarketPriceService marketPriceService;
     private final ExplorerService explorerService;
     private final AlertService alertService;
+    private final DifficultyAdjustmentService difficultyAdjustmentService;
+    private final MinRequiredReputationScoreService minRequiredReputationScoreService;
     private final ReleaseNotificationsService releaseNotificationsService;
 
     public BondedRolesService(Config config, Version version, PersistenceService persistenceService, NetworkService networkService) {
         authorizedBondedRolesService = new AuthorizedBondedRolesService(networkService, config.isIgnoreSecurityManager());
         bondedRoleRegistrationService = new BondedRoleRegistrationService(networkService, authorizedBondedRolesService);
-        marketPriceService = new MarketPriceService(config.getMarketPrice(), version, persistenceService, networkService);
+        marketPriceService = new MarketPriceService(config.getMarketPrice(), version, persistenceService, networkService, authorizedBondedRolesService);
         explorerService = new ExplorerService(ExplorerService.Config.from(config.getBlockchainExplorer()),
                 networkService,
                 version);
-
-        alertService = new AlertService(networkService, authorizedBondedRolesService);
-        releaseNotificationsService = new ReleaseNotificationsService(networkService, authorizedBondedRolesService);
+        alertService = new AlertService(authorizedBondedRolesService);
+        difficultyAdjustmentService = new DifficultyAdjustmentService(authorizedBondedRolesService);
+        minRequiredReputationScoreService = new MinRequiredReputationScoreService(authorizedBondedRolesService);
+        releaseNotificationsService = new ReleaseNotificationsService(authorizedBondedRolesService);
     }
-
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // Service
@@ -82,21 +86,24 @@ public class BondedRolesService implements Service {
 
     public CompletableFuture<Boolean> initialize() {
         log.info("initialize");
-        return authorizedBondedRolesService.initialize()
+        return difficultyAdjustmentService.initialize()
+                .thenCompose(result -> minRequiredReputationScoreService.initialize())
+                .thenCompose(result -> alertService.initialize())
                 .thenCompose(result -> bondedRoleRegistrationService.initialize())
                 .thenCompose(result -> marketPriceService.initialize())
                 .thenCompose(result -> explorerService.initialize())
-                .thenCompose(result -> alertService.initialize())
-                .thenCompose(result -> releaseNotificationsService.initialize());
+                .thenCompose(result -> releaseNotificationsService.initialize())
+                .thenCompose(result -> authorizedBondedRolesService.initialize());
     }
 
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
         return authorizedBondedRolesService.shutdown()
+                .thenCompose(result -> difficultyAdjustmentService.shutdown())
+                .thenCompose(result -> minRequiredReputationScoreService.shutdown())
+                .thenCompose(result -> alertService.shutdown())
                 .thenCompose(result -> bondedRoleRegistrationService.shutdown())
                 .thenCompose(result -> marketPriceService.shutdown())
                 .thenCompose(result -> explorerService.shutdown())
-                .thenCompose(result -> alertService.shutdown())
                 .thenCompose(result -> releaseNotificationsService.shutdown());
     }
 }

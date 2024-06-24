@@ -1,10 +1,10 @@
 /*******************************************************************************
- * Container boxes                                                              *
+ * Container boxes                                                             *
  ******************************************************************************/
 
 .bisq-easy-container {
     -fx-background-color: -bisq-dark-grey-20;
-    -fx-background-radius: 8;
+    -fx-background-radius: 8 8 0 0;
 }
 
 .bisq-easy-container-headline {
@@ -43,7 +43,7 @@
 
 
 /*******************************************************************************
- * Trade guide                                                            *
+ * Trade guide                                                                 *
  ******************************************************************************/
 
 .bisq-easy-trade-guide-headline {
@@ -62,7 +62,7 @@
 
 
 /*******************************************************************************
- * Onboarding                                                           *
+ * Onboarding                                                                  *
  ******************************************************************************/
 
 .bisq-easy-onboarding-big-box {
@@ -104,8 +104,22 @@
 
 
 /*******************************************************************************
- * Offerbook                                                           *
+ * Offerbook                                                                   *
  ******************************************************************************/
+
+.offerbook-channel-title {
+    -fx-font-size: 1.2em;
+    -fx-padding: 3 0 0 0;
+}
+
+.offerbook-channel-market-code {
+    -fx-font-family: "IBM Plex Sans Medium";
+    -fx-padding: -3 0 0 0;
+}
+
+.offerbook-channel-market-price {
+    -fx-padding: -3 0 0 0;
+}
 
 .market-selection {
     -fx-text-fill: -fx-light-text-color !important;
@@ -115,53 +129,123 @@
     -fx-text-fill: -bisq2-green;
 }
 
-.market-selection-subheader-content {
-    -fx-max-width: 1200;
-    -fx-alignment: center-right;
-    -fx-padding: 0 25 0 25;
-}
-
-.market-selection-subheader {
+.market-selection-subheader,
+.offerbook-subheader,
+.offer-list-subheader {
     -fx-background-color: -bisq-dark-grey-30;
     -fx-background-radius: 0;
     -fx-max-height: 30;
     -fx-min-height: 30;
     -fx-pref-height: 30;
-    -fx-padding: 2 12 2 7;
 }
 
-.market-selection-subheader-checkbox .check-box {
-    -fx-scale-x: 0.6;
-    -fx-scale-y: 0.6;
+.market-selection-subheader,
+.offer-list-subheader {
+    -fx-padding: 0 12 0 7;
 }
 
-.market-selection-subheader-checkbox .label {
-    -fx-text-fill: -fx-mid-text-color;
-}
-
-.market-selection-subheader-checkbox .check-box > .box {
-    -fx-background-color: transparent;
-    -fx-background-radius: 0;
-    -fx-border-color: -bisq-mid-grey-20;
-    -fx-border-width: 1;
-}
-
-.market-selection-search-box {
+.offerbook-search-box {
     -fx-background-radius: 0;
     -fx-background-color: -bisq-dark-grey-30;
     -fx-border-color: transparent;
     -fx-border-width: 0;
     -fx-border-radius: 0;
     -fx-padding: 0;
-    -fx-max-width: 95;
+    -fx-max-width: 160;
 }
 
-.market-selection-search-box .search-text-field {
-    -fx-padding: 0 5 0 5;
+.offerbook-search-box .search-text-field {
+    -fx-padding: 0 5 0 8;
 }
 
 .market-selection-dropdown-menu {
     -fx-padding: 0 10 0 10;
+    -fx-max-height: 24;
+    -fx-min-height: 24;
+    -fx-pref-height: 24;
+    -fx-max-width: 24;
+    -fx-min-width: 24;
+    -fx-pref-width: 24;
+}
+
+.offerbook-subheader {
+    -fx-padding: 0;
+}
+
+.offerbook-subheader-content {
+    -fx-max-width: 1200;
+    -fx-alignment: center-right;
+    -fx-padding: 0 25 0 25;
+}
+
+.offerbook-subheader-checkbox .check-box {
+    -fx-scale-x: 0.6;
+    -fx-scale-y: 0.6;
+    -fx-cursor: hand;
+}
+
+.offerbook-subheader-checkbox .label {
+    -fx-text-fill: -fx-mid-text-color;
+}
+
+.offerbook-subheader-checkbox .check-box > .box {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-color: -bisq-mid-grey-20;
+    -fx-border-width: 1;
+}
+
+.offerbook-subheader .dropdown-offers-filter-menu {
+    -fx-padding: 0 10 0 10;
+}
+
+/* Drop down sort & filter menu */
+.dropdown-menu-popup .dropdown-menu-item .dropdown-menu-item-content .menu-item-icon,
+.dropdown-menu-popup .dropdown-menu-item:hover .dropdown-menu-item-content .menu-item-icon {
+    -fx-opacity: 0;
+}
+
+.dropdown-menu-popup .dropdown-menu-item .dropdown-menu-item-content:selected .menu-item-icon,
+.dropdown-menu-popup .dropdown-menu-item:hover .dropdown-menu-item-content:selected .menu-item-icon {
+    -fx-opacity: 1;
+}
+
+.dropdown-menu-popup .dropdown-menu-item .dropdown-menu-item-content:selected .label {
+    -fx-text-fill: -fx-light-text-color;
+}
+
+.market-selection-no-filters {
+    -fx-padding: 10 0 0 0;
+}
+
+.market-selection-show-applied-filters {
+    -fx-min-height: 35;
+    -fx-pref-height: 35;
+    -fx-max-height: 35;
+    -fx-padding: 5;
+}
+
+.market-selection-show-applied-filters .filter-display-hint {
+    -fx-background-color: transparent;
+    -fx-border-color: -bisq-mid-grey-20;
+    -fx-border-width: 1;
+    -fx-border-radius: 4;
+    -fx-min-height: 20;
+    -fx-pref-height: 20;
+    -fx-max-height: 20;
+    -fx-padding: 0 5 0 5;
+}
+
+.market-selection-show-applied-filters .filter-display-hint:hover {
+    -fx-border-color: -bisq-white;
+}
+
+.market-selection-show-applied-filters .filter-display-hint:hover .label {
+    -fx-text-fill: -bisq-white;
+}
+
+.market-selection-show-applied-filters .filter-display-hint .label {
+    -fx-text-fill: -fx-mid-text-color;
 }
 
 .market-selection-list .column-header-background {
@@ -180,8 +264,6 @@
 }
 
 .market-selection-list .table-cell {
-    /*-fx-border-width: 1;*/
-    /*-fx-border-color: blue;*/
     -fx-padding: 0;
 }
 
@@ -195,13 +277,97 @@
     -fx-text-fill: -fx-light-text-color !important;
 }
 
+.market-selection-list .favourite-label {
+    /*-fx-background-color: blue;*/
+    -fx-alignment: center;
+    -fx-min-width: 30;
+    /*-fx-min-height: 50;*/
+    /*-fx-padding: 0 3 0 0;*/
+}
+
+.favourites-list {
+    -fx-padding: 0 0 10 0;
+    -fx-border-width: 0 0 1 0;
+    -fx-border-insets: 0 0 10 0;
+    -fx-border-color: -bisq-dark-grey-50;
+}
+
+.markets-list .favourite-label {
+    -fx-opacity: 0;
+}
+
+.markets-list .table-row-cell:hover .favourite-label {
+    -fx-opacity: 1;
+}
+
+.offers-list.table-view {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.offers-list.table-view .column-header .label {
+    -fx-alignment: center-left;
+    -fx-label-padding: 0 7;
+}
+
+/* BUY FROM */
+.dropdown-offer-list-direction-filter-menu .buy-from-offers {
+    -fx-label-padding: 0 0 0 5;
+    -fx-text-fill: -bisq2-green;
+}
+
+.dropdown-offer-list-direction-filter-menu:hover .buy-from-offers {
+    -fx-label-padding: 0 0 0 5;
+    -fx-text-fill: -bisq2-green-lit-20;
+}
+
+/* SELL TO */
+.dropdown-offer-list-direction-filter-menu .sell-to-offers {
+    -fx-label-padding: 0 0 0 5;
+    -fx-text-fill: -bisq2-red-lit-20;
+}
+
+.dropdown-offer-list-direction-filter-menu:hover .sell-to-offers {
+    -fx-label-padding: 0 0 0 5;
+    -fx-text-fill: -bisq2-red-lit-40;
+}
+
+/* COLLAPSE AND EXPAND COLUMNS */
+.collapsed-offer-list-container {
+    -fx-background-color: -bisq-dark-grey-20;
+    -fx-background-radius: 0 8 0 0;
+}
+
+.collapsed-market-selection-list-container {
+    -fx-background-color: -bisq-dark-grey-20;
+    -fx-background-radius: 8 0 0 0;
+}
+
+.chat-container-with-offer-list-collapsed {
+    -fx-background-radius: 8 0 0 0;
+}
+
+.chat-container-with-market-selection-list-collapsed {
+    -fx-background-radius: 0 8 0 0;
+}
+
+.chat-container-with-both-lists-collapsed {
+    -fx-background-radius: 0;
+}
+
+.chat-container-with-offer-list-collapsed,
+.chat-container-with-market-selection-list-collapsed,
+.chat-container-with-both-lists-collapsed {
+    -fx-background-color: -bisq-dark-grey-20;
+}
+
 .create-offer-button {
     -fx-background-color: -fx-default-button;
     -fx-text-fill: -fx-light-text-color;
     -fx-background-radius: 8;
     -fx-border-color: transparent;
     -fx-border-radius: 8;
-    -fx-padding: 2 4 4 4;
+    -fx-padding: 4 50 4 50;
     -fx-cursor: hand;
 }
 
@@ -219,7 +385,6 @@
  *                                                                             *
  ******************************************************************************/
 
-
 .open-trades-badge.bisq-badge .badge-pane {
     -fx-background-color: -bisq2-yellow;
 }
@@ -228,6 +393,18 @@
     -fx-font-size: 0.85em !important;
     -fx-text-fill: black !important;
     -fx-font-family: "IBM Plex Sans SemiBold" !important;
+}
+
+.tx-lookup-in-mempool {
+    -fx-text-fill: -bisq2-yellow;
+}
+
+.tx-lookup-confirmed {
+    -fx-text-fill: -bisq2-green;
+}
+
+.tx-lookup-failed {
+    -fx-text-fill: -bisq2-red;
 }
 
 
@@ -263,7 +440,7 @@
 
 
 /*******************************************************************************
- * BisqEasyOpenTradesView.tableView                                                       *
+ * BisqEasyOpenTradesView.tableView                                            *
  ******************************************************************************/
 
 .bisq-easy-open-trades.table-view .table-row-cell:filled:hover .table-cell {
@@ -276,7 +453,7 @@
 
 
 /*******************************************************************************
- * Header                                                                 *
+ * Header                                                                      *
  ******************************************************************************/
 
 .bisq-easy-open-trades-header-description {
@@ -329,8 +506,47 @@
     -fx-font-family: "IBM Plex Sans Light";
 }
 
+/* Temporary overlay */
+.seller-price-approval-popup {
+    -fx-min-height: 300;
+    -fx-pref-height: 300;
+    -fx-max-height: 300;
+    -fx-min-width: 800;
+    -fx-pref-width: 800;
+    -fx-max-width: 800;
+    -fx-padding: 30 60 30 60;
+}
+
+.seller-price-approval-popup .seller-price-approval-title {
+    -fx-fill: -bisq2-green;
+    -fx-text-fill: -bisq2-green;
+}
+
+.seller-price-approval-popup .seller-price-approval-content {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-padding: 15 0 0 0;
+    -fx-spacing: 10;
+}
+
+.seller-price-approval-popup .seller-price-approval-description .label {
+    -fx-wrap-text: true;
+}
+
+.seller-price-approval-popup .seller-price-approval-question {
+    -fx-line-spacing: 10;
+}
+
+.seller-price-approval-popup .seller-price-approval-disclaimer {
+    -fx-padding: 10 0 0 0;
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+    -fx-line-spacing: 10;
+}
+
+
 /*******************************************************************************
- * Trade state phase (left side box)                                                                  *
+ * Trade state phase (left side box)                                           *
  ******************************************************************************/
 
 .bisq-easy-trade-state-phase {
@@ -385,7 +601,7 @@
 
 
 /*******************************************************************************
- * Trade state phase info (right side box)                                                                *
+ * Trade state phase info (right side box)                                     *
  ******************************************************************************/
 
 .bisq-easy-trade-state-headline {
@@ -412,9 +628,88 @@
 
 /*******************************************************************************
  *                                                                             *
- * Trade wizard                                                        *
+ * Trade wizard                                                                *
  *                                                                             *
  ******************************************************************************/
+
+.bisq-easy-trade-wizard-price-step .price-content {
+    -fx-alignment: center;
+}
+
+.bisq-easy-trade-wizard-price-step .pricing-models {
+    -fx-alignment: center;
+    -fx-padding: 10 0 10 0;
+}
+
+.bisq-easy-trade-wizard-price-step .pricing-models .price-item-box {
+    -fx-max-width: 300;
+    -fx-min-width: 300;
+    -fx-pref-width: 300;
+}
+
+.bisq-easy-trade-wizard-price-step .pricing-models .price-item-box .price-item {
+    -fx-padding: 5;
+    -fx-background-color: transparent;
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+}
+
+.bisq-easy-trade-wizard-price-step .selected-price-model {
+    -fx-fill: -bisq2-green !important;
+    -fx-text-fill: -bisq2-green !important;
+}
+
+.bisq-easy-trade-wizard-price-step .feedback-box {
+    -fx-padding: 10 0 10 0;
+    -fx-alignment: center;
+}
+
+.bisq-easy-trade-wizard-price-step .feedback-box .learn-why-button {
+    -fx-fill: -bisq2-green;
+    -fx-text-fill: -bisq2-green;
+    -fx-font-size: 1.15em;
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-padding: 5;
+    -fx-background-color: transparent;
+    -fx-underline: true;
+}
+
+.bisq-easy-trade-wizard-price-step .learn-why-overlay {
+    -fx-max-height: 330;
+    -fx-min-height: 330;
+    -fx-pref-height: 330;
+    -fx-max-width: 680;
+    -fx-min-width: 680;
+    -fx-pref-width: 680;
+    -fx-alignment: center;
+    -fx-padding: 50;
+}
+
+.bisq-easy-trade-wizard-price-step .learn-why-overlay .learn-why-title-label {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-padding: 0 0 15 0;
+}
+
+.bisq-easy-trade-wizard-price-step .learn-why-overlay .learn-why-text {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-size: 1.15em;
+    -fx-font-family: "IBM Plex Sans Light";
+}
+
+.bisq-easy-trade-wizard-price-step .learn-why-overlay .learn-why-intro-label {
+    -fx-wrap-text: true;
+    -fx-line-spacing: 5px;
+    -fx-max-height: 48;
+    -fx-min-height: 48;
+    -fx-pref-height: 48;
+}
+
+.bisq-easy-trade-wizard-price-step .learn-why-overlay .unordered-list {
+    -fx-padding: 0 0 15 0;
+}
 
 .bisq-easy-trade-wizard-review-header-description {
     -fx-alignment: left;
@@ -444,7 +739,6 @@
     -fx-font-size: 2.3em;
     -fx-font-family: "IBM Plex Sans Light";
 }
-
 
 .trade-wizard-review-direction {
     -fx-fill: -fx-mid-text-color;
@@ -563,7 +857,6 @@
     -fx-font-family: "IBM Plex Sans Light";
 }
 
-
 .trade-wizard-review-payment-combo-box {
     -fx-background-color: -bisq-dark-grey-50;
     -fx-background-insets: 6 0 6 0;
@@ -573,84 +866,108 @@
     -fx-font-family: "IBM Plex Sans Light";
 }
 
-
-/*******************************************************************************
- * TradeWizardMarketView.tableView                                                       *
- ******************************************************************************/
-
-.bisq-easy-trade-wizard-market.table-view {
-    -fx-font-size: 1.15em;
+.trade-wizard-take-offer-send-message-headline {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-font-size: 1.7em;
 }
 
-.bisq-easy-trade-wizard-market.table-view .column-header {
-    -fx-pref-height: 40;
+.trade-wizard-take-offer-send-message-sub-headline {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-size: 1.1em;
+    -fx-font-family: "IBM Plex Sans Light";
 }
 
-.bisq-easy-trade-wizard-market.table-view .table-row-cell {
-    -fx-pref-height: 50;
-}
-
-.bisq-easy-trade-wizard-market.table-view .table-row-cell .table-cell {
-    -fx-background-color: -bisq-dark-grey-40;
-}
-
-.bisq-easy-trade-wizard-market.table-view .table-row-cell:hover .table-cell {
-    -fx-background-color: -bisq-darker-grey;
-}
-
-.bisq-easy-trade-wizard-market.table-view .table-row-cell:selected .table-cell {
-    -fx-background-color: -bisq2-green;
+.trade-wizard-take-offer-send-message-info {
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+    -fx-font-size: 1em;
+    -fx-font-family: "IBM Plex Sans Light";
 }
 
 
 /*******************************************************************************
- * TradeWizardTakeOfferView.tableView                                                       *
+ * TradeWizardMarketView.tableView                                             *
  ******************************************************************************/
 
-.bisq-easy-trade-wizard-select-trade.table-view {
-    -fx-font-size: 1.15em;
+.markets-table-container {
+    -fx-background-color: -bisq-dark-grey-20;
+    -fx-border-width: 0 0 5px 0;
+    -fx-border-color: -bisq-dark-grey-20;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view .column-header {
+    -fx-pref-height: 40px;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view .column-header .label {
+    -fx-alignment: center;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view .table-row-cell:hover {
+    -fx-cursor: hand;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view .table-row-cell {
+    -fx-pref-height: 55px;
+    -fx-border-width: 0;
+}
+
+.bisq-easy-trade-wizard-market.table-view.table-view .table-cell {
+    -fx-padding: 0;
+}
+
+.bisq-easy-trade-wizard-market-search {
+    -fx-background-color: -bisq-dark-grey-20;
+}
+
+.bisq-easy-trade-wizard-market-search .search-text-field {
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-font-size: 0.9em;
+}
+
+
+/*******************************************************************************
+ * TradeWizardTakeOfferView.tableView                                          *
+ ******************************************************************************/
+
+.matching-offers-table-container {
+    -fx-background-color: -bisq-dark-grey-20;
+    -fx-border-width: 0 0 5px 0;
+    -fx-border-color: -bisq-dark-grey-20;
+}
+
+.bisq-easy-trade-wizard-select-offer.table-view {
+    -fx-background-insets: 0;
+    -fx-padding: 0;
 }
 
 .bisq-easy-trade-wizard-select-offer.table-view .column-header {
     -fx-pref-height: 40px;
 }
 
+.bisq-easy-trade-wizard-select-offer.table-view .column-header .label {
+    -fx-alignment: center;
+}
+
+.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:hover {
+    -fx-cursor: hand;
+}
+
 .bisq-easy-trade-wizard-select-offer.table-view .table-row-cell {
     -fx-pref-height: 55px;
+    -fx-border-width: 0;
 }
 
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell .table-cell {
-    -fx-background-color: -bisq-dark-grey-40;
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:hover .table-cell {
-    -fx-background-color: -bisq-darker-grey;
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:selected .table-cell {
-    -fx-background-color: -bisq2-green;
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:empty {
-    -fx-border-color: derive(-bisq-dark-grey-40, -30%);
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:empty .table-cell {
-    -fx-background-color: derive(-bisq-dark-grey-40, -15%);
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:empty:hover .table-cell {
-    -fx-background-color: derive(-bisq-dark-grey-40, -15%);
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:selected .button.white-button .text {
-    -fx-fill: -bisq-black !important;
-    -fx-font-family: "IBM Plex Sans Medium" !important;
-}
-
-.bisq-easy-trade-wizard-select-offer.table-view .table-row-cell:hover .button.outlined-button .text {
-    -fx-fill: -bisq2-green;
-    -fx-font-family: "IBM Plex Sans Medium";
+.bisq-easy-trade-wizard-select-offer.table-view .table-cell {
+    -fx-padding: 0;
 }
 
 /* the text property from list view need to set to apply the color to the button label */
@@ -681,7 +998,7 @@
 
 
 /*******************************************************************************
- * Chat                                                              *
+ * Chat                                                                        *
  ******************************************************************************/
 
 .bisq-easy-chat-sidebar-bg {
@@ -692,7 +1009,7 @@
 
 /*******************************************************************************
  *                                                                             *
- * Trade domain                                                                   *
+ * Trade domain                                                                *
  *                                                                             *
  ******************************************************************************/
 
@@ -705,7 +1022,7 @@
 
 /*******************************************************************************
  *                                                                             *
- * PaymentMethod domain                                                                *
+ * PaymentMethod domain                                                        *
  *                                                                             *
  ******************************************************************************/
 
@@ -722,7 +1039,7 @@
 
 /*******************************************************************************
  *                                                                             *
- * Misc                                                                 *
+ * Misc                                                                        *
  *                                                                             *
  ******************************************************************************/
 
@@ -764,7 +1081,7 @@
 
 /*******************************************************************************
  *                                                                             *
- * Mediator view                                                              *
+ * Mediator view                                                               *
  *                                                                             *
  ******************************************************************************/
 

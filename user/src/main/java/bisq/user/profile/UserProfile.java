@@ -29,7 +29,7 @@ import bisq.network.p2p.services.data.storage.DistributedData;
 import bisq.network.p2p.services.data.storage.MetaData;
 import bisq.security.DigestUtil;
 import bisq.security.pow.ProofOfWork;
-import bisq.user.NymIdGenerator;
+import bisq.user.identity.NymIdGenerator;
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -55,14 +55,17 @@ public final class UserProfile implements DistributedData {
     public static final int MAX_LENGTH_STATEMENT = 100;
 
     public static UserProfile from(UserProfile userProfile, String terms, String statement) {
-        return new UserProfile(userProfile.getNickName(), userProfile.getProofOfWork(), userProfile.getNetworkId(), terms, statement);
+        return new UserProfile(userProfile.getNickName(), userProfile.getProofOfWork(), userProfile.getAvatarVersion(),
+                userProfile.getNetworkId(), terms, statement);
     }
 
-    // We give a bit longer TTL than the chat messages to ensure the chat user is available as long the messages are 
+    // We give a bit longer TTL than the chat messages to ensure the chat user is available as long the messages are
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_15_DAYS, DEFAULT_PRIORITY, getClass().getSimpleName(), MAX_MAP_SIZE_10_000);
     private final String nickName;
-    // We need the proofOfWork for verification of the nym and robohash icon
+    // We need the proofOfWork for verification of the nym and cathash icon
     private final ProofOfWork proofOfWork;
+    private final int avatarVersion;
     private final NetworkId networkId;
     private final String terms;
     private final String statement;
@@ -73,11 +76,13 @@ public final class UserProfile implements DistributedData {
 
     public UserProfile(String nickName,
                        ProofOfWork proofOfWork,
+                       int avatarVersion,
                        NetworkId networkId,
                        String terms,
                        String statement) {
         this.nickName = nickName;
         this.proofOfWork = proofOfWork;
+        this.avatarVersion = avatarVersion;
         this.networkId = networkId;
         this.terms = terms;
         this.statement = statement;
@@ -93,19 +98,25 @@ public final class UserProfile implements DistributedData {
     }
 
     @Override
-    public bisq.user.protobuf.UserProfile toProto() {
+    public bisq.user.protobuf.UserProfile.Builder getBuilder(boolean serializeForHash) {
         return bisq.user.protobuf.UserProfile.newBuilder()
                 .setNickName(nickName)
                 .setTerms(terms)
                 .setStatement(statement)
-                .setProofOfWork(proofOfWork.toProto())
-                .setNetworkId(networkId.toProto())
-                .build();
+                .setAvatarVersion(avatarVersion)
+                .setProofOfWork(proofOfWork.toProto(serializeForHash))
+                .setNetworkId(networkId.toProto(serializeForHash));
+    }
+
+    @Override
+    public bisq.user.protobuf.UserProfile toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static UserProfile fromProto(bisq.user.protobuf.UserProfile proto) {
         return new UserProfile(proto.getNickName(),
                 ProofOfWork.fromProto(proto.getProofOfWork()),
+                proto.getAvatarVersion(),
                 NetworkId.fromProto(proto.getNetworkId()),
                 proto.getTerms(),
                 proto.getStatement());
@@ -149,13 +160,14 @@ public final class UserProfile implements DistributedData {
 
     public String getNym() {
         if (nym == null) {
-            nym = NymIdGenerator.fromHash(getPubKeyHash());
+            nym = NymIdGenerator.generate(getPubKeyHash(), proofOfWork.getSolution());
         }
         return nym;
     }
 
     public ByteArray getProofOfBurnKey() {
         if (proofOfBurnHash == null) {
+            // Must be compatible with Bisq 1 proofOfBurn input
             proofOfBurnHash = new ByteArray(DigestUtil.hash(getId().getBytes(Charsets.UTF_8)));
         }
         return proofOfBurnHash;
@@ -205,6 +217,7 @@ public final class UserProfile implements DistributedData {
         return "UserProfile{" +
                 "\r\n                    nickName='" + nickName + '\'' +
                 ",\r\n                    proofOfWork=" + proofOfWork +
+                ",\r\n                    avatarVersion=" + avatarVersion +
                 ",\r\n                    networkId=" + networkId +
                 ",\r\n                    terms='" + terms + '\'' +
                 ",\r\n                    statement='" + statement + '\'' +

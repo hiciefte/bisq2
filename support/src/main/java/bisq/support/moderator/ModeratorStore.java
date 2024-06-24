@@ -41,12 +41,16 @@ public final class ModeratorStore implements PersistableStore<ModeratorStore> {
     }
 
     @Override
-    public bisq.support.protobuf.ModeratorStore toProto() {
+    public bisq.support.protobuf.ModeratorStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.support.protobuf.ModeratorStore.newBuilder()
                 .addAllReportToModeratorMessages(reportToModeratorMessages.stream()
-                        .map(ReportToModeratorMessage::toReportToModeratorMessageProto)
-                        .collect(Collectors.toList()))
-                .build();
+                        .map(e -> e.toValueProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.support.protobuf.ModeratorStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static ModeratorStore fromProto(bisq.support.protobuf.ModeratorStore proto) {
@@ -68,13 +72,12 @@ public final class ModeratorStore implements PersistableStore<ModeratorStore> {
 
     @Override
     public ModeratorStore getClone() {
-        return new ModeratorStore(reportToModeratorMessages);
+        return new ModeratorStore(new HashSet<>(reportToModeratorMessages));
     }
 
     @Override
     public void applyPersisted(ModeratorStore persisted) {
-        reportToModeratorMessages.clear();
-        reportToModeratorMessages.addAll(persisted.getReportToModeratorMessages());
+        reportToModeratorMessages.setAll(persisted.getReportToModeratorMessages());
     }
 
     ObservableSet<ReportToModeratorMessage> getReportToModeratorMessages() {

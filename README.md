@@ -4,9 +4,7 @@
   </a>
 </p>
 
-<h3 align="center">
-
-# Bisq 2
+# Bisq 2: The Decentralized Trading Platform
 
 Bisq 2 will be the successor to [Bisq v1](https://github.com/bisq-network/bisq) and will support multiple trade
 protocols, multiple privacy networks and multiple identities. Read more about Bisq 2 in
@@ -21,14 +19,48 @@ Bitcoin seller. It does not compete with the current Bisq v1 trade protocol but 
 targets a user group which we cannot reach with Bisq v1. You can read more about Bisq Easy
 in [the Bisq wiki](https://bisq.wiki/Bisq_Easy).
 
-## Build and run from source code
 
-See the [build doc](./docs/dev/build.md) for instructions how to build and run Bisq 2.
+## Getting Started
 
-## Contributing
+### Quick Setup
+
+1. **Clone Bisq 2:**
+   ```bash
+   git clone https://github.com/bisq-network/bisq2.git
+   ```
+
+2. **Install Dependencies:**
+   Bisq requires JDK 17. See our [Installation Guide](./docs/dev/build.md) for detailed instructions.
+
+3. **Run desktop client:**
+   ```bash
+   ./gradlew desktop:desktop-app:run
+   ```
+
+4. **Run desktop client with custom data directory:**
+   ```bash
+   apps/desktop/desktop-app/build/install/desktop-app/bin/desktop-app --data-dir=<data_dir>
+   ```
+
+## Community and Contributions
 
 Bisq is an open source project and a [Decentralized Autonomous Organization (DAO)](https://bisq.network/dao/).
 
-If you want to contribute please read the [contributing doc](./docs/dev/contributing.md) and reach out to the Bisq
-community at the [Bisq Matrix channels](https://matrix.to/#/#bisq.v2.dev:bitcoin.kyoto).
+If you want to contribute to Bisq get in touch on [Matrix](https://matrix.to/#/#bisq.v2.dev:bitcoin.kyoto).
+
+If you are a developer check out the [dev guide](./docs/dev/dev-guide.md).
+
+**Why work on Bisq 2?**
+
+- Compensated Contributions: Unique in open-source, contributors are rewarded for their work.
+- Technological Edge: [P2P network](network.md), Bitcoin, Cryptography,...
+- Complex, Rewarding Challenges: Dive into a sophisticated architecture that rewards ingenuity.
+
+
+## License
+
+Bisq 2 is licensed under the [AGPL-3.0 license](LICENSE). All contributions are subject to this license.
+
+![Actions Status](https://github.com/bisq-network/bisq2/actions/workflows/build.yml/badge.svg)
+
 

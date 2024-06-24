@@ -34,7 +34,6 @@ import bisq.desktop.main.content.bisq_easy.trade_wizard.review.TradeWizardReview
 import bisq.desktop.main.content.bisq_easy.trade_wizard.select_offer.TradeWizardSelectOfferController;
 import bisq.desktop.overlay.OverlayController;
 import bisq.i18n.Res;
-import bisq.offer.Direction;
 import javafx.collections.ListChangeListener;
 import javafx.event.EventHandler;
 import javafx.scene.input.KeyEvent;
@@ -76,9 +75,8 @@ public class TradeWizardController extends NavigationController implements InitW
     private final TradeWizardReviewController tradeWizardReviewController;
     private final EventHandler<KeyEvent> onKeyPressedHandler = this::onKeyPressed;
     private final ListChangeListener<FiatPaymentMethod> paymentMethodsListener;
-    private Subscription directionPin, marketPin, amountSpecPin,
-            isMinAmountEnabledPin, priceSpecPin,
-            selectedBisqEasyOfferPin, isBackButtonHighlightedPin;
+    private Subscription directionPin, marketPin, amountSpecPin, priceSpecPin, selectedBisqEasyOfferPin,
+            isBackButtonHighlightedPin;
 
     public TradeWizardController(ServiceProvider serviceProvider) {
         super(NavigationTarget.TRADE_WIZARD);
@@ -94,9 +92,9 @@ public class TradeWizardController extends NavigationController implements InitW
                 this::setMainButtonsVisibleState,
                 this::closeAndNavigateTo);
         tradeWizardMarketController = new TradeWizardMarketController(serviceProvider, this::onNext);
-        tradeWizardPriceController = new TradeWizardPriceController(serviceProvider);
-        tradeWizardAmountController = new TradeWizardAmountController(serviceProvider);
-        tradeWizardPaymentMethodController = new TradeWizardPaymentMethodController(serviceProvider, this::onNext);
+        tradeWizardPriceController = new TradeWizardPriceController(serviceProvider, view.getRoot());
+        tradeWizardAmountController = new TradeWizardAmountController(serviceProvider, view.getRoot());
+        tradeWizardPaymentMethodController = new TradeWizardPaymentMethodController(serviceProvider, view.getRoot(), this::onNext);
         tradeWizardSelectOfferController = new TradeWizardSelectOfferController(serviceProvider,
                 this::onBack,
                 this::onNext,
@@ -116,6 +114,7 @@ public class TradeWizardController extends NavigationController implements InitW
         boolean isCreateOfferMode = initData.isCreateOfferMode();
         model.setCreateOfferMode(isCreateOfferMode);
         tradeWizardAmountController.setIsCreateOfferMode(isCreateOfferMode);
+        model.getPriceProgressItemVisible().set(isCreateOfferMode);
     }
 
     @Override
@@ -129,23 +128,24 @@ public class TradeWizardController extends NavigationController implements InitW
         model.getChildTargets().addAll(List.of(
                 NavigationTarget.TRADE_WIZARD_DIRECTION,
                 NavigationTarget.TRADE_WIZARD_MARKET,
-                NavigationTarget.TRADE_WIZARD_PAYMENT_METHOD,
                 NavigationTarget.TRADE_WIZARD_AMOUNT,
+                NavigationTarget.TRADE_WIZARD_PAYMENT_METHOD,
                 NavigationTarget.TRADE_WIZARD_TAKE_OFFER_OFFER,
                 NavigationTarget.TRADE_WIZARD_REVIEW_OFFER
         ));
+
+        if (model.getPriceProgressItemVisible().get()) {
+            model.getChildTargets().add(3, NavigationTarget.TRADE_WIZARD_PRICE);
+        } else {
+            model.getChildTargets().remove(NavigationTarget.TRADE_WIZARD_PRICE);
+        }
 
         directionPin = EasyBind.subscribe(tradeWizardDirectionController.getDirection(), direction -> {
             tradeWizardMarketController.setDirection(direction);
             tradeWizardSelectOfferController.setDirection(direction);
             tradeWizardAmountController.setDirection(direction);
             tradeWizardPaymentMethodController.setDirection(direction);
-            model.getPriceProgressItemVisible().set(direction == Direction.SELL);
-            if (direction == Direction.SELL) {
-                model.getChildTargets().add(2, NavigationTarget.TRADE_WIZARD_PRICE);
-            } else {
-                model.getChildTargets().remove(NavigationTarget.TRADE_WIZARD_PRICE);
-            }
+            tradeWizardPriceController.setDirection(direction);
         });
         marketPin = EasyBind.subscribe(tradeWizardMarketController.getMarket(), market -> {
             tradeWizardSelectOfferController.setMarket(market);
@@ -154,17 +154,13 @@ public class TradeWizardController extends NavigationController implements InitW
             tradeWizardAmountController.setMarket(market);
             updateNextButtonDisabledState();
         });
-        amountSpecPin = EasyBind.subscribe(tradeWizardAmountController.getAmountSpec(),
-                amountSpec -> {
-                    tradeWizardSelectOfferController.setAmountSpec(amountSpec);
-                });
-        isMinAmountEnabledPin = EasyBind.subscribe(tradeWizardAmountController.getIsMinAmountEnabled(),
-                isMinAmountEnabled -> {
-                    tradeWizardSelectOfferController.setIsMinAmountEnabled(isMinAmountEnabled);
+        amountSpecPin = EasyBind.subscribe(tradeWizardAmountController.getQuoteSideAmountSpec(),
+                quoteSideAmountSpec -> {
+                    tradeWizardSelectOfferController.setQuoteSideAmountSpec(quoteSideAmountSpec);
                 });
         priceSpecPin = EasyBind.subscribe(tradeWizardPriceController.getPriceSpec(),
                 priceSpec -> {
-                    tradeWizardAmountController.setPriceSpec(priceSpec);
+                    tradeWizardAmountController.updateQuoteSideAmountSpecWithPriceSpec(priceSpec);
                     tradeWizardSelectOfferController.setPriceSpec(priceSpec);
                 });
         selectedBisqEasyOfferPin = EasyBind.subscribe(tradeWizardSelectOfferController.getSelectedBisqEasyOffer(),
@@ -187,7 +183,6 @@ public class TradeWizardController extends NavigationController implements InitW
         directionPin.unsubscribe();
         marketPin.unsubscribe();
         amountSpecPin.unsubscribe();
-        isMinAmountEnabledPin.unsubscribe();
         priceSpecPin.unsubscribe();
         selectedBisqEasyOfferPin.unsubscribe();
         isBackButtonHighlightedPin.unsubscribe();
@@ -202,14 +197,13 @@ public class TradeWizardController extends NavigationController implements InitW
                         tradeWizardDirectionController.getDirection().get(),
                         tradeWizardMarketController.getMarket().get(),
                         tradeWizardPaymentMethodController.getFiatPaymentMethods(),
-                        tradeWizardAmountController.getAmountSpec().get(),
+                        tradeWizardAmountController.getQuoteSideAmountSpec().get(),
                         tradeWizardPriceController.getPriceSpec().get()
                 );
                 model.getNextButtonText().set(Res.get("bisqEasy.tradeWizard.review.nextButton.createOffer"));
             } else {
                 tradeWizardReviewController.setDataForTakeOffer(tradeWizardSelectOfferController.getSelectedBisqEasyOffer().get(),
-                        tradeWizardAmountController.getAmountSpec().get(),
-                        tradeWizardPriceController.getPriceSpec().get(),
+                        tradeWizardAmountController.getQuoteSideAmountSpec().get(),
                         tradeWizardPaymentMethodController.getFiatPaymentMethods()
                 );
                 model.getNextButtonText().set(Res.get("bisqEasy.tradeWizard.review.nextButton.takeOffer"));
@@ -278,9 +272,10 @@ public class TradeWizardController extends NavigationController implements InitW
             nextIndex++;
         }
         if (nextIndex < model.getChildTargets().size()) {
-            if (isPaymentMethodsScreen() && validatePaymentMethods()) {
+            if (!validate(true)) {
                 return;
             }
+
             model.setAnimateRightOut(false);
             model.getCurrentIndex().set(nextIndex);
             NavigationTarget nextTarget = model.getChildTargets().get(nextIndex);
@@ -295,24 +290,16 @@ public class TradeWizardController extends NavigationController implements InitW
         KeyHandlerUtil.handleEnterKeyEvent(keyEvent, this::onNext);
     }
 
-    private boolean isPaymentMethodsScreen() {
-        return model.getSelectedChildTarget().get() == NavigationTarget.TRADE_WIZARD_PAYMENT_METHOD;
-    }
-
-    private boolean validatePaymentMethods() {
-        if (tradeWizardPaymentMethodController.getCustomFiatPaymentMethodNameNotEmpty()) {
-            tradeWizardPaymentMethodController.tryAddCustomPaymentMethodAndNavigateNext();
-            return true;
-        }
-        return !tradeWizardPaymentMethodController.validateSelectedPaymentMethods();
-    }
-
     void onBack() {
         int prevIndex = model.getCurrentIndex().get() - 1;
         if (isTakeOfferItem(prevIndex)) {
             prevIndex--;
         }
         if (prevIndex >= 0) {
+            if (!validate(false)) {
+                return;
+            }
+
             model.setAnimateRightOut(true);
             model.getCurrentIndex().set(prevIndex);
             NavigationTarget nextTarget = model.getChildTargets().get(prevIndex);
@@ -322,8 +309,22 @@ public class TradeWizardController extends NavigationController implements InitW
         }
     }
 
+    private boolean validate(boolean calledFromNext) {
+        if (model.getSelectedChildTarget().get() == NavigationTarget.TRADE_WIZARD_PRICE) {
+            return tradeWizardPriceController.validate();
+        } else if (model.getSelectedChildTarget().get() == NavigationTarget.TRADE_WIZARD_AMOUNT) {
+            return tradeWizardAmountController.validate();
+        } else if (calledFromNext && model.getSelectedChildTarget().get() == NavigationTarget.TRADE_WIZARD_PAYMENT_METHOD) {
+            // For PaymentMethod we tolerate to go back without having one selected
+            return tradeWizardPaymentMethodController.validate();
+        }
+        return true;
+    }
+
     private boolean isTakeOfferItem(int index) {
-        return model.isCreateOfferMode() && !model.getChildTargets().isEmpty() && model.getChildTargets().get(index) == NavigationTarget.TRADE_WIZARD_TAKE_OFFER_OFFER;
+        return model.isCreateOfferMode()
+                && !model.getChildTargets().isEmpty()
+                && model.getChildTargets().get(index) == NavigationTarget.TRADE_WIZARD_TAKE_OFFER_OFFER;
     }
 
     void onClose() {

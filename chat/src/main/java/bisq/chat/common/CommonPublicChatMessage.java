@@ -37,6 +37,7 @@ import static bisq.network.p2p.services.data.storage.MetaData.*;
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
 public final class CommonPublicChatMessage extends PublicChatMessage {
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_10_DAYS, LOW_PRIORITY, getClass().getSimpleName(), MAX_MAP_SIZE_10_000);
 
     public CommonPublicChatMessage(ChatChannelDomain chatChannelDomain,
@@ -85,8 +86,17 @@ public final class CommonPublicChatMessage extends PublicChatMessage {
     }
 
     @Override
-    public bisq.chat.protobuf.ChatMessage toProto() {
-        return getChatMessageBuilder().setCommonPublicChatMessage(bisq.chat.protobuf.CommonPublicChatMessage.newBuilder()).build();
+    public bisq.chat.protobuf.ChatMessage.Builder getBuilder(boolean serializeForHash) {
+        return getChatMessageBuilder(serializeForHash)
+                .setCommonPublicChatMessage(toCommonPublicChatMessageProto(serializeForHash));
+    }
+
+    private bisq.chat.protobuf.CommonPublicChatMessage toCommonPublicChatMessageProto(boolean serializeForHash) {
+        return resolveBuilder(getCommonPublicChatMessageBuilder(serializeForHash), serializeForHash).build();
+    }
+
+    private bisq.chat.protobuf.CommonPublicChatMessage.Builder getCommonPublicChatMessageBuilder(boolean serializeForHash) {
+        return bisq.chat.protobuf.CommonPublicChatMessage.newBuilder();
     }
 
     public static CommonPublicChatMessage fromProto(bisq.chat.protobuf.ChatMessage baseProto) {

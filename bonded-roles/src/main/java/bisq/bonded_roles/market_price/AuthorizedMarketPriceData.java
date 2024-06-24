@@ -45,9 +45,12 @@ import static com.google.common.base.Preconditions.checkArgument;
 @Getter
 public final class AuthorizedMarketPriceData implements AuthorizedDistributedData {
     public static final long TTL = TimeUnit.MINUTES.toMillis(10);
+
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL, DEFAULT_PRIORITY, getClass().getSimpleName());
     // We need deterministic sorting or the map, so we use a treemap
     private final TreeMap<Market, MarketPrice> marketPriceByCurrencyMap;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedMarketPriceData(TreeMap<Market, MarketPrice> marketPriceByCurrencyMap, boolean staticPublicKeysProvided) {
@@ -64,13 +67,17 @@ public final class AuthorizedMarketPriceData implements AuthorizedDistributedDat
     }
 
     @Override
-    public bisq.bonded_roles.protobuf.AuthorizedMarketPriceData toProto() {
+    public bisq.bonded_roles.protobuf.AuthorizedMarketPriceData.Builder getBuilder(boolean serializeForHash) {
         return bisq.bonded_roles.protobuf.AuthorizedMarketPriceData.newBuilder()
                 .putAllMarketPriceByCurrencyMap(marketPriceByCurrencyMap.entrySet().stream()
                         .collect(Collectors.toMap(e -> e.getKey().getMarketCodes(),
-                                e -> e.getValue().toProto())))
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                                e -> e.getValue().toProto(serializeForHash))))
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.bonded_roles.protobuf.AuthorizedMarketPriceData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedMarketPriceData fromProto(bisq.bonded_roles.protobuf.AuthorizedMarketPriceData proto) {
@@ -104,9 +111,9 @@ public final class AuthorizedMarketPriceData implements AuthorizedDistributedDat
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

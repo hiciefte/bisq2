@@ -45,14 +45,20 @@ public final class FloatPriceSpec implements PriceSpec {
 
     @Override
     public void verify() {
-        checkArgument(percentage >= -1 && percentage <= 1);
+        checkArgument(percentage >= -1 && percentage <= 1,
+                "Percentage must be in the range of -100% - 100%");
     }
 
     @Override
-    public bisq.offer.protobuf.PriceSpec toProto() {
-        return getPriceSpecBuilder().setFloatPrice(bisq.offer.protobuf.FloatPrice.newBuilder()
-                        .setPercentage(percentage))
-                .build();
+    public bisq.offer.protobuf.PriceSpec.Builder getBuilder(boolean serializeForHash) {
+        return getPriceSpecBuilder(serializeForHash)
+                .setFloatPrice(bisq.offer.protobuf.FloatPrice.newBuilder()
+                        .setPercentage(percentage));
+    }
+
+    @Override
+    public bisq.offer.protobuf.PriceSpec toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static FloatPriceSpec fromProto(bisq.offer.protobuf.FloatPrice proto) {

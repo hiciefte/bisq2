@@ -18,12 +18,12 @@
 package bisq.oracle_node.bisq1_bridge;
 
 import bisq.bonded_roles.BondedRoleType;
-import bisq.bonded_roles.alert.AlertType;
-import bisq.bonded_roles.alert.AuthorizedAlertData;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
 import bisq.bonded_roles.oracle.AuthorizedOracleNode;
 import bisq.bonded_roles.registration.BondedRoleRegistrationRequest;
+import bisq.bonded_roles.security_manager.alert.AlertType;
+import bisq.bonded_roles.security_manager.alert.AuthorizedAlertData;
 import bisq.common.application.Service;
 import bisq.common.encoding.Hex;
 import bisq.common.timer.Scheduler;
@@ -32,7 +32,6 @@ import bisq.identity.Identity;
 import bisq.network.NetworkService;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.network.p2p.services.confidential.ConfidentialMessageService;
-import bisq.network.p2p.services.data.DataService;
 import bisq.network.p2p.services.data.storage.auth.authorized.AuthorizedData;
 import bisq.network.p2p.services.data.storage.auth.authorized.AuthorizedDistributedData;
 import bisq.oracle_node.bisq1_bridge.dto.BondedReputationDto;
@@ -68,7 +67,8 @@ import java.util.concurrent.TimeUnit;
 import static com.google.common.base.Preconditions.checkArgument;
 
 @Slf4j
-public class Bisq1BridgeService implements Service, ConfidentialMessageService.Listener, DataService.Listener, PersistenceClient<Bisq1BridgeStore> {
+public class Bisq1BridgeService implements Service, ConfidentialMessageService.Listener,
+        AuthorizedBondedRolesService.Listener, PersistenceClient<Bisq1BridgeStore> {
     @Getter
     public static class Config {
         private final com.typesafe.config.Config httpService;
@@ -132,10 +132,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
         return httpService.initialize()
                 .whenComplete((result, throwable) -> {
                     networkService.addConfidentialMessageListener(this);
-                    networkService.getDataService()
-                            .ifPresent(dataService -> dataService.getAuthorizedData()
-                                    .forEach(this::onAuthorizedDataAdded));
-                    networkService.addDataServiceListener(this);
+                    authorizedBondedRolesService.addListener(this);
                     requestDoaDataScheduler = Scheduler.run(this::requestDoaData).periodically(0, 5, TimeUnit.SECONDS);
                     republishAuthorizedBondedRolesScheduler = Scheduler.run(this::republishAuthorizedBondedRoles).after(5, TimeUnit.SECONDS);
                 });
@@ -149,8 +146,8 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
         if (republishAuthorizedBondedRolesScheduler != null) {
             republishAuthorizedBondedRolesScheduler.stop();
         }
-        networkService.removeDataServiceListener(this);
         networkService.removeConfidentialMessageListener(this);
+        authorizedBondedRolesService.removeListener(this);
         return httpService.shutdown();
     }
 
@@ -177,7 +174,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
-    // DataService.Listener
+    // AuthorizedBondedRolesService.Listener
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     @Override
@@ -186,7 +183,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
         if (data instanceof AuthorizedAlertData) {
             AuthorizedAlertData authorizedAlertData = (AuthorizedAlertData) data;
             if (authorizedAlertData.getAlertType() == AlertType.BAN &&
-                    authorizedBondedRolesService.hasAuthorizedPubKey(authorizedData, BondedRoleType.SECURITY_MANAGER) &&
+                    isAuthorized(authorizedData) &&
                     authorizedAlertData.getBannedRole().isPresent()) {
                 BondedRoleType bannedBondedRoleType = authorizedAlertData.getBannedRole().get().getBondedRoleType();
                 authorizedBondedRolesService.getAuthorizedBondedRoleStream()
@@ -206,14 +203,13 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
         }
     }
 
-    @Override
-    public void onAuthorizedDataRemoved(AuthorizedData authorizedData) {
-    }
-
-
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // Private
     ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+    private boolean isAuthorized(AuthorizedData authorizedData) {
+        return authorizedBondedRolesService.hasAuthorizedPubKey(authorizedData, BondedRoleType.SECURITY_MANAGER);
+    }
 
     private CompletableFuture<List<ProofOfBurnDto>> requestProofOfBurnTxs() {
         return httpService.requestProofOfBurnTxs();
@@ -247,7 +243,6 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
     }
 
     private CompletableFuture<Boolean> publishAuthorizedData(AuthorizedDistributedData data) {
-        log.info("publishAuthorizedData {}", data);
         return networkService.publishAuthorizedData(data,
                         identity.getNetworkIdWithKeyPair().getKeyPair(),
                         authorizedPrivateKey,
@@ -264,18 +259,19 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
 
     private void republishAuthorizedBondedRoles() {
         networkService.getDataService()
-                .ifPresent(dataService -> dataService.getAuthorizedData()
-                        .forEach(authorizedData -> {
-                            AuthorizedDistributedData data = authorizedData.getAuthorizedDistributedData();
-                            if (data instanceof AuthorizedBondedRole) {
-                                AuthorizedBondedRole authorizedBondedRole = (AuthorizedBondedRole) data;
-                                authorizedBondedRole.getAuthorizingOracleNode().ifPresent(authorizingOracleNode -> {
-                                    if (authorizingOracleNode.equals(authorizedOracleNode)) {
-                                        publishAuthorizedData(authorizedBondedRole);
-                                    }
-                                });
-                            }
-                        }));
+                .ifPresent(dataService -> {
+                    dataService.getAuthorizedData()
+                            .map(AuthorizedData::getAuthorizedDistributedData)
+                            .filter(authorizedDistributedData -> authorizedDistributedData instanceof AuthorizedBondedRole)
+                            .map(authorizedDistributedData -> (AuthorizedBondedRole) authorizedDistributedData)
+                            .flatMap(authorizedBondedRole -> authorizedBondedRole.getAuthorizingOracleNode().stream())
+                            .filter(authorizingOracleNode -> authorizingOracleNode.equals(authorizedOracleNode))
+                            .forEach(authorizedBondedRole -> {
+                                // TODO deactivate republishing until issues are resolved
+                                // log.info("Republish AuthorizedBondedRole {}", authorizedBondedRole);
+                                //publishAuthorizedData(authorizedBondedRole);
+                            });
+                });
     }
 
     private CompletableFuture<Boolean> requestDoaData() {
@@ -286,6 +282,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
     }
 
     private void processAuthorizeAccountAgeRequest(AuthorizeAccountAgeRequest request) {
+        log.info("processAuthorizeAccountAgeRequest {}", request);
         long requestDate = request.getDate();
         String profileId = request.getProfileId();
         String hashAsHex = request.getHashAsHex();
@@ -330,6 +327,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
     }
 
     private void processAuthorizeSignedWitnessRequest(AuthorizeSignedWitnessRequest request) {
+        log.info("processAuthorizeSignedWitnessRequest {}", request);
         long witnessSignDate = request.getWitnessSignDate();
         if (witnessSignDate < 61) {
             log.warn("Age is not at least 60 days");
@@ -375,6 +373,7 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
     }
 
     private void processBondedRoleRegistrationRequest(BondedRoleRegistrationRequest request, PublicKey senderPublicKey) {
+        log.info("processBondedRoleRegistrationRequest {}", request);
         String profileId = request.getProfileId();
 
         // Verify if message sender is owner of the profileId
@@ -416,26 +415,26 @@ public class Bisq1BridgeService implements Service, ConfidentialMessageService.L
     }
 
     private String toBisq1RoleTypeName(BondedRoleType bondedRoleType) {
-        //todo (refactor, low prio) use switch
         String name = bondedRoleType.name();
-        if (name.equals("MEDIATOR")) {
-            return "MEDIATOR"; // 5k
-        } else if (name.equals("ARBITRATOR")) {
-            return "MOBILE_NOTIFICATIONS_RELAY_OPERATOR"; // 10k; Bisq 1 ARBITRATOR would require 100k! 
-        } else if (name.equals("MODERATOR")) {
-            return "YOUTUBE_ADMIN"; // 5k; repurpose unused role
-        } else if (name.equals("SECURITY_MANAGER")) {
-            return "BITCOINJ_MAINTAINER"; // 10k repurpose unused role
-        } else if (name.equals("RELEASE_MANAGER")) {
-            return "FORUM_ADMIN"; // 10k; repurpose unused role 
-        } else if (name.equals("ORACLE_NODE")) {
-            return "NETLAYER_MAINTAINER"; // 10k; repurpose unused role
-        } else if (name.equals("SEED_NODE")) {
-            return "SEED_NODE_OPERATOR"; // 10k
-        } else if (name.equals("EXPLORER_NODE")) {
-            return "BSQ_EXPLORER_OPERATOR"; // 10k; Explorer operator
-        } else if (name.equals("MARKET_PRICE_NODE")) {
-            return "DATA_RELAY_NODE_OPERATOR"; // 10k; price node
+        switch (name) {
+            case "MEDIATOR":
+                return "MEDIATOR"; // 5k
+            case "MODERATOR":
+                return "YOUTUBE_ADMIN"; // 5k; repurpose unused role
+            case "ARBITRATOR":
+                return "MOBILE_NOTIFICATIONS_RELAY_OPERATOR"; // 10k; Bisq 1 ARBITRATOR would require 100k!
+            case "SECURITY_MANAGER":
+                return "BITCOINJ_MAINTAINER"; // 10k; repurpose unused role
+            case "RELEASE_MANAGER":
+                return "FORUM_ADMIN"; // 10k; repurpose unused role
+            case "ORACLE_NODE":
+                return "NETLAYER_MAINTAINER"; // 10k; repurpose unused role
+            case "SEED_NODE":
+                return "SEED_NODE_OPERATOR"; // 10k
+            case "EXPLORER_NODE":
+                return "BSQ_EXPLORER_OPERATOR"; // 10k; Explorer operator
+            case "MARKET_PRICE_NODE":
+                return "DATA_RELAY_NODE_OPERATOR"; // 10k; price node
         }
         return name;
     }

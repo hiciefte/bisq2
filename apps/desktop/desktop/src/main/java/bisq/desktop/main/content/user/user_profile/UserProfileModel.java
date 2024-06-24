@@ -35,11 +35,12 @@ public class UserProfileModel implements Model {
     private final StringProperty nickName = new SimpleStringProperty();
     private final StringProperty nymId = new SimpleStringProperty();
     private final StringProperty profileId = new SimpleStringProperty();
-    private final ObjectProperty<Image> roboHash = new SimpleObjectProperty<>();
+    private final ObjectProperty<Image> catHash = new SimpleObjectProperty<>();
     private final StringProperty statement = new SimpleStringProperty("");
     private final StringProperty terms = new SimpleStringProperty("");
     private final StringProperty reputationScoreValue = new SimpleStringProperty();
     private final ObjectProperty<ReputationScore> reputationScore = new SimpleObjectProperty<>();
     private final StringProperty profileAge = new SimpleStringProperty();
+    private final StringProperty lastSeen = new SimpleStringProperty();
     private final BooleanProperty useDeleteTooltip = new SimpleBooleanProperty();
 }

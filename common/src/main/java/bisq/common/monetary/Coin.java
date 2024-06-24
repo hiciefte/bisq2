@@ -89,6 +89,21 @@ public final class Coin extends Monetary {
     /**
      * @param value Value as smallest unit the Coin object can represent.
      */
+    public static Coin asBsqFromValue(long value) {
+        return new Coin(value, "BSQ", 2);
+    }
+
+    /**
+     * @param faceValue Coin value as face value. E.g. 1.123456789012 XMR
+     */
+    public static Coin asBsqFromFaceValue(double faceValue) {
+        return new Coin(faceValue, "BSQ", 2);
+    }
+
+
+    /**
+     * @param value Value as smallest unit the Coin object can represent.
+     */
     public static Coin asXmrFromValue(long value) {
         return new Coin(value, "XMR", 12);
     }
@@ -140,8 +155,14 @@ public final class Coin extends Monetary {
         super(id, value, code, precision, lowPrecision);
     }
 
-    public bisq.common.protobuf.Monetary toProto() {
-        return getMonetaryBuilder().setCoin(bisq.common.protobuf.Coin.newBuilder()).build();
+    @Override
+    public bisq.common.protobuf.Monetary toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.common.protobuf.Monetary.Builder getBuilder(boolean serializeForHash) {
+        return getMonetaryBuilder().setCoin(bisq.common.protobuf.Coin.newBuilder());
     }
 
     public static Coin fromProto(bisq.common.protobuf.Monetary baseProto) {

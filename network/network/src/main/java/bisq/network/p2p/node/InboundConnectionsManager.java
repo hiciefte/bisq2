@@ -27,7 +27,7 @@ import bisq.network.p2p.node.handshake.ConnectionHandshakeResponder;
 import bisq.network.p2p.node.network_load.ConnectionMetrics;
 import bisq.network.p2p.node.network_load.NetworkLoad;
 import bisq.network.p2p.node.network_load.NetworkLoadSnapshot;
-import bisq.network.p2p.services.peergroup.BanList;
+import bisq.network.p2p.services.peer_group.BanList;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -121,7 +121,7 @@ public class InboundConnectionsManager {
                         peerAddress, myCapability.getAddress());
 
                 if (isAlreadyConnectedToPeer(peerAddress)) {
-                    log.warn("Node {} have already an InboundConnection from {}. This can happen when a " + "handshake was in progress while we received a new connection from that address. " + "We will close the socket of that new connection and use the existing instead.", this, peerAddress);
+                    log.warn("{} have already an InboundConnection from {}. This can happen when a " + "handshake was in progress while we received a new connection from that address. " + "We will close the socket of that new connection and use the existing instead.", this, peerAddress);
                     closeChannel(networkEnvelopeSocketChannel);
                 } else {
                     connectionByChannel.put(socketChannel, inboundConnection);

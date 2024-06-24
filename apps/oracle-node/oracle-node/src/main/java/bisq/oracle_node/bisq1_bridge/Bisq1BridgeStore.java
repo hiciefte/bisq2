@@ -26,6 +26,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
@@ -52,15 +53,19 @@ public final class Bisq1BridgeStore implements PersistableStore<Bisq1BridgeStore
     }
 
     @Override
-    public bisq.oracle_node.protobuf.Bisq1BridgeStore toProto() {
+    public bisq.oracle_node.protobuf.Bisq1BridgeStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.oracle_node.protobuf.Bisq1BridgeStore.newBuilder()
                 .addAllAccountAgeRequests(accountAgeRequests.stream()
-                        .map(AuthorizeAccountAgeRequest::toAuthorizeAccountAgeRequestProto)
+                        .map(e -> e.toValueProto(serializeForHash))
                         .collect(Collectors.toList()))
                 .addAllSignedWitnessRequests(signedWitnessRequests.stream()
-                        .map(AuthorizeSignedWitnessRequest::toAuthorizeSignedWitnessRequestProto)
-                        .collect(Collectors.toList()))
-                .build();
+                        .map(e -> e.toValueProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.oracle_node.protobuf.Bisq1BridgeStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static Bisq1BridgeStore fromProto(bisq.oracle_node.protobuf.Bisq1BridgeStore proto) {
@@ -86,7 +91,7 @@ public final class Bisq1BridgeStore implements PersistableStore<Bisq1BridgeStore
 
     @Override
     public Bisq1BridgeStore getClone() {
-        return new Bisq1BridgeStore(accountAgeRequests, signedWitnessRequests);
+        return new Bisq1BridgeStore(new HashSet<>(accountAgeRequests), new HashSet<>(signedWitnessRequests));
     }
 
     @Override

@@ -8,15 +8,18 @@ import bisq.common.util.ProtobufUtils;
  * like HashCash or EquiHash algorithms for proof of work, or different implementations for requesting inventory data.
  */
 public enum Feature implements ProtoEnum {
-    POW_HASH_CASH,
     INVENTORY_HASH_SET,
-    INVENTORY_MINI_SKETCH;
+    INVENTORY_MINI_SKETCH,
+    AUTHORIZATION_HASH_CASH,
+    AUTHORIZATION_EQUI_HASH;
 
     @Override
-    public bisq.network.protobuf.Feature toProto() {
+    public bisq.network.protobuf.Feature toProtoEnum() {
         return bisq.network.protobuf.Feature.valueOf(getProtobufEnumPrefix() + name());
     }
 
+    // Not used. Feature is used as list in Capability thus we use ProtobufUtils.fromProtoEnumList.
+    // Still keep fromProto for following convention and potential future usage.
     public static Feature fromProto(bisq.network.protobuf.Feature proto) {
         return ProtobufUtils.enumFromProto(Feature.class, proto.name());
     }

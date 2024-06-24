@@ -92,7 +92,7 @@ public final class BisqEasyOpenTradesController extends BaseChatController<BisqE
         return new BisqEasyOpenTradesView(model,
                 this,
                 tradeDataHeader.getRoot(),
-                chatMessagesComponent.getRoot(),
+                chatMessageContainerController.getView().getRoot(),
                 channelSidebar.getRoot(),
                 tradeStateController.getView().getRoot(),
                 openTradesWelcome.getView().getRoot());
@@ -262,11 +262,12 @@ public final class BisqEasyOpenTradesController extends BaseChatController<BisqE
 
     private void onTradeAndChannelAdded(BisqEasyTrade trade, BisqEasyOpenTradeChannel channel) {
         UIThread.run(() -> {
-            if (findListItem(trade).isEmpty()) {
+            if (findListItem(trade).isEmpty() && trade.getContract() != null) {
                 model.getListItems().add(new BisqEasyOpenTradesView.ListItem(channel,
                         trade,
                         reputationService,
-                        chatNotificationService));
+                        chatNotificationService,
+                        userProfileService));
                 maybeSelectFirst();
                 updateVisibility();
             }

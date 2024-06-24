@@ -49,6 +49,27 @@ public class TimeFormatter {
         return String.format("%02d:%02d", min, sec);
     }
 
+    public static String formatAge(long duration) {
+        if (duration < 0) {
+            return Res.get("data.na");
+        }
+        long sec = duration / 1000;
+        long min = sec / 60;
+        sec = sec % 60;
+        long hours = min / 60;
+        min = min % 60;
+        long days = hours / 24;
+        hours = hours % 24;
+        if (days > 0) {
+            String dayString = Res.getAsSingularOrPlural("temporal.day", days);
+            return String.format("%s, %d hours, %d min, %d sec", dayString, hours, min, sec);
+        } else if (hours > 0) {
+            return String.format("%d hours, %d min, %d sec", hours, min, sec);
+        } else {
+            return String.format("%d min, %d sec", min, sec);
+        }
+    }
+
     public static String getAgeInSeconds(long duration) {
         long sec = duration / 1000;
         return sec + " sec";
@@ -59,9 +80,16 @@ public class TimeFormatter {
     }
 
     public static String formatAgeInDays(long date) {
-        long ageInDays = getAgeInDays(date);
-        String postFix = ageInDays == 1 ? Res.get("temporal.day") : Res.get("temporal.days");
-        return ageInDays + " " + postFix;
+        long totalDays = getAgeInDays(date);
+        long years = totalDays / 365;
+        long days = totalDays - years * 365;
+        String dayString = Res.getAsSingularOrPlural("temporal.day", days);
+        if (years > 0) {
+            String yearString = Res.getAsSingularOrPlural("temporal.year", years);
+            return yearString + ", " + dayString;
+        } else {
+            return dayString;
+        }
     }
 
     public static String formatTime(Date date) {

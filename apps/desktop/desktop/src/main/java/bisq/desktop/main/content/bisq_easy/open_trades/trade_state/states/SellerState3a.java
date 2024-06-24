@@ -20,6 +20,7 @@ package bisq.desktop.main.content.bisq_easy.open_trades.trade_state.states;
 import bisq.chat.bisqeasy.open_trades.BisqEasyOpenTradeChannel;
 import bisq.common.data.Pair;
 import bisq.desktop.ServiceProvider;
+import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.components.controls.MaterialTextField;
 import bisq.desktop.components.controls.WrappingText;
 import bisq.i18n.Res;
@@ -80,7 +81,8 @@ public class SellerState3a extends BaseState {
 
         private void onBtcSent() {
             String txId = model.getTxId().get();
-            sendSystemMessage(Res.get("bisqEasy.tradeState.info.seller.phase3a.systemMessage", txId));
+            sendTradeLogMessage(Res.encode("bisqEasy.tradeState.info.seller.phase3a.tradeLogMessage",
+                    model.getChannel().getMyUserIdentity().getUserName(), txId));
             bisqEasyTradeService.sellerConfirmBtcSent(model.getBisqEasyTrade(), txId);
         }
     }
@@ -135,6 +137,7 @@ public class SellerState3a extends BaseState {
             super.onViewAttached();
 
             baseAmount.setText(model.getFormattedBaseAmount());
+            baseAmount.getIconButton().setOnAction(e -> ClipboardUtil.copyToClipboard(model.getBaseAmount()));
             btcAddress.setText(model.getBtcAddress());
             btcSentButton.setText(Res.get("bisqEasy.tradeState.info.seller.phase3a.btcSentButton", model.getFormattedBaseAmount()));
             txId.textProperty().bindBidirectional(model.getTxId());
@@ -150,6 +153,7 @@ public class SellerState3a extends BaseState {
 
             txId.textProperty().unbindBidirectional(model.getTxId());
             btcSentButton.setOnAction(null);
+            baseAmount.getIconButton().setOnAction(null);
             btcSentButton.disableProperty().unbind();
         }
     }

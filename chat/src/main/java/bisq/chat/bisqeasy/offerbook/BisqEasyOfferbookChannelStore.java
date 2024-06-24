@@ -24,6 +24,7 @@ import bisq.persistence.PersistableStore;
 import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.Getter;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,10 +40,16 @@ public class BisqEasyOfferbookChannelStore implements PersistableStore<BisqEasyO
     }
 
     @Override
-    public bisq.chat.protobuf.BisqEasyOfferbookChannelStore toProto() {
+    public bisq.chat.protobuf.BisqEasyOfferbookChannelStore.Builder getBuilder(boolean serializeForHash) {
         return bisq.chat.protobuf.BisqEasyOfferbookChannelStore.newBuilder()
-                .addAllChannels(channels.stream().map(BisqEasyOfferbookChannel::toProto).collect(Collectors.toList()))
-                .build();
+                .addAllChannels(channels.stream()
+                        .map(e -> e.toProto(serializeForHash))
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.chat.protobuf.BisqEasyOfferbookChannelStore toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static BisqEasyOfferbookChannelStore fromProto(bisq.chat.protobuf.BisqEasyOfferbookChannelStore proto) {
@@ -69,6 +76,6 @@ public class BisqEasyOfferbookChannelStore implements PersistableStore<BisqEasyO
 
     @Override
     public BisqEasyOfferbookChannelStore getClone() {
-        return new BisqEasyOfferbookChannelStore(channels);
+        return new BisqEasyOfferbookChannelStore(new ArrayList<>(channels));
     }
 }

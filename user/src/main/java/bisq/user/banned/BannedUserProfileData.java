@@ -17,6 +17,7 @@
 
 package bisq.user.banned;
 
+import bisq.bonded_roles.AuthorizedPubKeys;
 import bisq.common.application.DevMode;
 import bisq.common.proto.ProtoResolver;
 import bisq.common.proto.UnresolvableProtobufMessageException;
@@ -38,12 +39,10 @@ import static bisq.network.p2p.services.data.storage.MetaData.TTL_100_DAYS;
 @EqualsAndHashCode
 @Getter
 public final class BannedUserProfileData implements AuthorizedDistributedData {
-    // todo (Critical) Production key not set yet - we use devMode key only yet
-    public static final Set<String> AUTHORIZED_PUBLIC_KEYS = Set.of(
-    );
-
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_100_DAYS, HIGH_PRIORITY, getClass().getSimpleName());
     private final UserProfile userProfile;
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public BannedUserProfileData(UserProfile userProfile, boolean staticPublicKeysProvided) {
@@ -58,11 +57,15 @@ public final class BannedUserProfileData implements AuthorizedDistributedData {
     }
 
     @Override
-    public bisq.user.protobuf.BannedUserProfileData toProto() {
-        bisq.user.protobuf.BannedUserProfileData.Builder builder = bisq.user.protobuf.BannedUserProfileData.newBuilder()
-                .setUserProfile(userProfile.toProto())
+    public bisq.user.protobuf.BannedUserProfileData.Builder getBuilder(boolean serializeForHash) {
+        return bisq.user.protobuf.BannedUserProfileData.newBuilder()
+                .setUserProfile(userProfile.toProto(serializeForHash))
                 .setStaticPublicKeysProvided(staticPublicKeysProvided);
-        return builder.build();
+    }
+
+    @Override
+    public bisq.user.protobuf.BannedUserProfileData toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static BannedUserProfileData fromProto(bisq.user.protobuf.BannedUserProfileData proto) {
@@ -94,9 +97,9 @@ public final class BannedUserProfileData implements AuthorizedDistributedData {
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AUTHORIZED_PUBLIC_KEYS;
+            return AuthorizedPubKeys.MODERATOR_PUB_KEYS;
         }
     }
 

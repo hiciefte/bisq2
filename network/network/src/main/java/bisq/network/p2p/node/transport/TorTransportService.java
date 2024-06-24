@@ -7,16 +7,16 @@ import bisq.network.common.TransportType;
 import bisq.network.identity.NetworkId;
 import bisq.network.p2p.node.ConnectionException;
 import bisq.security.keys.KeyBundle;
-import bisq.security.keys.TorKeyGeneration;
+import bisq.security.keys.TorKeyPair;
 import bisq.tor.TorService;
 import bisq.tor.TorTransportConfig;
-import bisq.tor.onionservice.CreateOnionServiceResponse;
 import com.runjva.sourceforge.jsocks.protocol.Socks5Proxy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -27,8 +27,6 @@ import java.util.concurrent.TimeoutException;
 
 @Slf4j
 public class TorTransportService implements TransportService {
-    public final static int DEFAULT_PORT = 9999;
-
     private static TorService torService;
 
     @Getter
@@ -67,13 +65,12 @@ public class TorTransportService implements TransportService {
 
     @Override
     public CompletableFuture<Boolean> shutdown() {
-        log.info("Shutdown tor.");
+        log.info("shutdown");
         if (startBootstrapProgressUpdater != null) {
             startBootstrapProgressUpdater.stop();
             startBootstrapProgressUpdater = null;
         }
-        torService.shutdown().join();
-        return CompletableFuture.completedFuture(true);
+        return torService.shutdown();
     }
 
     @Override
@@ -85,14 +82,19 @@ public class TorTransportService implements TransportService {
             bootstrapInfo.getBootstrapProgress().set(0.25);
             bootstrapInfo.getBootstrapDetails().set("Create Onion service for node ID '" + networkId + "'");
 
-            String privateOpenSshKey = TorKeyGeneration.getPrivateKeyInOpenSshFormat(keyBundle.getTorKeyPair().getPrivateKey());
-            CreateOnionServiceResponse response = torService.createOnionService(port, privateOpenSshKey, keyBundle.getTorKeyPair().getOnionAddress()).get(2, TimeUnit.MINUTES);
+            TorKeyPair torKeyPair = keyBundle.getTorKeyPair();
+            ServerSocket serverSocket = torService.createOnionService(port, torKeyPair)
+                    .get(2, TimeUnit.MINUTES);
 
             bootstrapInfo.getBootstrapState().set(BootstrapState.SERVICE_PUBLISHED);
             bootstrapInfo.getBootstrapProgress().set(0.5);
-            bootstrapInfo.getBootstrapDetails().set("My Onion service address: " + response.getOnionAddress().toString());
 
-            return new ServerSocketResult(response);
+            String onionAddress = torKeyPair.getOnionAddress();
+            bootstrapInfo.getBootstrapDetails().set("My Onion service address: " + onionAddress);
+
+            Address address = new Address(onionAddress);
+            return new ServerSocketResult(serverSocket, address);
+
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
             e.printStackTrace();
             throw new ConnectionException(e);
@@ -102,15 +104,15 @@ public class TorTransportService implements TransportService {
     @Override
     public Socket getSocket(Address address) throws IOException {
         long ts = System.currentTimeMillis();
-
+        log.info("Start creating tor socket to {}", address);
         Socket socket = torService.getSocket(null); // Blocking call. Takes 5-15 sec usually.
-        socket.connect(new InetSocketAddress(address.getHost(), address.getPort()));
+        InetSocketAddress inetSocketAddress = InetSocketAddress.createUnresolved(address.getHost(), address.getPort());
+        socket.connect(inetSocketAddress);
         numSocketsCreated++;
         bootstrapInfo.getBootstrapState().set(BootstrapState.CONNECTED_TO_PEERS);
         bootstrapInfo.getBootstrapProgress().set(Math.min(1, 0.5 + numSocketsCreated / 10d));
         bootstrapInfo.getBootstrapDetails().set("Connected to " + numSocketsCreated + " peer(s)");
-
-        log.info("Tor socket to {} created. Took {} ms", address, System.currentTimeMillis() - ts);
+        log.info("Tor socket creation to {} took {} ms", address, System.currentTimeMillis() - ts);
         return socket;
     }
 

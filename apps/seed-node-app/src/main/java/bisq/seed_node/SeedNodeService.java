@@ -27,6 +27,7 @@ import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
 import bisq.security.keys.KeyBundleService;
 import bisq.security.keys.KeyGeneration;
+import bisq.user.reputation.ReputationDataUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,7 +36,6 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class SeedNodeService implements Service {
@@ -78,7 +78,10 @@ public class SeedNodeService implements Service {
     private final Optional<Config> optionalConfig;
     private Scheduler startupScheduler, scheduler;
 
-    public SeedNodeService(Optional<Config> optionalConfig, NetworkService networkService, IdentityService identityService, KeyBundleService keyBundleService) {
+    public SeedNodeService(Optional<Config> optionalConfig,
+                           NetworkService networkService,
+                           IdentityService identityService,
+                           KeyBundleService keyBundleService) {
         this.optionalConfig = optionalConfig;
         this.networkService = networkService;
         this.identityService = identityService;
@@ -87,6 +90,8 @@ public class SeedNodeService implements Service {
 
     @Override
     public CompletableFuture<Boolean> initialize() {
+        ReputationDataUtil.cleanupMap(networkService);
+
         optionalConfig.ifPresent(config -> {
             String privateKey = config.getPrivateKey();
             PrivateKey authorizedPrivateKey = KeyGeneration.getPrivateKeyFromHex(privateKey);
@@ -98,20 +103,21 @@ public class SeedNodeService implements Service {
                     BondedRoleType.SEED_NODE,
                     config.getBondUserName(),
                     config.getSignatureBase64(),
-                    networkId.getAddressByTransportTypeMap(),
+                    Optional.of(networkId.getAddressByTransportTypeMap()),
                     networkId,
                     Optional.empty(),
                     config.isStaticPublicKeysProvided());
             String defaultKeyId = keyBundleService.getDefaultKeyId();
             KeyPair keyPair = keyBundleService.getOrCreateKeyBundle(defaultKeyId).getKeyPair();
 
+            // TODO deactivate republishing until issues are resolved
             // Repeat 3 times at startup to republish to ensure the data gets well distributed
-            startupScheduler = Scheduler.run(() -> publishMyBondedRole(authorizedBondedRole, keyPair, authorizedPrivateKey, authorizedPublicKey))
+           /* startupScheduler = Scheduler.run(() -> publishMyBondedRole(authorizedBondedRole, keyPair, authorizedPrivateKey, authorizedPublicKey))
                     .repeated(1, 10, TimeUnit.SECONDS, 3);
 
             // We have 30 days TTL for the data, we republish after 25 days to ensure the data does not expire
             scheduler = Scheduler.run(() -> publishMyBondedRole(authorizedBondedRole, keyPair, authorizedPrivateKey, authorizedPublicKey))
-                    .periodically(25, TimeUnit.DAYS);
+                    .periodically(25, TimeUnit.DAYS);*/
         });
         return CompletableFuture.completedFuture(true);
     }

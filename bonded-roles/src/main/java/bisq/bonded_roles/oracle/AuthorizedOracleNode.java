@@ -40,12 +40,14 @@ import static bisq.network.p2p.services.data.storage.MetaData.*;
 @EqualsAndHashCode
 @Getter
 public final class AuthorizedOracleNode implements AuthorizedDistributedData {
+    @EqualsAndHashCode.Exclude
     private final MetaData metaData = new MetaData(TTL_100_DAYS, HIGHEST_PRIORITY, getClass().getSimpleName(), MAX_MAP_SIZE_100);
     private final NetworkId networkId;
     private final String profileId;
     private final String authorizedPublicKey;
     private final String bondUserName;                // username from DAO proposal
     private final String signatureBase64;             // signature created by bond with username as message
+    @EqualsAndHashCode.Exclude
     private final boolean staticPublicKeysProvided;
 
     public AuthorizedOracleNode(NetworkId networkId,
@@ -73,15 +75,19 @@ public final class AuthorizedOracleNode implements AuthorizedDistributedData {
     }
 
     @Override
-    public bisq.bonded_roles.protobuf.AuthorizedOracleNode toProto() {
+    public bisq.bonded_roles.protobuf.AuthorizedOracleNode.Builder getBuilder(boolean serializeForHash) {
         return bisq.bonded_roles.protobuf.AuthorizedOracleNode.newBuilder()
-                .setNetworkId(networkId.toProto())
+                .setNetworkId(networkId.toProto(serializeForHash))
                 .setProfileId(profileId)
                 .setAuthorizedPublicKey(authorizedPublicKey)
                 .setBondUserName(bondUserName)
                 .setSignatureBase64(signatureBase64)
-                .setStaticPublicKeysProvided(staticPublicKeysProvided)
-                .build();
+                .setStaticPublicKeysProvided(staticPublicKeysProvided);
+    }
+
+    @Override
+    public bisq.bonded_roles.protobuf.AuthorizedOracleNode toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static AuthorizedOracleNode fromProto(bisq.bonded_roles.protobuf.AuthorizedOracleNode proto) {
@@ -116,9 +122,9 @@ public final class AuthorizedOracleNode implements AuthorizedDistributedData {
     @Override
     public Set<String> getAuthorizedPublicKeys() {
         if (DevMode.isDevMode()) {
-            return DevMode.AUTHORIZED_DEV_PUBLIC_KEYS;
+            return AuthorizedPubKeys.DEV_PUB_KEYS;
         } else {
-            return AuthorizedPubKeys.KEYS;
+            return AuthorizedPubKeys.ORACLE_NODE_PUB_KEYS;
         }
     }
 

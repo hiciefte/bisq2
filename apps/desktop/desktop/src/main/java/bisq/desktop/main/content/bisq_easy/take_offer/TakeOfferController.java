@@ -27,7 +27,6 @@ import bisq.desktop.common.view.Navigation;
 import bisq.desktop.common.view.NavigationController;
 import bisq.desktop.main.content.bisq_easy.take_offer.amount.TakeOfferAmountController;
 import bisq.desktop.main.content.bisq_easy.take_offer.payment_method.TakeOfferPaymentController;
-import bisq.desktop.main.content.bisq_easy.take_offer.price.TakeOfferPriceController;
 import bisq.desktop.main.content.bisq_easy.take_offer.review.TakeOfferReviewController;
 import bisq.desktop.overlay.OverlayController;
 import bisq.i18n.Res;
@@ -75,12 +74,11 @@ public class TakeOfferController extends NavigationController implements InitWit
     private final TakeOfferModel model;
     @Getter
     private final TakeOfferView view;
-    private final TakeOfferPriceController takeOfferPriceController;
     private final TakeOfferAmountController takeOfferAmountController;
     private final TakeOfferPaymentController takeOfferPaymentController;
     private final TakeOfferReviewController takeOfferReviewController;
     private final EventHandler<KeyEvent> onKeyPressedHandler = this::onKeyPressed;
-    private Subscription tradePriceSpecPin, takersBaseSideAmountPin, takersQuoteSideAmountPin, methodNamePin;
+    private Subscription takersBaseSideAmountPin, takersQuoteSideAmountPin, methodNamePin;
 
     public TakeOfferController(ServiceProvider serviceProvider) {
         super(NavigationTarget.TAKE_OFFER);
@@ -90,7 +88,6 @@ public class TakeOfferController extends NavigationController implements InitWit
         model = new TakeOfferModel();
         view = new TakeOfferView(model, this);
 
-        takeOfferPriceController = new TakeOfferPriceController(serviceProvider);
         takeOfferAmountController = new TakeOfferAmountController(serviceProvider);
         takeOfferPaymentController = new TakeOfferPaymentController(serviceProvider);
         takeOfferReviewController = new TakeOfferReviewController(serviceProvider, this::setMainButtonsVisibleState, this::closeAndNavigateTo);
@@ -104,20 +101,15 @@ public class TakeOfferController extends NavigationController implements InitWit
     @Override
     public void initWithData(InitData initData) {
         BisqEasyOffer bisqEasyOffer = initData.getBisqEasyOffer();
-        takeOfferPriceController.init(bisqEasyOffer);
         takeOfferAmountController.init(bisqEasyOffer, initData.getTakersAmountSpec());
         takeOfferPaymentController.init(bisqEasyOffer, initData.getTakersPaymentMethods());
         takeOfferReviewController.init(bisqEasyOffer);
 
-        model.setPriceVisible(bisqEasyOffer.getDirection().isBuy());
         model.setAmountVisible(bisqEasyOffer.hasAmountRange());
         List<FiatPaymentMethodSpec> quoteSidePaymentMethodSpecs = bisqEasyOffer.getQuoteSidePaymentMethodSpecs();
         model.setPaymentMethodVisible(quoteSidePaymentMethodSpecs.size() > 1);
 
         model.getChildTargets().clear();
-        if (model.isPriceVisible()) {
-            model.getChildTargets().add(NavigationTarget.TAKE_OFFER_PRICE);
-        }
         if (model.isAmountVisible()) {
             model.getChildTargets().add(NavigationTarget.TAKE_OFFER_AMOUNT);
         }
@@ -136,29 +128,21 @@ public class TakeOfferController extends NavigationController implements InitWit
         overlayController.setEnterKeyHandler(null);
         overlayController.getApplicationRoot().addEventHandler(KeyEvent.KEY_PRESSED, onKeyPressedHandler);
 
+        model.getSelectedChildTarget().set(model.getChildTargets().get(0));
         model.getBackButtonText().set(Res.get("action.back"));
         model.getNextButtonVisible().set(true);
-        tradePriceSpecPin = EasyBind.subscribe(takeOfferPriceController.getPriceSpec(),
-                priceSpec -> {
-                    takeOfferAmountController.setTradePriceSpec(priceSpec);
-                    takeOfferReviewController.setTradePriceSpec(priceSpec);
-                });
         takersBaseSideAmountPin = EasyBind.subscribe(takeOfferAmountController.getTakersBaseSideAmount(),
                 takeOfferReviewController::setTakersBaseSideAmount);
         takersQuoteSideAmountPin = EasyBind.subscribe(takeOfferAmountController.getTakersQuoteSideAmount(),
                 takeOfferReviewController::setTakersQuoteSideAmount);
         methodNamePin = EasyBind.subscribe(takeOfferPaymentController.getSelectedFiatPaymentMethodSpec(),
-                spec -> {
-                    takeOfferReviewController.setFiatPaymentMethodSpec(spec);
-                    updateNextButtonDisabledState();
-                });
+                spec -> takeOfferReviewController.setFiatPaymentMethodSpec(spec));
     }
 
     @Override
     public void onDeactivate() {
         overlayController.setUseEscapeKeyHandler(true);
         overlayController.getApplicationRoot().removeEventHandler(KeyEvent.KEY_PRESSED, onKeyPressedHandler);
-        tradePriceSpecPin.unsubscribe();
         takersQuoteSideAmountPin.unsubscribe();
         takersBaseSideAmountPin.unsubscribe();
         methodNamePin.unsubscribe();
@@ -173,7 +157,6 @@ public class TakeOfferController extends NavigationController implements InitWit
                 Res.get("action.next"));
         model.getShowProgressBox().set(!isTakeOfferReview);
         setMainButtonsVisibleState(true);
-        updateNextButtonDisabledState();
         model.getTakeOfferButtonVisible().set(isTakeOfferReview);
         model.getNextButtonVisible().set(!isTakeOfferReview);
     }
@@ -182,13 +165,6 @@ public class TakeOfferController extends NavigationController implements InitWit
     @Override
     protected Optional<? extends Controller> createController(NavigationTarget navigationTarget) {
         switch (navigationTarget) {
-            case TAKE_OFFER_PRICE: {
-                if (!model.isPriceVisible()) {
-                    Navigation.navigateTo(NavigationTarget.TAKE_OFFER_AMOUNT);
-                    return Optional.empty();
-                }
-                return Optional.of(takeOfferPriceController);
-            }
             case TAKE_OFFER_AMOUNT: {
                 if (!model.isAmountVisible()) {
                     Navigation.navigateTo(NavigationTarget.TAKE_OFFER_PAYMENT);
@@ -215,11 +191,17 @@ public class TakeOfferController extends NavigationController implements InitWit
     void onNext() {
         int nextIndex = model.getCurrentIndex().get() + 1;
         if (nextIndex < model.getChildTargets().size()) {
+            if (model.getSelectedChildTarget().get() == NavigationTarget.TAKE_OFFER_PAYMENT) {
+                if (!takeOfferPaymentController.isValid()) {
+                    takeOfferPaymentController.handleInvalidInput();
+                    return;
+                }
+            }
             model.setAnimateRightOut(false);
             model.getCurrentIndex().set(nextIndex);
             NavigationTarget nextTarget = model.getChildTargets().get(nextIndex);
+            model.getSelectedChildTarget().set(nextTarget);
             Navigation.navigateTo(nextTarget);
-            updateNextButtonDisabledState();
         }
     }
 
@@ -229,8 +211,8 @@ public class TakeOfferController extends NavigationController implements InitWit
             model.setAnimateRightOut(true);
             model.getCurrentIndex().set(prevIndex);
             NavigationTarget nextTarget = model.getChildTargets().get(prevIndex);
+            model.getSelectedChildTarget().set(nextTarget);
             Navigation.navigateTo(nextTarget);
-            updateNextButtonDisabledState();
         }
     }
 
@@ -254,16 +236,7 @@ public class TakeOfferController extends NavigationController implements InitWit
     }
 
     private void closeAndNavigateTo(NavigationTarget NavigationTarget) {
-        //reset();
         OverlayController.hide(() -> Navigation.navigateTo(NavigationTarget));
-    }
-
-    private void updateNextButtonDisabledState() {
-        if (NavigationTarget.TAKE_OFFER_PAYMENT == model.getNavigationTarget()) {
-            model.getNextButtonDisabled().set(takeOfferPaymentController.getSelectedFiatPaymentMethodSpec().get() == null);
-        } else {
-            model.getNextButtonDisabled().set(false);
-        }
     }
 
     private void setMainButtonsVisibleState(boolean value) {

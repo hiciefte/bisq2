@@ -17,7 +17,8 @@
 
 package bisq.network.p2p.services.data.inventory;
 
-import bisq.common.encoding.Hex;
+import bisq.common.util.ByteUnit;
+import bisq.common.util.MathUtils;
 import bisq.network.NetworkService;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.network.p2p.node.CloseReason;
@@ -26,14 +27,18 @@ import bisq.network.p2p.node.Node;
 import bisq.network.p2p.services.data.inventory.filter.InventoryFilter;
 import bisq.network.p2p.services.data.storage.append.AddAppendOnlyDataRequest;
 import bisq.network.p2p.services.data.storage.auth.AddAuthenticatedDataRequest;
+import bisq.network.p2p.services.data.storage.auth.RefreshAuthenticatedDataRequest;
 import bisq.network.p2p.services.data.storage.auth.RemoveAuthenticatedDataRequest;
 import bisq.network.p2p.services.data.storage.mailbox.AddMailboxRequest;
 import bisq.network.p2p.services.data.storage.mailbox.RemoveMailboxRequest;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static java.util.concurrent.CompletableFuture.runAsync;
@@ -45,7 +50,7 @@ class InventoryHandler implements Connection.Listener {
     private final Connection connection;
     private final CompletableFuture<Inventory> future = new CompletableFuture<>();
     private final int nonce;
-    private long ts;
+    private long requestTs;
 
     InventoryHandler(Node node, Connection connection) {
         this.node = node;
@@ -56,7 +61,8 @@ class InventoryHandler implements Connection.Listener {
     }
 
     CompletableFuture<Inventory> request(InventoryFilter inventoryFilter) {
-        ts = System.currentTimeMillis();
+        requestTs = System.currentTimeMillis();
+        log.info("Send InventoryRequest to {} with {}", connection.getPeerAddress(), inventoryFilter.getDetails());
         InventoryRequest inventoryRequest = new InventoryRequest(inventoryFilter, nonce);
         runAsync(() -> node.send(inventoryRequest, connection), NetworkService.NETWORK_IO_POOL)
                 .whenComplete((connection, throwable) -> {
@@ -75,55 +81,71 @@ class InventoryHandler implements Connection.Listener {
             if (response.getRequestNonce() == nonce) {
                 printReceivedInventory(response);
                 removeListeners();
-                connection.getConnectionMetrics().addRtt(System.currentTimeMillis() - ts);
                 future.complete(response.getInventory());
             } else {
-                log.warn("Node {} received InventoryResponse from {} with invalid nonce {}. Request nonce was {}. Connection={}",
-                        node, connection.getPeerAddress(), response.getRequestNonce(), nonce, connection.getId());
+                log.warn("Received InventoryResponse from {} with invalid nonce {}. Request nonce was {}. Peer address={}",
+                        connection.getPeerAddress(), response.getRequestNonce(), nonce,
+                        connection.getPeerAddress().getFullAddress());
             }
         }
     }
 
     private void printReceivedInventory(InventoryResponse response) {
-        Map<String, List<String>> details = new HashMap<>();
-        response.getInventory().getEntries()
-                .forEach(entry -> {
-                    String key = entry.getClass().getSimpleName();
-                    String data = null;
-                    if (entry instanceof AddAuthenticatedDataRequest) {
-                        AddAuthenticatedDataRequest addRequest = (AddAuthenticatedDataRequest) entry;
-                        data = addRequest.getAuthenticatedSequentialData().getAuthenticatedData().getDistributedData().getClass().getSimpleName();
-                    } else if (entry instanceof RemoveAuthenticatedDataRequest) {
-                        RemoveAuthenticatedDataRequest removeRequest = (RemoveAuthenticatedDataRequest) entry;
-                        data = Hex.encode(removeRequest.getHash());
-                        key += ": Hashes";
-                    } else if (entry instanceof AddMailboxRequest) {
-                        AddMailboxRequest addRequest = (AddMailboxRequest) entry;
-                        data = addRequest.getMailboxSequentialData().getMailboxData().getConfidentialMessage().getReceiverKeyId();
-                        key += ": ReceiverKeyIds";
-                    } else if (entry instanceof RemoveMailboxRequest) {
-                        RemoveMailboxRequest removeRequest = (RemoveMailboxRequest) entry;
-                        data = Hex.encode(removeRequest.getHash());
-                        key += ": Hashes";
-                    } else if (entry instanceof AddAppendOnlyDataRequest) {
-                        AddAppendOnlyDataRequest addRequest = (AddAppendOnlyDataRequest) entry;
-                        data = addRequest.getAppendOnlyData().getClass().getSimpleName();
+        Map<String, Map<String, AtomicInteger>> dataRequestMap = new HashMap<>();
+        Inventory inventory = response.getInventory();
+        inventory.getEntries()
+                .forEach(dataRequest -> {
+                    String dataRequestName = dataRequest.getClass().getSimpleName();
+                    String payloadName = dataRequest.getClass().getSimpleName();
+                    if (dataRequest instanceof AddAuthenticatedDataRequest) {
+                        AddAuthenticatedDataRequest addRequest = (AddAuthenticatedDataRequest) dataRequest;
+                        payloadName = addRequest.getAuthenticatedSequentialData().getAuthenticatedData().getDistributedData().getClass().getSimpleName();
+                    } else if (dataRequest instanceof RemoveAuthenticatedDataRequest) {
+                        RemoveAuthenticatedDataRequest removeRequest = (RemoveAuthenticatedDataRequest) dataRequest;
+                        payloadName = removeRequest.getClassName();
+                    } else if (dataRequest instanceof RefreshAuthenticatedDataRequest) {
+                        RefreshAuthenticatedDataRequest request = (RefreshAuthenticatedDataRequest) dataRequest;
+                        payloadName = request.getClassName();
+                    } else if (dataRequest instanceof AddAppendOnlyDataRequest) {
+                        AddAppendOnlyDataRequest addRequest = (AddAppendOnlyDataRequest) dataRequest;
+                        payloadName = addRequest.getAppendOnlyData().getClass().getSimpleName();
+                    } else if (dataRequest instanceof AddMailboxRequest) {
+                        AddMailboxRequest addRequest = (AddMailboxRequest) dataRequest;
+                        payloadName = addRequest.getMailboxSequentialData().getMailboxData().getClassName();
+                    } else if (dataRequest instanceof RemoveMailboxRequest) {
+                        RemoveMailboxRequest removeRequest = (RemoveMailboxRequest) dataRequest;
+                        payloadName = removeRequest.getClassName();
                     }
-                    if (data != null) {
-                        details.putIfAbsent(key, new ArrayList<>());
-                        List<String> list = details.get(key);
-                        list.add(data);
-                        details.put(key, list);
-                    }
-                });
+                    dataRequestMap.putIfAbsent(dataRequestName, new HashMap<>());
+                    Map<String, AtomicInteger> payloadMap = dataRequestMap.get(dataRequestName);
+                    dataRequestMap.put(dataRequestName, payloadMap);
+                    String payloadKey = dataRequestName.equals(payloadName) ?
+                            dataRequestName :
+                            dataRequestName + "." + payloadName;
 
-        String report = details.entrySet().stream().map(e -> e.getValue().size() + " " + e.getKey() + ": " + e.getValue())
+                    payloadMap.putIfAbsent(payloadKey, new AtomicInteger());
+                    AtomicInteger counter = payloadMap.get(payloadKey);
+                    counter.incrementAndGet();
+                });
+        String report = dataRequestMap.values().stream()
+                .map(payloadMap -> payloadMap.entrySet().stream()
+                        .map(entry -> String.format("%4d item(s) of %s", entry.getValue().get(), entry.getKey()))
+                        .collect(Collectors.joining("\n")))
                 .collect(Collectors.joining("\n"));
+
         if (report.isEmpty()) {
             report = "No items received";
         }
+        String maxSizeReached = inventory.isMaxSizeReached()
+                ? "Still missing data. Response got truncated because max size was reached"
+                : "All data received from peer";
+        String size = ByteUnit.BYTE.toKB((double) inventory.getCachedSerializedSize().orElse(0)) + " KB";
+        String passed = MathUtils.roundDouble((System.currentTimeMillis() - requestTs) / 1000d, 2) + " sec.";
         log.info("\n##########################################################################################\n" +
-                "Inventory from: " + connection.getPeerAddress() + "\n" +
+                "Received " + size + " of inventory data from: " + connection.getPeerAddress().getFullAddress() +
+                " after " + passed + "; \n" +
+                maxSizeReached +
+                "\n##########################################################################################\n" +
                 report +
                 "\n##########################################################################################");
     }

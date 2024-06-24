@@ -18,6 +18,7 @@
 package bisq.desktop;
 
 import bisq.bisq_easy.NavigationTarget;
+import bisq.chat.notifications.ChatNotificationService;
 import bisq.common.observable.Observable;
 import bisq.desktop.common.Browser;
 import bisq.desktop.common.Transitions;
@@ -44,6 +45,7 @@ import javafx.scene.layout.AnchorPane;
 import javafx.stage.Screen;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.fxmisc.easybind.EasyBind;
 
 import java.util.Optional;
 
@@ -67,7 +69,9 @@ public class DesktopController extends NavigationController {
     protected final Runnable onActivatedHandler;
     private SplashController splashController;
     private final UserIdentityService userIdentityService;
+    private final ChatNotificationService chatNotificationService;
     private final ServiceProvider serviceProvider;
+    private final DontShowAgainService dontShowAgainService;
     private PreventStandbyModeService preventStandbyModeService;
 
     private final Observable<State> applicationServiceState;
@@ -78,6 +82,7 @@ public class DesktopController extends NavigationController {
                              JavaFxApplicationData applicationJavaFxApplicationData,
                              Runnable onActivatedHandler) {
         super(NavigationTarget.PRIMARY_STAGE);
+
         this.applicationServiceState = applicationServiceState;
         this.applicationJavaFxApplicationData = applicationJavaFxApplicationData;
         this.serviceProvider = serviceProvider;
@@ -85,6 +90,8 @@ public class DesktopController extends NavigationController {
 
         settingsService = serviceProvider.getSettingsService();
         userIdentityService = serviceProvider.getUserService().getUserIdentityService();
+        chatNotificationService = serviceProvider.getChatService().getChatNotificationService();
+        dontShowAgainService = serviceProvider.getDontShowAgainService();
     }
 
     public void init() {
@@ -94,7 +101,7 @@ public class DesktopController extends NavigationController {
 
         splashController = new SplashController(applicationServiceState, serviceProvider);
 
-        Browser.initialize(applicationJavaFxApplicationData.getHostServices(), serviceProvider.getSettingsService());
+        Browser.initialize(applicationJavaFxApplicationData.getHostServices(), settingsService, dontShowAgainService);
         Transitions.setSettingsService(settingsService);
         AnchorPane viewRoot = view.getRoot();
         preventStandbyModeService = new PreventStandbyModeService(serviceProvider);
@@ -107,6 +114,8 @@ public class DesktopController extends NavigationController {
         view.showStage();
 
         new OverlayController(serviceProvider, viewRoot);
+
+        EasyBind.subscribe(viewRoot.getScene().getWindow().focusedProperty(), chatNotificationService::setApplicationFocussed);
     }
 
     private void setInitialScreenSize() {
@@ -143,7 +152,7 @@ public class DesktopController extends NavigationController {
         // We show the splash screen as background also if we show the 'unlock' or 'tac' overlay screens
         Navigation.navigateTo(NavigationTarget.SPLASH);
 
-        if (!settingsService.isTacAccepted()) {
+        if (!settingsService.getIsTacAccepted().get()) {
             UIThread.runOnNextRenderFrame(() -> Navigation.navigateTo(NavigationTarget.TAC,
                     new TacController.InitData(this::maybeShowLockScreen)));
         } else {
@@ -206,7 +215,7 @@ public class DesktopController extends NavigationController {
         boolean hasUserIdentities = serviceProvider.getUserService().getUserIdentityService().hasUserIdentities();
 
         if (!hasUserIdentities) {
-            if (DontShowAgainService.showAgain(WELCOME)) {
+            if (dontShowAgainService.showAgain(WELCOME)) {
                 Navigation.navigateTo(NavigationTarget.ONBOARDING_WELCOME);
             } else {
                 Navigation.navigateTo(NavigationTarget.ONBOARDING_GENERATE_NYM);

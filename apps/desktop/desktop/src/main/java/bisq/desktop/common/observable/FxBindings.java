@@ -61,6 +61,10 @@ public class FxBindings {
         return new DoublePropertyBindings(observer);
     }
 
+    public static DoubleBiDirPropertyBindings bindBiDir(DoubleProperty observer) {
+        return new DoubleBiDirPropertyBindings(observer);
+    }
+
     public static IntegerPropertyBindings bind(IntegerProperty observer) {
         return new IntegerPropertyBindings(observer);
     }
@@ -71,6 +75,10 @@ public class FxBindings {
 
     public static BooleanBiDirPropertyBindings bindBiDir(BooleanProperty observer) {
         return new BooleanBiDirPropertyBindings(observer);
+    }
+
+    public static StringBiDirPropertyBindings bindBiDir(StringProperty observer) {
+        return new StringBiDirPropertyBindings(observer);
     }
 
 
@@ -271,6 +279,24 @@ public class FxBindings {
         }
     }
 
+    public static final class StringBiDirPropertyBindings {
+        private final StringProperty observer;
+
+        public StringBiDirPropertyBindings(StringProperty observer) {
+            this.observer = observer;
+        }
+
+        public Pin to(Observable<String> observable) {
+            ChangeListener<String> listener = (o, oldValue, newValue) -> observable.set(newValue);
+            observer.addListener(listener);
+            Pin pin = observable.addObserver(e -> UIThread.run(() -> observer.set(e)));
+            return () -> {
+                observer.removeListener(listener);
+                pin.unbind();
+            };
+        }
+    }
+
     public static final class LongBiDirPropertyBindings {
         private final LongProperty observer;
 
@@ -289,6 +315,23 @@ public class FxBindings {
         }
     }
 
+    public static final class DoubleBiDirPropertyBindings {
+        private final DoubleProperty observer;
+
+        public DoubleBiDirPropertyBindings(DoubleProperty observer) {
+            this.observer = observer;
+        }
+
+        public Pin to(Observable<Double> observable) {
+            ChangeListener<Number> listener = (o, oldValue, newValue) -> observable.set((Double) newValue);
+            observer.addListener(listener);
+            Pin pin = observable.addObserver(e -> UIThread.run(() -> observer.set(e)));
+            return () -> {
+                observer.removeListener(listener);
+                pin.unbind();
+            };
+        }
+    }
 
     public static final class ObjectBiDirPropertyBindings<S> {
         private final ObjectProperty<S> observer;

@@ -17,9 +17,13 @@
 
 package bisq.trade.bisq_easy.protocol.messages;
 
+import bisq.bonded_roles.market_price.MarketPrice;
+import bisq.bonded_roles.market_price.MarketPriceService;
 import bisq.chat.bisqeasy.offerbook.BisqEasyOfferbookChannelService;
+import bisq.common.currency.Market;
 import bisq.common.fsm.Event;
 import bisq.common.monetary.Monetary;
+import bisq.common.monetary.PriceQuote;
 import bisq.common.util.StringUtils;
 import bisq.contract.ContractService;
 import bisq.contract.ContractSignatureData;
@@ -35,7 +39,9 @@ import bisq.user.profile.UserProfile;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.GeneralSecurityException;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -53,6 +59,8 @@ public class BisqEasyTakeOfferRequestHandler extends TradeMessageHandler<BisqEas
         verifyMessage(message);
 
         BisqEasyContract contract = message.getBisqEasyContract();
+//        checkArgument(trade.getOffer().getPriceSpec().equals(contract.getAgreedPriceSpec()),
+//                "Price spec cannot be changed from the one set in offer since v2.0.3.");
         ContractSignatureData takersContractSignatureData = message.getContractSignatureData();
         ContractService contractService = serviceProvider.getContractService();
         try {
@@ -62,6 +70,7 @@ public class BisqEasyTakeOfferRequestHandler extends TradeMessageHandler<BisqEas
 
             BisqEasyTakeOfferResponse response = new BisqEasyTakeOfferResponse(StringUtils.createUid(),
                     trade.getId(),
+                    trade.getProtocolVersion(),
                     trade.getMyself().getNetworkId(),
                     trade.getPeer().getNetworkId(),
                     makersContractSignatureData);
@@ -90,14 +99,23 @@ public class BisqEasyTakeOfferRequestHandler extends TradeMessageHandler<BisqEas
 
         BisqEasyContract takersContract = checkNotNull(message.getBisqEasyContract());
         BisqEasyOffer takersOffer = checkNotNull(takersContract.getOffer());
-        serviceProvider.getChatService().getBisqEasyOfferbookChannelService().getChannels().stream()
+
+        List<BisqEasyOffer> myOffers = serviceProvider.getChatService().getBisqEasyOfferbookChannelService().getChannels().stream()
                 .flatMap(channel -> channel.getChatMessages().stream())
                 .filter(chatMessage -> chatMessage.getBisqEasyOffer().isPresent())
                 .map(chatMessage -> chatMessage.getBisqEasyOffer().get())
                 .filter(offer -> offer.getMakerNetworkId().equals(trade.getMyIdentity().getNetworkId()))
+                .collect(Collectors.toList());
+        Optional<BisqEasyOffer> matchingOfferInChannel = myOffers.stream()
                 .filter(offer -> offer.equals(takersOffer))
-                .findAny()
-                .orElseThrow();
+                .findAny();
+        if (matchingOfferInChannel.isEmpty()) {
+            log.error("Could not find matching offer in BisqEasyOfferbookChannel.\n" +
+                            "takersOffer={}\n" +
+                            "myOffers={}",
+                    takersOffer, myOffers);
+            throw new RuntimeException("Could not find matching offer in BisqEasyOfferbookChannel");
+        }
 
         checkArgument(message.getSender().equals(takersContract.getTaker().getNetworkId()));
 
@@ -109,8 +127,8 @@ public class BisqEasyTakeOfferRequestHandler extends TradeMessageHandler<BisqEas
         Optional<UserProfile> mediator = serviceProvider.getSupportService().getMediationRequestService()
                 .selectMediator(takersOffer.getMakersUserProfileId(), trade.getTaker().getNetworkId().getId());
         checkArgument(mediator.equals(takersContract.getMediator()), "Mediators do not match. " +
-                        "mediator={}, takersContract.getMediator()={}",
-                mediator, takersContract.getMediator());
+                "mediator=" + mediator + ", takersContract.getMediator()=" +
+                takersContract.getMediator());
 
         ContractSignatureData takersContractSignatureData = message.getContractSignatureData();
         try {
@@ -126,24 +144,75 @@ public class BisqEasyTakeOfferRequestHandler extends TradeMessageHandler<BisqEas
     }
 
     private void validateAmount(BisqEasyOffer takersOffer, BisqEasyContract takersContract) {
-        Optional<Monetary> amount = getAmount(takersOffer, takersContract);
-        checkArgument(amount.isPresent(), "No market price available for validation.");
+        MarketPriceService marketPriceService = serviceProvider.getBondedRolesService().getMarketPriceService();
+        Market market = takersOffer.getMarket();
+        MarketPrice marketPrice = marketPriceService.getMarketPriceByCurrencyMap().get(market);
+        Optional<PriceQuote> priceQuote = PriceUtil.findQuote(marketPriceService,
+                takersContract.getAgreedPriceSpec(), market);
+        Optional<Monetary> amount = priceQuote.map(quote -> quote.toBaseSideMonetary(Monetary.from(takersContract.getQuoteSideAmount(),
+                market.getQuoteCurrencyCode())));
 
-        double tolerancePercentage = 0.01;
-        long tolerance = (long) (amount.get().getValue() * tolerancePercentage);
-        long minAmountWithTolerance = amount.get().getValue() - tolerance;
-        long maxAmountWithTolerance = amount.get().getValue() + tolerance;
+        checkArgument(amount.isPresent(), "No priceQuote present. Might be that no market price is available. marketPrice=" + marketPrice);
 
         long takersAmount = takersContract.getBaseSideAmount();
-        String errorMsg = "Market price deviation is too big.";
-        checkArgument(takersAmount >= minAmountWithTolerance, errorMsg);
-        checkArgument(takersAmount <= maxAmountWithTolerance, errorMsg);
-    }
+        long myAmount = amount.get().getValue(); // I am maker
 
-    private Optional<Monetary> getAmount(BisqEasyOffer takersOffer, BisqEasyContract takersContract) {
-        return PriceUtil.findQuote(serviceProvider.getBondedRolesService().getMarketPriceService(),
-                        takersContract.getAgreedPriceSpec(), takersOffer.getMarket())
-                .map(quote -> quote.toBaseSideMonetary(Monetary.from(takersContract.getQuoteSideAmount(),
-                        takersOffer.getMarket().getQuoteCurrencyCode())));
+        double maxTradePriceDeviation = serviceProvider.getSettingsService().getMaxTradePriceDeviation().get();
+        double warnDeviation = maxTradePriceDeviation / 2;
+        double warnThreshold, errorThreshold;
+        boolean showWaring = false;
+        boolean throwException = false;
+        String message = "";
+
+        if (trade.isBuyer()) {
+            // If I am buyer I accept if takers amount is larger than my expected amount (good for me as I receive more BTC).
+            // If takers amount is below my maxTradePriceDeviation the trade fails.
+            warnThreshold = myAmount * (1 - warnDeviation);
+            errorThreshold = myAmount * (1 - maxTradePriceDeviation);
+            if (takersAmount < errorThreshold) {
+                throwException = true;
+                message = "Takers (sellers) Bitcoin amount is too low. " +
+                        "This can be caused by differences in the 2 traders market price or by an attempt by the taker " +
+                        "to manipulate the price.\n";
+            } else if (takersAmount < warnThreshold) {
+                showWaring = true;
+                message = "Takers (sellers) Bitcoin amount is lower as expected. " +
+                        "This can be caused by differences in the 2 traders market price or by an attempt by the taker " +
+                        "to manipulate the price. We still tolerate that deviation.\n";
+            }
+        } else {
+            // If I am seller I accept if takers amount is smaller than my expected amount (good for me as I need to send less BTC).
+            // If takers amount is above my maxTradePriceDeviation the trade fails.
+            warnThreshold = myAmount * (1 + warnDeviation);
+            errorThreshold = myAmount * (1 + maxTradePriceDeviation);
+            if (takersAmount > errorThreshold) {
+                throwException = true;
+                message = "Takers (buyers) Bitcoin amount is too high. " +
+                        "This can be caused by differences in the 2 traders market price or by an attempt by the taker " +
+                        "to manipulate the price.\n";
+            } else if (takersAmount > warnThreshold) {
+                showWaring = true;
+                message = "Takers (sellers) Bitcoin amount is lower as expected. " +
+                        "This can be caused by differences in the 2 traders market price or by an attempt by the taker " +
+                        "to manipulate the price. We still tolerate that deviation.\n";
+            }
+        }
+
+        String details = "takersAmount=" + takersAmount + "\n" +
+                "myAmount=" + myAmount + "\n" +
+                "errorThreshold=" + errorThreshold + "\n" +
+                "marketPrice=" + marketPrice.getPriceQuote().getValue() + "\n" +
+                "priceQuote=" + priceQuote.map(PriceQuote::getValue).orElse(0L) + "\n" +
+                "takersContract=" + takersContract;
+        if (throwException) {
+            log.error(message + details);
+            throw new IllegalArgumentException(message);
+        } else if (showWaring) {
+            log.warn(message + details);
+        } else if (myAmount != takersAmount) {
+            log.info("My amount and the amount set by the taker are not the same. This is expected if the offer used a " +
+                    "market based price and the taker had a different market price.\n" +
+                    "{}", details);
+        }
     }
 }

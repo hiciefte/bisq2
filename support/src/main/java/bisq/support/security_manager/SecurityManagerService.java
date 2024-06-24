@@ -18,10 +18,12 @@
 package bisq.support.security_manager;
 
 import bisq.bonded_roles.BondedRolesService;
-import bisq.bonded_roles.alert.AlertType;
-import bisq.bonded_roles.alert.AuthorizedAlertData;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRolesService;
+import bisq.bonded_roles.security_manager.alert.AlertType;
+import bisq.bonded_roles.security_manager.alert.AuthorizedAlertData;
+import bisq.bonded_roles.security_manager.difficulty_adjustment.AuthorizedDifficultyAdjustmentData;
+import bisq.bonded_roles.security_manager.min_reputation_score.AuthorizedMinRequiredReputationScoreData;
 import bisq.common.application.Service;
 import bisq.common.observable.Observable;
 import bisq.common.util.StringUtils;
@@ -33,13 +35,9 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.KeyPair;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.util.Date;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class SecurityManagerService implements Service {
@@ -94,19 +92,19 @@ public class SecurityManagerService implements Service {
     ///////////////////////////////////////////////////////////////////////////////////////////////////
 
     public CompletableFuture<Boolean> publishAlert(AlertType alertType,
+                                                   Optional<String> headline,
                                                    Optional<String> message,
                                                    boolean haltTrading,
                                                    boolean requireVersionForTrading,
                                                    Optional<String> minVersion,
                                                    Optional<AuthorizedBondedRole> bannedRole) {
-        UserIdentity userIdentity = checkNotNull(userIdentityService.getSelectedUserIdentity());
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
         String profileId = userIdentity.getId();
         KeyPair keyPair = userIdentity.getIdentity().getKeyBundle().getKeyPair();
-        PublicKey authorizedPublicKey = keyPair.getPublic();
-        PrivateKey authorizedPrivateKey = keyPair.getPrivate();
         AuthorizedAlertData authorizedAlertData = new AuthorizedAlertData(StringUtils.createUid(),
                 new Date().getTime(),
                 alertType,
+                headline,
                 message,
                 haltTrading,
                 requireVersionForTrading,
@@ -114,17 +112,47 @@ public class SecurityManagerService implements Service {
                 bannedRole,
                 profileId,
                 staticPublicKeysProvided);
-        return networkService.publishAuthorizedData(authorizedAlertData,
-                        keyPair,
-                        authorizedPrivateKey,
-                        authorizedPublicKey)
+        return networkService.publishAuthorizedData(authorizedAlertData, keyPair)
                 .thenApply(broadCastDataResult -> true);
     }
 
     public CompletableFuture<Boolean> removeAlert(AuthorizedAlertData authorizedAlertData, KeyPair ownerKeyPair) {
-        return networkService.removeAuthorizedData(authorizedAlertData,
-                        ownerKeyPair,
-                        ownerKeyPair.getPublic())
+        return networkService.removeAuthorizedData(authorizedAlertData, ownerKeyPair, ownerKeyPair.getPublic())
+                .thenApply(broadCastDataResult -> true);
+    }
+
+    public CompletableFuture<Boolean> publishDifficultyAdjustment(double difficultyAdjustmentFactor) {
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
+        String profileId = userIdentity.getId();
+        KeyPair keyPair = userIdentity.getIdentity().getKeyBundle().getKeyPair();
+        AuthorizedDifficultyAdjustmentData data = new AuthorizedDifficultyAdjustmentData(new Date().getTime(),
+                difficultyAdjustmentFactor,
+                profileId,
+                staticPublicKeysProvided);
+        return networkService.publishAuthorizedData(data, keyPair)
+                .thenApply(broadCastDataResult -> true);
+    }
+
+    public CompletableFuture<Boolean> publishMinRequiredReputationScore(long minRequiredReputationScore) {
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
+        String profileId = userIdentity.getId();
+        KeyPair keyPair = userIdentity.getIdentity().getKeyBundle().getKeyPair();
+        AuthorizedMinRequiredReputationScoreData data = new AuthorizedMinRequiredReputationScoreData(new Date().getTime(),
+                minRequiredReputationScore,
+                profileId,
+                staticPublicKeysProvided);
+        return networkService.publishAuthorizedData(data, keyPair)
+                .thenApply(broadCastDataResult -> true);
+    }
+
+    public CompletableFuture<Boolean> removeDifficultyAdjustment(AuthorizedDifficultyAdjustmentData data, KeyPair ownerKeyPair) {
+        return networkService.removeAuthorizedData(data, ownerKeyPair, ownerKeyPair.getPublic())
+                .thenApply(broadCastDataResult -> true);
+    }
+
+    public CompletableFuture<Boolean> removeMinRequiredReputationScore(AuthorizedMinRequiredReputationScoreData data,
+                                                                       KeyPair ownerKeyPair) {
+        return networkService.removeAuthorizedData(data, ownerKeyPair, ownerKeyPair.getPublic())
                 .thenApply(broadCastDataResult -> true);
     }
 }

@@ -58,27 +58,28 @@ public final class Capability implements NetworkProto {
     }
 
     @Override
-    public bisq.network.protobuf.Capability toProto() {
+    public bisq.network.protobuf.Capability.Builder getBuilder(boolean serializeForHash) {
         return bisq.network.protobuf.Capability.newBuilder()
-                .setAddress(address.toProto())
+                .setAddress(address.toProto(serializeForHash))
                 .addAllSupportedTransportTypes(supportedTransportTypes.stream()
                         .map(Enum::name)
                         .collect(Collectors.toList()))
                 .addAllFeatures(features.stream()
-                        .map(Feature::toProto)
-                        .collect(Collectors.toList()))
-                .build();
+                        .map(Feature::toProtoEnum)
+                        .collect(Collectors.toList()));
+    }
+
+    @Override
+    public bisq.network.protobuf.Capability toProto(boolean serializeForHash) {
+        return resolveProto(serializeForHash);
     }
 
     public static Capability fromProto(bisq.network.protobuf.Capability proto) {
         List<TransportType> supportedTransportTypes = proto.getSupportedTransportTypesList().stream()
                 .map(e -> ProtobufUtils.enumFromProto(TransportType.class, e))
                 .collect(Collectors.toList());
-        List<Feature> features = proto.getFeaturesList().stream()
-                .map(Feature::fromProto)
-                .collect(Collectors.toList());
         return new Capability(Address.fromProto(proto.getAddress()),
                 supportedTransportTypes,
-                features);
+                ProtobufUtils.fromProtoEnumList(Feature.class, proto.getFeaturesList()));
     }
 }

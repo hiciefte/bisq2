@@ -19,15 +19,29 @@ package bisq.common.util;
 
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Random;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class CollectionUtil {
     @Nullable
     public static <T> T getRandomElement(Collection<T> collection) {
-        return collection.isEmpty() ?
+        // Got a weird exception with size = -1 (Hashset), so we use the size check instead of isEmpty.
+        return collection.size() < 1 ?
                 null :
                 new ArrayList<>(collection).get(new Random().nextInt(collection.size()));
+    }
+
+    public static <T> List<T> toShuffledList(List<T> list) {
+        Collections.shuffle(list);
+        return list;
+    }
+
+    public static <T> List<T> toShuffledList(Stream<T> stream) {
+        return toShuffledList(stream.collect(Collectors.toList()));
+    }
+
+    public static <T> List<T> toShuffledList(Set<T> set) {
+        return toShuffledList(set.stream());
     }
 }

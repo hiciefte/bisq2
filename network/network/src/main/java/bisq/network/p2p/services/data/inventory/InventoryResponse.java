@@ -17,6 +17,7 @@
 
 package bisq.network.p2p.services.data.inventory;
 
+import bisq.network.p2p.message.Response;
 import bisq.network.p2p.services.data.broadcast.BroadcastMessage;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -25,7 +26,7 @@ import lombok.ToString;
 @Getter
 @ToString
 @EqualsAndHashCode
-public final class InventoryResponse implements BroadcastMessage {
+public final class InventoryResponse implements BroadcastMessage, Response {
     private final Inventory inventory;
     private final int requestNonce;
 
@@ -41,12 +42,20 @@ public final class InventoryResponse implements BroadcastMessage {
     }
 
     @Override
-    public bisq.network.protobuf.EnvelopePayloadMessage toProto() {
-        return getNetworkMessageBuilder().setInventoryResponse(
-                        bisq.network.protobuf.InventoryResponse.newBuilder()
-                                .setInventory(inventory.toProto())
-                                .setRequestNonce(requestNonce))
-                .build();
+    public bisq.network.protobuf.EnvelopePayloadMessage.Builder getBuilder(boolean serializeForHash) {
+        return newEnvelopePayloadMessageBuilder().setInventoryResponse(toValueProto(serializeForHash));
+    }
+
+    @Override
+    public bisq.network.protobuf.InventoryResponse toValueProto(boolean serializeForHash) {
+        return resolveValueProto(serializeForHash);
+    }
+
+    @Override
+    public bisq.network.protobuf.InventoryResponse.Builder getValueBuilder(boolean serializeForHash) {
+        return bisq.network.protobuf.InventoryResponse.newBuilder()
+                .setInventory(inventory.toProto(serializeForHash))
+                .setRequestNonce(requestNonce);
     }
 
     public static InventoryResponse fromProto(bisq.network.protobuf.InventoryResponse proto) {
@@ -56,5 +65,10 @@ public final class InventoryResponse implements BroadcastMessage {
     @Override
     public double getCostFactor() {
         return 0.1;
+    }
+
+    @Override
+    public String getRequestId() {
+        return String.valueOf(requestNonce);
     }
 }

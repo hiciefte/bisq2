@@ -21,6 +21,7 @@ import bisq.common.application.Service;
 import bisq.common.encoding.Hex;
 import bisq.common.observable.Observable;
 import bisq.common.observable.collection.ObservableSet;
+import bisq.common.threading.ExecutorFactory;
 import bisq.common.timer.Scheduler;
 import bisq.identity.Identity;
 import bisq.identity.IdentityService;
@@ -32,17 +33,20 @@ import bisq.persistence.PersistenceClient;
 import bisq.persistence.PersistenceService;
 import bisq.security.AesSecretKey;
 import bisq.security.EncryptedData;
+import bisq.security.SecurityService;
 import bisq.security.pow.ProofOfWork;
+import bisq.security.pow.hashcash.HashCashProofOfWorkService;
 import bisq.user.profile.UserProfile;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
-import javax.annotation.Nullable;
 import java.security.KeyPair;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -50,6 +54,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 @Slf4j
 public class UserIdentityService implements PersistenceClient<UserIdentityStore>, Service {
+    public final static int MINT_NYM_DIFFICULTY = 65536;  // Math.pow(2, 16) = 65536;
+
     @Getter
     @ToString
     public static final class Config {
@@ -69,19 +75,25 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
     private final UserIdentityStore persistableStore = new UserIdentityStore();
     @Getter
     private final Persistence<UserIdentityStore> persistence;
+    private final HashCashProofOfWorkService hashCashProofOfWorkService;
     private final IdentityService identityService;
     private final NetworkService networkService;
+
     private final Object lock = new Object();
     private final Config config;
     @Getter
     private final Observable<UserIdentity> newlyCreatedUserIdentity = new Observable<>();
+    private Optional<ExecutorService> rePublishUserProfilesExecutor = Optional.empty();
+    private Optional<Scheduler> rePublishAllUserProfilesScheduler = Optional.empty();
 
     public UserIdentityService(Config config,
                                PersistenceService persistenceService,
+                               SecurityService securityService,
                                IdentityService identityService,
                                NetworkService networkService) {
         this.config = config;
         persistence = persistenceService.getOrCreatePersistence(this, DbSubDirectory.PRIVATE, persistableStore);
+        hashCashProofOfWorkService = securityService.getHashCashProofOfWorkService();
         this.identityService = identityService;
         this.networkService = networkService;
     }
@@ -89,20 +101,30 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
     public CompletableFuture<Boolean> initialize() {
         log.info("initialize");
 
-        // We delay publishing to be better bootstrapped 
-        Scheduler.run(this::maybePublishAllUserProfiles).after(5, TimeUnit.SECONDS);
+        // We delay publishing to be better bootstrapped
+        long initialDelay = TimeUnit.SECONDS.toMillis(5);
+        long delay = TimeUnit.HOURS.toMillis(3);
+        rePublishAllUserProfilesScheduler = Optional.of(Scheduler.run(this::rePublishAllUserProfiles)
+                .periodically(initialDelay, delay, TimeUnit.MILLISECONDS));
         return CompletableFuture.completedFuture(true);
     }
 
     public CompletableFuture<Boolean> shutdown() {
-        log.info("shutdown");
-        return CompletableFuture.completedFuture(true);
+        rePublishAllUserProfilesScheduler.ifPresent(Scheduler::stop);
+        return CompletableFuture.supplyAsync(() -> {
+            rePublishUserProfilesExecutor.ifPresent(rePublishUserProfilesExecutor -> ExecutorFactory.shutdownAndAwaitTermination(rePublishUserProfilesExecutor, 100));
+            return true;
+        });
     }
 
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////
     // API
     ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+    public ProofOfWork mintNymProofOfWork(byte[] pubKeyHash) {
+        return hashCashProofOfWorkService.mint(pubKeyHash, null, MINT_NYM_DIFFICULTY);
+    }
 
     public CompletableFuture<AesSecretKey> deriveKeyFromPassword(CharSequence password) {
         return persistableStore.deriveKeyFromPassword(password)
@@ -154,18 +176,24 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
                                                                           KeyPair keyPair,
                                                                           byte[] pubKeyHash,
                                                                           ProofOfWork proofOfWork,
+                                                                          int avatarVersion,
                                                                           String terms,
                                                                           String statement) {
         String identityTag = nickName + "-" + Hex.encode(pubKeyHash);
         return identityService.createNewActiveIdentity(identityTag, keyPair)
-                .thenApply(identity -> createUserIdentity(nickName, proofOfWork, terms, statement, identity))
+                .thenApply(identity -> createUserIdentity(nickName, proofOfWork, avatarVersion, terms, statement, identity))
                 .thenApply(userIdentity -> {
-                    publishPublicUserProfile(userIdentity.getUserProfile(), userIdentity.getIdentity().getNetworkIdWithKeyPair().getKeyPair());
+                    publishUserProfile(userIdentity.getUserProfile(), userIdentity.getIdentity().getNetworkIdWithKeyPair().getKeyPair());
                     return userIdentity;
                 });
     }
 
     public void selectChatUserIdentity(UserIdentity userIdentity) {
+        if (userIdentity == null) {
+            log.warn("userIdentity is null at selectChatUserIdentity");
+            return;
+        }
+
         persistableStore.setSelectedUserIdentity(userIdentity);
         persist();
     }
@@ -183,8 +211,9 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
         }
         persist();
 
-        return networkService.removeAuthenticatedData(oldUserProfile, oldIdentity.getNetworkIdWithKeyPair().getKeyPair())
-                .thenCompose(result -> networkService.publishAuthenticatedData(newUserProfile, oldIdentity.getNetworkIdWithKeyPair().getKeyPair()));
+        KeyPair keyPair = oldIdentity.getNetworkIdWithKeyPair().getKeyPair();
+        return networkService.removeAuthenticatedData(oldUserProfile, keyPair)
+                .thenCompose(result -> publishUserProfile(newUserProfile, keyPair));
     }
 
     // Unsafe to use if there are open private chats or messages from userIdentity
@@ -194,10 +223,8 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
         }
         synchronized (lock) {
             getUserIdentities().remove(userIdentity);
-
-            getUserIdentities().stream().findAny()
-                    .ifPresentOrElse(persistableStore::setSelectedUserIdentity,
-                            () -> persistableStore.setSelectedUserIdentity(null));
+            // We have at least 1 userIdentity left
+            persistableStore.setSelectedUserIdentity(getUserIdentities().stream().findFirst().orElseThrow());
         }
         persist();
         identityService.retireActiveIdentity(userIdentity.getIdentity().getTag());
@@ -207,14 +234,14 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
 
     public CompletableFuture<Void> maybePublishUserProfile(UserProfile userProfile, KeyPair keyPair) {
         if (shouldPublishUserProfile()) {
-            return publishPublicUserProfile(userProfile, keyPair)
+            return publishUserProfile(userProfile, keyPair)
                     .whenComplete((broadcastResult, throwable) -> {
                         boolean success = throwable == null && !broadcastResult.isEmpty();
-                        // Publish all other user profiles as well
-                        getUserIdentities().stream()
+                        // Publish all other user profiles as well, or republish if not successful
+                        Set<UserIdentity> userIdentities = getUserIdentities().stream()
                                 .filter(userIdentity -> !success || !userProfile.equals(userIdentity.getUserProfile()))
-                                .forEach(userIdentity -> publishPublicUserProfile(userIdentity.getUserProfile(),
-                                        userIdentity.getNetworkIdWithKeyPair().getKeyPair()));
+                                .collect(Collectors.toSet());
+                        rePublishUserProfiles(userIdentities);
                     })
                     .thenApply(broadcastResult -> null);
         } else {
@@ -234,7 +261,6 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
         return persistableStore.getSelectedUserIdentityObservable();
     }
 
-    @Nullable
     public UserIdentity getSelectedUserIdentity() {
         return persistableStore.getSelectedUserIdentity();
     }
@@ -261,14 +287,32 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
         return System.currentTimeMillis() - persistableStore.getLastUserProfilePublishingDate() > config.getRepublishUserProfileInterval();
     }
 
-    private void maybePublishAllUserProfiles() {
-        if (shouldPublishUserProfile()) {
-            getUserIdentities().forEach(userIdentity -> publishPublicUserProfile(userIdentity.getUserProfile(),
-                    userIdentity.getNetworkIdWithKeyPair().getKeyPair()));
+    private void rePublishAllUserProfiles() {
+        rePublishUserProfiles(getUserIdentities());
+    }
+
+    private void rePublishUserProfiles(Set<UserIdentity> userIdentities) {
+        if (rePublishUserProfilesExecutor.isEmpty()) {
+            rePublishUserProfilesExecutor = Optional.of(ExecutorFactory.newSingleThreadExecutor("rePublishUserProfilesExecutor"));
+            rePublishUserProfilesExecutor.get().submit(() -> {
+                userIdentities.forEach(userIdentity -> {
+                    publishUserProfile(userIdentity.getUserProfile(), userIdentity.getNetworkIdWithKeyPair().getKeyPair());
+                    try {
+                        int republishDelay = 60_000 + new Random().nextInt(180_000);
+                        Thread.sleep(republishDelay);
+                    } catch (InterruptedException ignore) {
+                    }
+                });
+                rePublishUserProfilesExecutor.get().shutdownNow();
+                rePublishUserProfilesExecutor = Optional.empty();
+            });
+        } else {
+            log.warn("called rePublishUserProfiles while previous call to rePublishUserProfiles has not completed yet. We ignore that call.");
         }
     }
 
-    private CompletableFuture<BroadcastResult> publishPublicUserProfile(UserProfile userProfile, KeyPair keyPair) {
+    private CompletableFuture<BroadcastResult> publishUserProfile(UserProfile userProfile, KeyPair keyPair) {
+        log.info("publishUserProfile {}", userProfile.getUserName());
         persistableStore.setLastUserProfilePublishingDate(System.currentTimeMillis());
         persist();
         return networkService.publishAuthenticatedData(userProfile, keyPair);
@@ -276,12 +320,14 @@ public class UserIdentityService implements PersistenceClient<UserIdentityStore>
 
     private UserIdentity createUserIdentity(String nickName,
                                             ProofOfWork proofOfWork,
+                                            int avatarVersion,
                                             String terms,
                                             String statement,
                                             Identity identity) {
         checkArgument(nickName.equals(nickName.trim()) && !nickName.isEmpty(),
                 "Nickname must not have leading or trailing spaces and must not be empty.");
-        UserProfile userProfile = new UserProfile(nickName, proofOfWork, identity.getNetworkIdWithKeyPair().getNetworkId(), terms, statement);
+        UserProfile userProfile = new UserProfile(nickName, proofOfWork, avatarVersion,
+                identity.getNetworkIdWithKeyPair().getNetworkId(), terms, statement);
         UserIdentity userIdentity = new UserIdentity(identity, userProfile);
 
         synchronized (lock) {

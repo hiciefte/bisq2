@@ -28,14 +28,18 @@ import bisq.network.p2p.node.OutboundConnection;
 import bisq.network.p2p.node.authorization.AuthorizationService;
 import bisq.network.p2p.node.authorization.AuthorizationToken;
 import bisq.network.p2p.node.network_load.NetworkLoad;
-import bisq.network.p2p.services.peergroup.BanList;
+import bisq.network.p2p.services.peer_group.BanList;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+
+import static bisq.network.p2p.node.ConnectionException.Reason.ADDRESS_BANNED;
+import static bisq.network.p2p.node.ConnectionException.Reason.AUTHORIZATION_FAILED;
 
 @Slf4j
 public class ConnectionHandshakeInitiator {
@@ -70,9 +74,10 @@ public class ConnectionHandshakeInitiator {
         ConnectionHandshake.Request request = new ConnectionHandshake.Request(myCapability, optionalProof, myNetworkLoad, proof.getSignatureDate());
         // As we do not know he peers load yet, we use the NetworkLoad.INITIAL_LOAD
         AuthorizationToken token = authorizationService.createToken(request,
-                NetworkLoad.INITIAL_LOAD,
+                NetworkLoad.INITIAL_NETWORK_LOAD,
                 peerAddress.getFullAddress(),
-                0);
+                0,
+                new ArrayList<>());
         return new NetworkEnvelope(token, request);
     }
 
@@ -93,8 +98,9 @@ public class ConnectionHandshakeInitiator {
                     responseNetworkEnvelope);
         }
         ConnectionHandshake.Response response = (ConnectionHandshake.Response) responseNetworkEnvelope.getEnvelopePayloadMessage();
-        if (banList.isBanned(response.getCapability().getAddress())) {
-            throw new ConnectionException("Peers address is in quarantine. response=" + response);
+        Address address = response.getCapability().getAddress();
+        if (banList.isBanned(address)) {
+            throw new ConnectionException(ADDRESS_BANNED, "PeerAddress is banned. address=" + address);
         }
 
         boolean isAuthorized = authorizationService.isAuthorized(response,
@@ -103,12 +109,8 @@ public class ConnectionHandshakeInitiator {
                 StringUtils.createUid(),
                 myCapability.getAddress().getFullAddress());
 
-        if (isAuthorized) {
-            log.info("Authorized PoW of outbound peer {}", response.getCapability().getAddress());
-        }
-
         if (!isAuthorized) {
-            throw new ConnectionException("Response authorization failed. request=" + response);
+            throw new ConnectionException(AUTHORIZATION_FAILED, "ConnectionHandshake.Response authorization failed. AuthorizationToken=" + responseNetworkEnvelope.getAuthorizationToken());
         }
 
         log.debug("Servers capability {}, load={}", response.getCapability(), response.getNetworkLoad());

@@ -13,14 +13,16 @@ import "google/protobuf/any.proto";
 ////////////////////////////////////////////////////////////////////
 
 message NetworkLoad {
-  double value = 1;
+  double load = 1;
+  double difficultyAdjustmentFactor = 2;
 }
 
 enum Feature {
   FEATURE_UNSPECIFIED = 0;
-  FEATURE_POW_HASH_CASH = 1;
-  FEATURE_INVENTORY_HASH_SET = 2;
-  FEATURE_INVENTORY_MINI_SKETCH = 3;
+  FEATURE_INVENTORY_HASH_SET = 1;
+  FEATURE_INVENTORY_MINI_SKETCH = 2;
+  FEATURE_AUTHORIZATION_HASH_CASH = 3;
+  FEATURE_AUTHORIZATION_EQUI_HASH = 4;
 }
 
 message Capability {
@@ -66,6 +68,30 @@ message Peer {
   bool isOutboundConnection = 3;
   sint64 created = 4;
 }
+
+enum AuthorizationTokenType{
+  AUTHORIZATIONTOKENTYPE_UNSPECIFIED = 0;
+  AUTHORIZATIONTOKENTYPE_HASH_CASH = 1;
+  AUTHORIZATIONTOKENTYPE_EQUI_HASH = 2;
+}
+
+message HashCashToken {
+  security.ProofOfWork proofOfWork = 1;
+  sint32 messageCounter = 2;
+}
+message EquiHashToken {
+  security.ProofOfWork proofOfWork = 1;
+  sint32 messageCounter = 2;
+}
+message AuthorizationToken {
+  AuthorizationTokenType authorizationTokenType = 1;
+
+  oneof message {
+    HashCashToken hashCashToken = 10;
+    EquiHashToken equiHashToken = 11;
+  };
+}
+
 
 ////////////////////////////////////////////////////////////////////
 // NetworkMessages
@@ -134,7 +160,7 @@ message InventoryResponse {
 }
 
 message ExternalNetworkMessage {
-  google.protobuf.Any any = 1;
+  google.protobuf.Any payload = 1;
 }
 
 
@@ -273,11 +299,6 @@ message DataRequest {
 // NetworkEnvelope
 ////////////////////////////////////////////////////////////////////
 
-message AuthorizationToken {
-  security.ProofOfWork proofOfWork = 1;
-  sint32 messageCounter = 2;
-}
-
 message NetworkEnvelope {
   sint32 version = 1;
   AuthorizationToken authorizationToken = 2;
@@ -315,8 +336,22 @@ message NetworkServiceStore {
 
 message MessageDeliveryStatusStore {
   map<string, MessageDeliveryStatus> messageDeliveryStatusByMessageId = 1;
+  map<string, sint64> creationDateByMessageId = 2;
 }
 
+message ResendMessageData {
+  EnvelopePayloadMessage envelopePayloadMessage = 1;
+  network.identity.NetworkId receiverNetworkId = 2;
+  security.KeyPair senderKeyPair = 3;
+  network.identity.NetworkId senderNetworkId = 4;
+  MessageDeliveryStatus messageDeliveryStatus = 5;
+  sint64 date = 6;
+}
+
+message ResendMessageStore {
+  map<string, ResendMessageData> resendMessageDataByMessageId = 1;
+  map<string, sint32> numResendsByMessageId = 2;
+}
 
 message PeerGroupStore {
   repeated Peer persistedPeers = 1;

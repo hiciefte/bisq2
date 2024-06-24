@@ -33,10 +33,11 @@ public final class BisqEasyConfirmBtcSentMessage extends BisqEasyTradeMessage {
 
     public BisqEasyConfirmBtcSentMessage(String id,
                                          String tradeId,
+                                         String protocolVersion,
                                          NetworkId sender,
                                          NetworkId receiver,
                                          String txId) {
-        super(id, tradeId, sender, receiver);
+        super(id, tradeId, protocolVersion, sender, receiver);
 
         this.txId = txId;
 
@@ -52,13 +53,18 @@ public final class BisqEasyConfirmBtcSentMessage extends BisqEasyTradeMessage {
     }
 
     @Override
-    protected bisq.trade.protobuf.TradeMessage toTradeMessageProto() {
-        return getTradeMessageBuilder()
-                .setBisqEasyTradeMessage(bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
-                        .setBisqEasyConfirmBtcSentMessage(
-                                bisq.trade.protobuf.BisqEasyConfirmBtcSentMessage.newBuilder()
-                                        .setTxId(txId)))
-                .build();
+    protected bisq.trade.protobuf.BisqEasyTradeMessage.Builder getBisqEasyTradeMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyTradeMessage.newBuilder()
+                .setBisqEasyConfirmBtcSentMessage(toBisqEasyConfirmBtcSentMessageProto(serializeForHash));
+    }
+
+    private bisq.trade.protobuf.BisqEasyConfirmBtcSentMessage toBisqEasyConfirmBtcSentMessageProto(boolean serializeForHash) {
+        bisq.trade.protobuf.BisqEasyConfirmBtcSentMessage.Builder builder = getBisqEasyConfirmBtcSentMessageBuilder(serializeForHash);
+        return resolveBuilder(builder, serializeForHash).build();
+    }
+
+    private bisq.trade.protobuf.BisqEasyConfirmBtcSentMessage.Builder getBisqEasyConfirmBtcSentMessageBuilder(boolean serializeForHash) {
+        return bisq.trade.protobuf.BisqEasyConfirmBtcSentMessage.newBuilder().setTxId(txId);
     }
 
     public static BisqEasyConfirmBtcSentMessage fromProto(bisq.trade.protobuf.TradeMessage proto) {
@@ -66,6 +72,7 @@ public final class BisqEasyConfirmBtcSentMessage extends BisqEasyTradeMessage {
         return new BisqEasyConfirmBtcSentMessage(
                 proto.getId(),
                 proto.getTradeId(),
+                proto.getProtocolVersion(),
                 NetworkId.fromProto(proto.getSender()),
                 NetworkId.fromProto(proto.getReceiver()),
                 bisqEasyConfirmBtcSentMessage.getTxId());

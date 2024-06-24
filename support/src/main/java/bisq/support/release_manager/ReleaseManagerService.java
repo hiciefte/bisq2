@@ -31,12 +31,8 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.KeyPair;
-import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.util.Date;
 import java.util.concurrent.CompletableFuture;
-
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class ReleaseManagerService implements Service {
@@ -94,11 +90,9 @@ public class ReleaseManagerService implements Service {
                                                                  boolean isLauncherUpdate,
                                                                  String releaseNotes,
                                                                  String version) {
-        UserIdentity userIdentity = checkNotNull(userIdentityService.getSelectedUserIdentity());
+        UserIdentity userIdentity = userIdentityService.getSelectedUserIdentity();
         String profileId = userIdentity.getId();
         KeyPair keyPair = userIdentity.getIdentity().getKeyBundle().getKeyPair();
-        PublicKey authorizedPublicKey = keyPair.getPublic();
-        PrivateKey authorizedPrivateKey = keyPair.getPrivate();
         ReleaseNotification releaseNotification = new ReleaseNotification(StringUtils.createUid(),
                 new Date().getTime(),
                 isPreRelease,
@@ -107,10 +101,7 @@ public class ReleaseManagerService implements Service {
                 version,
                 profileId,
                 staticPublicKeysProvided);
-        return networkService.publishAuthorizedData(releaseNotification,
-                        keyPair,
-                        authorizedPrivateKey,
-                        authorizedPublicKey)
+        return networkService.publishAuthorizedData(releaseNotification, keyPair)
                 .thenApply(broadCastDataResult -> true);
     }
 
