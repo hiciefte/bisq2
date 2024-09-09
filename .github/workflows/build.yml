@@ -75,6 +75,13 @@ jobs:
       name: Push translation source files to Transifex
       runs-on: ubuntu-latest
       steps:
+        - name: "Check if TX_TOKEN secret exists"
+          env:
+            transifex_secret: ${{secrets.TX_TOKEN}}
+          if: ${{env.transifex_secret == ''}}
+          run: |
+             echo "The secret \"TX_TOKEN\" has not been set; please go to \"settings \> secrets and variables\" to create it"
+             exit 1
         - name: Checkout
           uses: actions/checkout@v4.1.7
         - name: Push source files using transifex client
