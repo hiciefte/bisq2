@@ -2,7 +2,7 @@ name: Transifex
 
 on:
   workflow_run:
-    workflows: [ Build Bisq 2 ]
+    workflows: [ Build-Bisq-2 ]
     types: [ completed ]
 
 jobs:

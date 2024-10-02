@@ -1,4 +1,4 @@
-name: Build Bisq 2
+name: Build-Bisq-2
 
 on:
   push:
