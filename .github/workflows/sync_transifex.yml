@@ -16,7 +16,7 @@ jobs:
           # Fetch all history so we can check commits properly
           fetch-depth: 0
 
-      - name: Check if the commit is in the main branch 🔍
+      - name: Check if the commit is in the main branch
         id: check_commit
         run: |
           git fetch origin main
@@ -26,8 +26,8 @@ jobs:
             echo "commit_in_main=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: "Check if TX_TOKEN secret exists" 🔐
-        if: steps.check_commit.outputs.commit_in_main == 'true'
+      - name: "Check if TX_TOKEN secret exists"
+        if: "steps.check_commit.outputs.commit_in_main == 'true'"
         env:
           transifex_secret: ${{ secrets.TX_TOKEN }}
         run: |
@@ -36,14 +36,14 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout at the specific commit 📥
-        if: steps.check_commit.outputs.commit_in_main == 'true'
+      - name: Checkout at the specific commit
+        if: "steps.check_commit.outputs.commit_in_main == 'true'"
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Push source files using Transifex client 🚀
-        if: steps.check_commit.outputs.commit_in_main == 'true'
+      - name: Push source files using Transifex client
+        if: "steps.check_commit.outputs.commit_in_main == 'true'"
         uses: transifex/cli-action@v2
         with:
           token: ${{ secrets.TX_TOKEN }}
