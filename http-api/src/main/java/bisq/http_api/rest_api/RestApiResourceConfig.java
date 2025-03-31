@@ -50,7 +50,7 @@ public class RestApiResourceConfig extends BaseRestApiResourceConfig {
                 bind(settingsRestApi).to(SettingsRestApi.class);
                 bind(explorerRestApi).to(ExplorerRestApi.class);
                 bind(paymentAccountsRestApi).to(PaymentAccountsRestApi.class);
-                register(SupportRestApi.class);
+                bind(supportRestApi).to(SupportRestApi.class);
             }
         });
     }
