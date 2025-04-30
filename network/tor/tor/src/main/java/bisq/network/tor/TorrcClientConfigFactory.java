@@ -46,7 +46,8 @@ public class TorrcClientConfigFactory {
     public Map<String, String> torrcClientConfigMap(Map<String, String> torrcOverrides) {
         Map<String, String> torrcClientConfig = clientTorrcGenerator().generate();
         torrcClientConfig.putAll(torrcOverrides);
-        torrcClientConfig.put(DISABLE_NETWORK, "1");
+        // Commenting out this line to prevent disabling network in embedded mode
+        // torrcClientConfig.put(DISABLE_NETWORK, "1");
         return torrcClientConfig;
     }
 
