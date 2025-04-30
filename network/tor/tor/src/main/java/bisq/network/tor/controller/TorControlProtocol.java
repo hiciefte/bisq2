@@ -26,7 +26,7 @@ import java.util.stream.Stream;
 public class TorControlProtocol implements AutoCloseable {
     private static final int MAX_CONNECTION_ATTEMPTS = 10;
 
-    private final Socket controlSocket;
+    private Socket controlSocket;
     private final TorControlReader torControlReader;
     private Optional<OutputStream> outputStream = Optional.empty();
 
@@ -36,7 +36,6 @@ public class TorControlProtocol implements AutoCloseable {
     private volatile boolean closeInProgress;
 
     public TorControlProtocol() {
-        controlSocket = new Socket();
         torControlReader = new TorControlReader();
     }
 
@@ -104,7 +103,8 @@ public class TorControlProtocol implements AutoCloseable {
 
     public void addOnion(TorKeyPair torKeyPair, int onionPort, int localPort) {
         String base64SecretScalar = torKeyPair.getBase64SecretScalar();
-        String command = "ADD_ONION " + "ED25519-V3:" + base64SecretScalar + " Port=" + onionPort + "," + localPort + "\r\n";
+        String command = "ADD_ONION " + "ED25519-V3:" + base64SecretScalar + " Port=" + onionPort + "," + localPort
+                + "\r\n";
 
         sendCommand(command);
         Stream<String> replyStream = receiveReply();
@@ -175,7 +175,8 @@ public class TorControlProtocol implements AutoCloseable {
         }
         torControlReader.removeBootstrapEventListener(listener);
         Set<String> current = getEventTypesOfBootstrapEventListeners();
-        // If your listener was the only listener with that eventType we unregister for that event
+        // If your listener was the only listener with that eventType we unregister for
+        // that event
         if (!current.contains(newEventType)) {
             refreshEventRegistration();
         } else {
@@ -210,7 +211,8 @@ public class TorControlProtocol implements AutoCloseable {
         }
         torControlReader.removeHsDescEventListener(listener);
         Set<String> current = getEventTypesOfHsDescEventListeners();
-        // If your listener was the only listener with that eventType we unregister for that event
+        // If your listener was the only listener with that eventType we unregister for
+        // that event
         if (!current.contains(newEventType)) {
             refreshEventRegistration();
         } else {
@@ -225,7 +227,9 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     public void refreshEventRegistration() {
-        Set<String> allEvents = Stream.concat(getEventTypesOfBootstrapEventListeners().stream(), getEventTypesOfHsDescEventListeners().stream())
+        Set<String> allEvents = Stream
+                .concat(getEventTypesOfBootstrapEventListeners().stream(),
+                        getEventTypesOfHsDescEventListeners().stream())
                 .collect(Collectors.toSet());
         registerEvents(allEvents);
     }
@@ -253,29 +257,49 @@ public class TorControlProtocol implements AutoCloseable {
         int connectionAttempt = 0;
         while (connectionAttempt < MAX_CONNECTION_ATTEMPTS) {
             try {
+                // Create a new socket for each attempt
+                Socket attemptSocket = new Socket();
                 var socketAddress = new InetSocketAddress("127.0.0.1", port);
                 log.info("MINIMAL LOG: Attempting socket.connect() to: {}", socketAddress);
-                controlSocket.connect(socketAddress);
+                attemptSocket.connect(socketAddress);
                 log.info("MINIMAL LOG: Socket connect successful.");
+
+                // Assign the successful socket to the class member
+                controlSocket = attemptSocket;
+                // Setup streams for the successful socket
+                setupStreams();
+
                 break;
             } catch (ConnectException e) {
                 connectionAttempt++;
-                if (e instanceof java.net.SocketException) {
-                    log.error("MINIMAL LOG: SocketException during connect attempt {}: {}", connectionAttempt,
-                            e.getMessage(), e);
-                } else {
-                    log.warn("MINIMAL LOG: ConnectException during connect attempt {}: {}", connectionAttempt,
-                            e.getMessage());
-                }
+                log.error("MINIMAL LOG: SocketException during connect attempt {}: {}", connectionAttempt,
+                        e.getMessage(), e);
                 Thread.sleep(200);
             } catch (IOException e) {
-                close();
+                close(); // Close the attemptSocket if it exists? Current close() might not handle this.
+                         // Consider adding specific cleanup for attemptSocket here if needed.
                 throw new CannotConnectWithTorException(e);
             }
         }
+        if (controlSocket == null || !controlSocket.isConnected()) {
+            throw new CannotConnectWithTorException(
+                    new IOException("Failed to connect after " + MAX_CONNECTION_ATTEMPTS + " attempts."));
+        }
+    }
+
+    private void setupStreams() throws IOException {
+        if (controlSocket == null || !controlSocket.isConnected()) {
+            throw new IllegalStateException("Cannot setup streams on a null or disconnected socket.");
+        }
+        this.outputStream = Optional.of(controlSocket.getOutputStream());
+        this.torControlReader.start(controlSocket.getInputStream());
     }
 
     private void sendCommand(String command) {
+        // Check if outputStream is present before sending command
+        if (outputStream.isEmpty()) {
+            throw new IllegalStateException("TorControlProtocol output stream not initialized. Cannot send command.");
+        }
         try {
             String commandToLog = command.contains("AUTHENTICATE")
                     ? command.split(" ")[0] + " [authentication data hidden in logs]"
@@ -284,7 +308,8 @@ public class TorControlProtocol implements AutoCloseable {
                 commandToLog = commandToLog.substring(0, commandToLog.length() - 2);
             }
             log.info("Send Tor control command: {}", commandToLog);
-            @SuppressWarnings("resource") OutputStream outputStream = this.outputStream.orElseThrow();
+            @SuppressWarnings("resource")
+            OutputStream outputStream = this.outputStream.orElseThrow();
             byte[] commandBytes = command.getBytes(StandardCharsets.US_ASCII);
             outputStream.write(commandBytes);
             outputStream.flush();
@@ -319,11 +344,16 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     // TODO check if this change is correct
-    // We can receive 1 entry with "250 OK" or multiple entries starting with "250-" and the last entry with "250 OK"
-    // Multiple entries following a single entry have been observed when using multiple user profiles.
+    // We can receive 1 entry with "250 OK" or multiple entries starting with "250-"
+    // and the last entry with "250 OK"
+    // Multiple entries following a single entry have been observed when using
+    // multiple user profiles.
     // E.g. [250 OK]
-    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250 OK]
-    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250-ServiceID=xjlwqzk6n4i5co574jrljsigelx6itzya32cfb7sfofqn7wueyhjj4id, 250 OK]
+    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250
+    // OK]
+    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd,
+    // 250-ServiceID=xjlwqzk6n4i5co574jrljsigelx6itzya32cfb7sfofqn7wueyhjj4id, 250
+    // OK]
     private String validateReply(Stream<String> replyStream, String commandName) {
         List<String> replies = replyStream.toList();
 
@@ -339,21 +369,26 @@ public class TorControlProtocol implements AutoCloseable {
             throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
         }
 
-       /* if (replies.size() != 2) {
-            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
-        }
-
-        String firstLine = replies.get(0);
-        if (!firstLine.startsWith("250-")) {
-            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
-        }
-
-        String secondLine = replies.get(1);
-        if (!secondLine.equals("250 OK")) {
-            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
-        }
-
-        return firstLine;*/
+        /*
+         * if (replies.size() != 2) {
+         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
+         * + replies);
+         * }
+         * 
+         * String firstLine = replies.get(0);
+         * if (!firstLine.startsWith("250-")) {
+         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
+         * + replies);
+         * }
+         * 
+         * String secondLine = replies.get(1);
+         * if (!secondLine.equals("250 OK")) {
+         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
+         * + replies);
+         * }
+         * 
+         * return firstLine;
+         */
     }
 
     private boolean isSuccessReply(String reply) {
