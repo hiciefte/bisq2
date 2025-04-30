@@ -41,6 +41,7 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     public void initialize(int port) {
+        log.info("MINIMAL LOG: TorControlProtocol.initialize called with port: {}", port);
         try {
             connectToTor(port);
             torControlReader.start(controlSocket.getInputStream());
@@ -248,14 +249,24 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     private void connectToTor(int port) throws InterruptedException {
+        log.info("MINIMAL LOG: TorControlProtocol.connectToTor called with port: {}", port);
         int connectionAttempt = 0;
         while (connectionAttempt < MAX_CONNECTION_ATTEMPTS) {
             try {
                 var socketAddress = new InetSocketAddress("127.0.0.1", port);
+                log.info("MINIMAL LOG: Attempting socket.connect() to: {}", socketAddress);
                 controlSocket.connect(socketAddress);
+                log.info("MINIMAL LOG: Socket connect successful.");
                 break;
             } catch (ConnectException e) {
                 connectionAttempt++;
+                if (e instanceof java.net.SocketException) {
+                    log.error("MINIMAL LOG: SocketException during connect attempt {}: {}", connectionAttempt,
+                            e.getMessage(), e);
+                } else {
+                    log.warn("MINIMAL LOG: ConnectException during connect attempt {}: {}", connectionAttempt,
+                            e.getMessage());
+                }
                 Thread.sleep(200);
             } catch (IOException e) {
                 close();

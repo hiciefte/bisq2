@@ -18,12 +18,14 @@
 package bisq.network.tor.process.control_port;
 
 import bisq.common.threading.ThreadName;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+@Slf4j
 public class ControlPortFilePoller {
     private final AtomicBoolean isRunning = new AtomicBoolean();
     private final CompletableFuture<Integer> portCompletableFuture = new CompletableFuture<>();
@@ -36,6 +38,7 @@ public class ControlPortFilePoller {
     public CompletableFuture<Integer> parsePort() {
         boolean isSuccess = isRunning.compareAndSet(false, true);
         if (isSuccess) {
+            log.info("MINIMAL LOG: ControlPortFilePoller.parsePort called for file: {}", controlPortFilePath);
             startPoller();
         }
         return portCompletableFuture;
@@ -72,8 +75,10 @@ public class ControlPortFilePoller {
         if (!controlPortFilePath.toFile().exists()) {
             return Optional.empty();
         }
+        log.info("MINIMAL LOG: ControlPortFilePoller found file: {}", controlPortFilePath);
 
         int controlPort = ControlPortFileParser.parse(controlPortFilePath);
+        log.info("MINIMAL LOG: ControlPortFilePoller parsed port: {}", controlPort);
         return Optional.of(controlPort);
     }
 }
