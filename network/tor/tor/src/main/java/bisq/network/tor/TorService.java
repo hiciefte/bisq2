@@ -151,7 +151,6 @@ public class TorService implements Service {
                 .parsePort()
                 .thenAccept(controlPort -> {
                     // LOGGING POINT: Port received from poller
-                    log.info("MINIMAL LOG: TorService received port {} from ControlPortFilePoller.", controlPort);
                     torController.initialize(controlPort);
                     torController.authenticate(hashedControlPassword);
                     torController.bootstrap();

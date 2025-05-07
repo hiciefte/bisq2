@@ -38,7 +38,6 @@ public class ControlPortFilePoller {
     public CompletableFuture<Integer> parsePort() {
         boolean isSuccess = isRunning.compareAndSet(false, true);
         if (isSuccess) {
-            log.info("MINIMAL LOG: ControlPortFilePoller.parsePort called for file: {}", controlPortFilePath);
             startPoller();
         }
         return portCompletableFuture;
@@ -78,10 +77,8 @@ public class ControlPortFilePoller {
         if (!controlPortFilePath.toFile().exists()) {
             return Optional.empty();
         }
-        log.info("MINIMAL LOG: ControlPortFilePoller found file: {}", controlPortFilePath);
 
         int controlPort = ControlPortFileParser.parse(controlPortFilePath);
-        log.info("MINIMAL LOG: ControlPortFilePoller parsed port: {}", controlPort);
         return Optional.of(controlPort);
     }
 }
