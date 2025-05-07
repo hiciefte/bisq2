@@ -46,8 +46,8 @@ public class TorrcClientConfigFactory {
     public Map<String, String> torrcClientConfigMap(Map<String, String> torrcOverrides) {
         Map<String, String> torrcClientConfig = clientTorrcGenerator().generate();
         torrcClientConfig.putAll(torrcOverrides);
-        // Commenting out this line to prevent disabling network in embedded mode
-        // torrcClientConfig.put(DISABLE_NETWORK, "1");
+        // Start Tor with network disabled, BootstrapService will enable it.
+        torrcClientConfig.put(DISABLE_NETWORK, "1");
         return torrcClientConfig;
     }
 
