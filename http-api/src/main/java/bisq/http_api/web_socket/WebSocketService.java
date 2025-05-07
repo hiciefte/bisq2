@@ -153,11 +153,17 @@ public class WebSocketService implements Service {
                     String protocol = config.getProtocol();
                     String host = config.getHost();
                     int port = config.getPort();
+
+                    log.info("WebSocketService: Attempting to bind. Configured host: '{}', port: {}", host, port);
+
                     URI baseUri = UriBuilder.fromUri(protocol + host + "/").port(port).build();
+                    log.info("WebSocketService: Constructed base URI for Grizzly: {}", baseUri.toString());
+
                     HttpServer server = config.includeRestApi
                             ? GrizzlyHttpServerFactory.createHttpServer(baseUri, restApiResourceConfig, false)
                             : GrizzlyHttpServerFactory.createHttpServer(baseUri, false);
                     httpServer = Optional.of(server);
+
                     server.getListener("grizzly").registerAddOn(new WebSocketAddOn());
                     WebSocketEngine.getEngine().register("", "/websocket", webSocketConnectionHandler);
 
