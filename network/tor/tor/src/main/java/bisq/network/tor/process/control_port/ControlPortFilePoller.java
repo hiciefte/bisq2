@@ -48,6 +48,9 @@ public class ControlPortFilePoller {
         Thread thread = new Thread(() -> {
             ThreadName.setName("ControlPortFilePoller.startPoller");
             try {
+                // Add a small initial delay to allow Tor to settle its port file
+                Thread.sleep(200);
+
                 while (true) {
                     Optional<Integer> optionalPort = parsePortFromFile();
 
