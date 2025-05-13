@@ -85,13 +85,26 @@ public class WebSocketService implements Service {
         }
 
         public static Config from(com.typesafe.config.Config config) {
+            log.debug("WebSocketService.Config.from --- Input 'websocket' block from main config:\n{}",
+                    config.root().render());
+
             com.typesafe.config.Config server = config.getConfig("server");
+            log.debug("WebSocketService.Config.from --- Extracted 'server' sub-block:\n{}", server.root().render());
+
+            String hostVal = server.getString("host");
+            int portVal = server.getInt("port");
+            String protocolVal = server.getString("protocol"); // Also log protocol for completeness
+
+            log.debug(
+                    "WebSocketService.Config.from --- Values read from 'server' sub-block: protocol='{}', host='{}', port='{}'",
+                    protocolVal, hostVal, portVal);
+
             return new Config(
                     config.getBoolean("enabled"),
                     config.getBoolean("includeRestApi"),
-                    server.getString("protocol"),
-                    server.getString("host"),
-                    server.getInt("port"),
+                    protocolVal, // Use the logged protocolVal
+                    hostVal, // Use the logged hostVal
+                    portVal, // Use the logged portVal
                     config.getBoolean("localhostOnly"),
                     config.getStringList("whiteListEndPoints"),
                     config.getStringList("blackListEndPoints"),
