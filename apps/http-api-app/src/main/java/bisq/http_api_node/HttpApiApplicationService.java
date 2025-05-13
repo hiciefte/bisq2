@@ -93,12 +93,6 @@ public class HttpApiApplicationService extends JavaSeApplicationService {
 
     public HttpApiApplicationService(String[] args) {
         super("http_api_app", args);
-        try {
-            String appNameValue = this.config.getAppName();
-            log.info("HttpApiApplicationService: Origin of 'application.appName' ({})", appNameValue);
-        } catch (com.typesafe.config.ConfigException.Missing e) {
-            log.warn("HttpApiApplicationService: 'application.appName' not found in the loaded configuration.");
-        }
 
         securityService = new SecurityService(persistenceService, SecurityService.Config.from(getConfig("security")));
         com.typesafe.config.Config bitcoinWalletConfig = getConfig("bitcoinWallet");
