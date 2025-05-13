@@ -164,6 +164,13 @@ public abstract class ApplicationService implements Service {
         }
 
         typesafeAppConfig = typesafeConfig.getConfig("application");
+        try {
+            com.typesafe.config.ConfigValue appNameValue = typesafeAppConfig.getValue("appName");
+            log.info("ApplicationService: Origin of 'application.appName' ({}): {}", appNameValue.unwrapped(),
+                    appNameValue.origin().description());
+        } catch (com.typesafe.config.ConfigException.Missing e) {
+            log.warn("ApplicationService: 'application.appName' not found in typesafeAppConfig.");
+        }
         config = Config.from(typesafeAppConfig, args, userDataDir);
 
         Path dataDir = config.getBaseDir();

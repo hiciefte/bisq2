@@ -93,6 +93,12 @@ public class HttpApiApplicationService extends JavaSeApplicationService {
 
     public HttpApiApplicationService(String[] args) {
         super("http_api_app", args);
+        try {
+            String appNameValue = this.config.getAppName();
+            log.info("HttpApiApplicationService: Origin of 'application.appName' ({})", appNameValue);
+        } catch (com.typesafe.config.ConfigException.Missing e) {
+            log.warn("HttpApiApplicationService: 'application.appName' not found in the loaded configuration.");
+        }
 
         securityService = new SecurityService(persistenceService, SecurityService.Config.from(getConfig("security")));
         com.typesafe.config.Config bitcoinWalletConfig = getConfig("bitcoinWallet");
@@ -301,17 +307,12 @@ public class HttpApiApplicationService extends JavaSeApplicationService {
 
     private Optional<OsSpecificNotificationService> findSystemNotificationDelegate() {
         try {
-            switch (OS.getOS()) {
-                case LINUX:
-                    return Optional.of(new LinuxNotificationService(config.getBaseDir(), settingsService));
-                case MAC_OS:
-                    return Optional.of(new OsxNotificationService());
-                case WINDOWS:
-                    return SystemTray.isSupported() ? Optional.of(new AwtNotificationService()) : Optional.empty();
-                case ANDROID:
-                default:
-                    return Optional.empty();
-            }
+            return switch (OS.getOS()) {
+                case LINUX -> Optional.of(new LinuxNotificationService(config.getBaseDir(), settingsService));
+                case MAC_OS -> Optional.of(new OsxNotificationService());
+                case WINDOWS -> SystemTray.isSupported() ? Optional.of(new AwtNotificationService()) : Optional.empty();
+                default -> Optional.empty();
+            };
         } catch (Exception e) {
             log.warn("Could not create SystemNotificationDelegate for {}", OS.getOsName());
             return Optional.empty();
