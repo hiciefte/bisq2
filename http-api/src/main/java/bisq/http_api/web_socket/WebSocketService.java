@@ -85,26 +85,13 @@ public class WebSocketService implements Service {
         }
 
         public static Config from(com.typesafe.config.Config config) {
-            log.debug("WebSocketService.Config.from --- Input 'websocket' block from main config:\n{}",
-                    config.root().render());
-
             com.typesafe.config.Config server = config.getConfig("server");
-            log.debug("WebSocketService.Config.from --- Extracted 'server' sub-block:\n{}", server.root().render());
-
-            String hostVal = server.getString("host");
-            int portVal = server.getInt("port");
-            String protocolVal = server.getString("protocol"); // Also log protocol for completeness
-
-            log.debug(
-                    "WebSocketService.Config.from --- Values read from 'server' sub-block: protocol='{}', host='{}', port='{}'",
-                    protocolVal, hostVal, portVal);
-
             return new Config(
                     config.getBoolean("enabled"),
                     config.getBoolean("includeRestApi"),
-                    protocolVal, // Use the logged protocolVal
-                    hostVal, // Use the logged hostVal
-                    portVal, // Use the logged portVal
+                    server.getString("protocol"),
+                    server.getString("host"),
+                    server.getInt("port"),
                     config.getBoolean("localhostOnly"),
                     config.getStringList("whiteListEndPoints"),
                     config.getStringList("blackListEndPoints"),
@@ -166,17 +153,11 @@ public class WebSocketService implements Service {
                     String protocol = config.getProtocol();
                     String host = config.getHost();
                     int port = config.getPort();
-
-                    log.info("WebSocketService: Attempting to bind. Configured host: '{}', port: {}", host, port);
-
                     URI baseUri = UriBuilder.fromUri(protocol + host + "/").port(port).build();
-                    log.info("WebSocketService: Constructed base URI for Grizzly: {}", baseUri.toString());
-
                     HttpServer server = config.includeRestApi
                             ? GrizzlyHttpServerFactory.createHttpServer(baseUri, restApiResourceConfig, false)
                             : GrizzlyHttpServerFactory.createHttpServer(baseUri, false);
                     httpServer = Optional.of(server);
-
                     server.getListener("grizzly").registerAddOn(new WebSocketAddOn());
                     WebSocketEngine.getEngine().register("", "/websocket", webSocketConnectionHandler);
 
