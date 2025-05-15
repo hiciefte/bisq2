@@ -102,8 +102,7 @@ public class TorControlProtocol implements AutoCloseable {
 
     public void addOnion(TorKeyPair torKeyPair, int onionPort, int localPort) {
         String base64SecretScalar = torKeyPair.getBase64SecretScalar();
-        String command = "ADD_ONION " + "ED25519-V3:" + base64SecretScalar + " Port=" + onionPort + "," + localPort
-                + "\r\n";
+        String command = "ADD_ONION " + "ED25519-V3:" + base64SecretScalar + " Port=" + onionPort + "," + localPort + "\r\n";
 
         sendCommand(command);
         Stream<String> replyStream = receiveReply();
@@ -174,8 +173,7 @@ public class TorControlProtocol implements AutoCloseable {
         }
         torControlReader.removeBootstrapEventListener(listener);
         Set<String> current = getEventTypesOfBootstrapEventListeners();
-        // If your listener was the only listener with that eventType we unregister for
-        // that event
+        // If your listener was the only listener with that eventType we unregister for that event
         if (!current.contains(newEventType)) {
             refreshEventRegistration();
         } else {
@@ -210,8 +208,7 @@ public class TorControlProtocol implements AutoCloseable {
         }
         torControlReader.removeHsDescEventListener(listener);
         Set<String> current = getEventTypesOfHsDescEventListeners();
-        // If your listener was the only listener with that eventType we unregister for
-        // that event
+        // If your listener was the only listener with that eventType we unregister for that event
         if (!current.contains(newEventType)) {
             refreshEventRegistration();
         } else {
@@ -226,9 +223,7 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     public void refreshEventRegistration() {
-        Set<String> allEvents = Stream
-                .concat(getEventTypesOfBootstrapEventListeners().stream(),
-                        getEventTypesOfHsDescEventListeners().stream())
+        Set<String> allEvents = Stream.concat(getEventTypesOfBootstrapEventListeners().stream(), getEventTypesOfHsDescEventListeners().stream())
                 .collect(Collectors.toSet());
         registerEvents(allEvents);
     }
@@ -270,8 +265,7 @@ public class TorControlProtocol implements AutoCloseable {
                 connectionAttempt++;
                 Thread.sleep(200);
             } catch (IOException e) {
-                close(); // Close the attemptSocket if it exists? Current close() might not handle this.
-                         // Consider adding specific cleanup for attemptSocket here if needed.
+                close();
                 throw new CannotConnectWithTorException(e);
             }
         }
@@ -302,8 +296,7 @@ public class TorControlProtocol implements AutoCloseable {
                 commandToLog = commandToLog.substring(0, commandToLog.length() - 2);
             }
             log.info("Send Tor control command: {}", commandToLog);
-            @SuppressWarnings("resource")
-            OutputStream outputStream = this.outputStream.orElseThrow();
+            @SuppressWarnings("resource") OutputStream outputStream = this.outputStream.orElseThrow();
             byte[] commandBytes = command.getBytes(StandardCharsets.US_ASCII);
             outputStream.write(commandBytes);
             outputStream.flush();
@@ -338,16 +331,11 @@ public class TorControlProtocol implements AutoCloseable {
     }
 
     // TODO check if this change is correct
-    // We can receive 1 entry with "250 OK" or multiple entries starting with "250-"
-    // and the last entry with "250 OK"
-    // Multiple entries following a single entry have been observed when using
-    // multiple user profiles.
+    // We can receive 1 entry with "250 OK" or multiple entries starting with "250-" and the last entry with "250 OK"
+    // Multiple entries following a single entry have been observed when using multiple user profiles.
     // E.g. [250 OK]
-    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250
-    // OK]
-    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd,
-    // 250-ServiceID=xjlwqzk6n4i5co574jrljsigelx6itzya32cfb7sfofqn7wueyhjj4id, 250
-    // OK]
+    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250 OK]
+    // [250-ServiceID=bedb3wpuybkuwvjat2zq5odtqbajq7x3ovllvh7l2kbxakbgkzgikqyd, 250-ServiceID=xjlwqzk6n4i5co574jrljsigelx6itzya32cfb7sfofqn7wueyhjj4id, 250 OK]
     private String validateReply(Stream<String> replyStream, String commandName) {
         List<String> replies = replyStream.toList();
 
@@ -363,26 +351,21 @@ public class TorControlProtocol implements AutoCloseable {
             throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
         }
 
-        /*
-         * if (replies.size() != 2) {
-         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
-         * + replies);
-         * }
-         * 
-         * String firstLine = replies.get(0);
-         * if (!firstLine.startsWith("250-")) {
-         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
-         * + replies);
-         * }
-         * 
-         * String secondLine = replies.get(1);
-         * if (!secondLine.equals("250 OK")) {
-         * throw new ControlCommandFailedException("Invalid " + commandName + " reply: "
-         * + replies);
-         * }
-         * 
-         * return firstLine;
-         */
+       /* if (replies.size() != 2) {
+            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
+        }
+
+        String firstLine = replies.get(0);
+        if (!firstLine.startsWith("250-")) {
+            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
+        }
+
+        String secondLine = replies.get(1);
+        if (!secondLine.equals("250 OK")) {
+            throw new ControlCommandFailedException("Invalid " + commandName + " reply: " + replies);
+        }
+
+        return firstLine;*/
     }
 
     private boolean isSuccessReply(String reply) {
