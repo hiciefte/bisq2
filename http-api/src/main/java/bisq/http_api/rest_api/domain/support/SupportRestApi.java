@@ -20,9 +20,7 @@ package bisq.http_api.rest_api.domain.support;
 import bisq.chat.ChatChannelDomain;
 import bisq.chat.ChatService;
 import bisq.chat.Citation;
-import bisq.chat.common.CommonPublicChatChannel;
 import bisq.chat.common.CommonPublicChatChannelService;
-import bisq.chat.common.CommonPublicChatMessage;
 import bisq.http_api.rest_api.domain.RestApiBase;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -89,8 +87,7 @@ public class SupportRestApi extends RestApiBase {
                 String channelName = channel.getChannelTitle();
 
                 // Get all messages from the channel
-                channel.getChatMessages().stream()
-                        .map(msg -> msg)
+                channel.getChatMessages()
                         .forEach(message -> {
                             List<String> row = List.of(
                                     DATE_FORMATTER.format(Instant.ofEpochMilli(message.getDate())),
@@ -99,7 +96,7 @@ public class SupportRestApi extends RestApiBase {
                                     message.getText().orElse(""),
                                     message.getId(),
                                     String.valueOf(message.isWasEdited()),
-                                    message.getCitation().map(Citation::getAuthorUserProfileId).orElse(""),
+                                    message.getCitation().flatMap(Citation::getChatMessageId).orElse(""),
                                     message.getCitation().map(Citation::getAuthorUserProfileId).orElse(""),
                                     message.getCitation().map(Citation::getText).orElse("")
                             );
