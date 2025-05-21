@@ -26,6 +26,6 @@ public class WebSocketRestApiResourceConfig extends RestApiResourceConfig {
                                           ExplorerRestApi explorerRestApi,
                                           PaymentAccountsRestApi paymentAccountsRestApi,
                                           SupportRestApi supportRestApi) {
-        super(swaggerBaseUrl, offerbookRestApi, tradeRestApi, tradeChatMessagesRestApi, userIdentityRestApi, marketPriceRestApi, settingsRestApi, explorerRestApi, paymentAccountsRestApi);
+        super(swaggerBaseUrl, offerbookRestApi, tradeRestApi, tradeChatMessagesRestApi, userIdentityRestApi, marketPriceRestApi, settingsRestApi, explorerRestApi, paymentAccountsRestApi, supportRestApi);
     }
 }
