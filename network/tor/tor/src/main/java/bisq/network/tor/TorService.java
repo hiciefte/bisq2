@@ -150,6 +150,7 @@ public class TorService implements Service {
         return new ControlPortFilePoller(controlPortFilePath)
                 .parsePort()
                 .thenAccept(controlPort -> {
+                    // LOGGING POINT: Port received from poller
                     torController.initialize(controlPort);
                     torController.authenticate(hashedControlPassword);
                     torController.bootstrap();
