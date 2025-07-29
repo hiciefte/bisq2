@@ -154,16 +154,28 @@ public abstract class ApplicationService implements Service {
         boolean customConfigProvided = customConfigFile.exists();
         if (customConfigProvided) {
             try {
+                log.info(
+                        "ApplicationService: Found custom config file at {}. Merging with base configuration from classpath.",
+                        customConfigFile.getAbsolutePath());
                 typesafeConfig = ConfigFactory.parseFile(customConfigFile).withFallback(defaultTypesafeConfig);
             } catch (Exception e) {
                 System.err.println("Error when reading custom config file " + ExceptionUtil.getRootCauseMessage(e));
                 throw new RuntimeException(e);
             }
         } else {
+            log.info("ApplicationService: Custom config file {} not found. Using configuration from classpath.",
+                    customConfigFile.getAbsolutePath());
             typesafeConfig = defaultTypesafeConfig;
         }
 
         typesafeAppConfig = typesafeConfig.getConfig("application");
+        try {
+            com.typesafe.config.ConfigValue appNameValue = typesafeAppConfig.getValue("appName");
+            log.info("ApplicationService: Origin of 'application.appName' ({}): {}", appNameValue.unwrapped(),
+                    appNameValue.origin().description());
+        } catch (com.typesafe.config.ConfigException.Missing e) {
+            log.warn("ApplicationService: 'application.appName' not found directly in the final 'application' block; likely inherited from JAR defaults.");
+        }
         config = Config.from(typesafeAppConfig, args, userDataDir);
 
         Path dataDir = config.getBaseDir();
