@@ -1,0 +1,221 @@
+/*
+ * This file is part of Bisq.
+ *
+ * Bisq is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * Bisq is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package bisq.http_api.rest_api.domain.support;
+
+import bisq.chat.ChatChannelDomain;
+import bisq.chat.ChatService;
+import bisq.chat.common.CommonPublicChatChannelService;
+import bisq.http_api.rest_api.domain.RestApiBase;
+import bisq.http_api.rest_api.domain.support.dto.CitationDto;
+import bisq.http_api.rest_api.domain.support.dto.ExportMetadata;
+import bisq.http_api.rest_api.domain.support.dto.MessageDto;
+import bisq.http_api.rest_api.domain.support.dto.SupportChatExport;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.Suspended;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import lombok.extern.slf4j.Slf4j;
+
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+@Slf4j
+@Path("/support")
+@Produces(MediaType.APPLICATION_JSON)
+@Tag(name = "Support API", description = "API for exporting support chat messages")
+public class SupportRestApi extends RestApiBase {
+    private final CommonPublicChatChannelService supportChatChannelService;
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.of("UTC"));
+
+    public SupportRestApi(ChatService chatService) {
+        this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
+    }
+
+    @GET
+    @Path("/export")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "Export support chat messages as JSON",
+            description = "Exports all public support chat messages as JSON. " +
+                    "Messages are automatically removed based on the system's configured TTL. " +
+                    "All timestamps are in UTC timezone. " +
+                    "This endpoint is only accessible via localhost.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Support chat messages exported successfully",
+                            content = @Content(
+                                    mediaType = "application/json",
+                                    schema = @Schema(implementation = SupportChatExport.class),
+                                    examples = @ExampleObject(
+                                            name = "Sample Export",
+                                            value = """
+                                                    {
+                                                      "exportDate": "2025-10-14T15:30:00Z",
+                                                      "exportMetadata": {
+                                                        "channelCount": 2,
+                                                        "messageCount": 3,
+                                                        "dataRetentionDays": 10,
+                                                        "timezone": "UTC"
+                                                      },
+                                                      "messages": [
+                                                        {
+                                                          "date": "2025-10-14T12:00:00Z",
+                                                          "dateFormatted": "2025-10-14 12:00:00",
+                                                          "channel": "General Support",
+                                                          "author": "user123",
+                                                          "authorId": "user123",
+                                                          "message": "How do I reset my password?",
+                                                          "messageId": "msg_789xyz",
+                                                          "wasEdited": false,
+                                                          "citation": null
+                                                        }
+                                                      ]
+                                                    }
+                                                    """
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "No support channels found"
+                    ),
+                    @ApiResponse(
+                            responseCode = "503",
+                            description = "Support chat service not available or request timed out"
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error"
+                    )
+            }
+    )
+    public void exportSupportChatToJson(@Suspended AsyncResponse asyncResponse) {
+        asyncResponse.setTimeout(120, TimeUnit.SECONDS);
+        asyncResponse.setTimeoutHandler(response ->
+                response.resume(buildResponse(Response.Status.SERVICE_UNAVAILABLE, "Export request timed out"))
+        );
+
+        try {
+            // Input validation
+            if (supportChatChannelService == null) {
+                log.error("Support chat service is not available");
+                asyncResponse.resume(buildResponse(Response.Status.SERVICE_UNAVAILABLE,
+                        "Support chat service not available"));
+                return;
+            }
+
+            var channels = supportChatChannelService.getChannels();
+            if (channels.isEmpty()) {
+                log.warn("No support channels found for export");
+                asyncResponse.resume(buildResponse(Response.Status.NOT_FOUND,
+                        "No support channels found"));
+                return;
+            }
+
+            log.info("Starting support chat export for {} channels", channels.size());
+
+            // Collect all messages and get TTL from first message
+            List<MessageDto> messages = new ArrayList<>();
+            long dataRetentionDays = 10; // Default fallback (TTL_10_DAYS is the standard for CommonPublicChatMessage)
+
+            for (var channel : channels) {
+                String channelName = channel.getChannelTitle();
+
+                for (var message : channel.getChatMessages()) {
+                    // Get TTL from message metadata (only once, all messages have same TTL)
+                    if (messages.isEmpty() && message != null) {
+                        long ttlMillis = message.getMetaData().getTtl();
+                        dataRetentionDays = TimeUnit.MILLISECONDS.toDays(ttlMillis);
+                    }
+
+                    // Map citation if present
+                    assert message != null;
+                    CitationDto citation = message.getCitation()
+                            .map(c -> new CitationDto(
+                                    c.getChatMessageId().orElse(null),
+                                    c.getAuthorUserProfileId(),
+                                    c.getAuthorUserProfileId(),
+                                    c.getText()
+                            ))
+                            .orElse(null);
+
+                    // Create message DTO
+                    var messageDto = new MessageDto(
+                            Instant.ofEpochMilli(message.getDate()).toString(),
+                            DATE_FORMATTER.format(Instant.ofEpochMilli(message.getDate())),
+                            channelName,
+                            message.getAuthorUserProfileId(),
+                            message.getAuthorUserProfileId(),
+                            message.getText().orElse(""),
+                            message.getId(),
+                            message.isWasEdited(),
+                            citation
+                    );
+
+                    messages.add(messageDto);
+                }
+            }
+
+            // Create export metadata with system-configured TTL
+            var metadata = new ExportMetadata(
+                    channels.size(),
+                    messages.size(),
+                    (int) dataRetentionDays,
+                    "UTC"
+            );
+
+            // Create complete export
+            var export = new SupportChatExport(
+                    Instant.now().toString(),
+                    metadata,
+                    messages
+            );
+
+            log.info("Support chat export completed: {} channels, {} messages",
+                    metadata.channelCount(), metadata.messageCount());
+
+            asyncResponse.resume(Response.ok(export)
+                    .header("Content-Type", "application/json; charset=UTF-8")
+                    .build());
+
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid input during export", e);
+            asyncResponse.resume(buildResponse(Response.Status.BAD_REQUEST,
+                    "Invalid input: " + e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error exporting support chat messages", e);
+            asyncResponse.resume(buildErrorResponse(
+                    "Failed to export support chat messages"));
+        }
+    }
+}

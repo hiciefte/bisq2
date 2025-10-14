@@ -32,6 +32,7 @@ import bisq.http_api.rest_api.domain.offers.OfferbookRestApi;
 import bisq.http_api.rest_api.domain.payment_accounts.PaymentAccountsRestApi;
 import bisq.http_api.rest_api.domain.reputation.ReputationRestApi;
 import bisq.http_api.rest_api.domain.settings.SettingsRestApi;
+import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
@@ -100,6 +101,7 @@ public class HttpApiService implements Service {
                     userService.getRepublishUserProfileService());
             ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
             ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
+            SupportRestApi supportRestApi = new SupportRestApi(chatService);
 
             if (restApiConfigEnabled) {
                 var restApiResourceConfig = new RestApiResourceConfig(restApiConfig,
@@ -112,7 +114,9 @@ public class HttpApiService implements Service {
                         explorerRestApi,
                         paymentAccountsRestApi,
                         reputationRestApi,
-                        userProfileRestApi);
+                        userProfileRestApi,
+                        supportRestApi,
+                        HttpApiRequestFilter.from(restApiConfig));
                 restApiService = Optional.of(new RestApiService(restApiConfig, restApiResourceConfig, appDataDirPath, securityService, networkService));
             } else {
                 restApiService = Optional.empty();
@@ -129,7 +133,9 @@ public class HttpApiService implements Service {
                         explorerRestApi,
                         paymentAccountsRestApi,
                         reputationRestApi,
-                        userProfileRestApi);
+                        userProfileRestApi,
+                        supportRestApi,
+                        HttpApiRequestFilter.from(webSocketConfig));
                 webSocketService = Optional.of(new WebSocketService(webSocketConfig,
                         webSocketResourceConfig,
                         appDataDirPath,
