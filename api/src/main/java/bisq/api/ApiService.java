@@ -36,6 +36,7 @@ import bisq.api.rest_api.endpoints.pairing.PairingApi;
 import bisq.api.rest_api.endpoints.payment_accounts.PaymentAccountsRestApi;
 import bisq.api.rest_api.endpoints.reputation.ReputationRestApi;
 import bisq.api.rest_api.endpoints.settings.SettingsRestApi;
+import bisq.api.rest_api.endpoints.support.SupportRestApi;
 import bisq.api.rest_api.endpoints.trades.TradeRestApi;
 import bisq.api.rest_api.endpoints.user_identity.UserIdentityRestApi;
 import bisq.api.rest_api.endpoints.user_profile.UserProfileRestApi;
@@ -151,6 +152,7 @@ public class ApiService implements Service {
                 userService.getRepublishUserProfileService());
         ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
         ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
+        SupportRestApi supportRestApi = new SupportRestApi(chatService);
 
         ResourceConfig resourceConfig ;
         if (apiConfig.isRestEnabled()) {
@@ -167,7 +169,8 @@ public class ApiService implements Service {
                     explorerRestApi,
                     paymentAccountsRestApi,
                     reputationRestApi,
-                    userProfileRestApi);
+                    userProfileRestApi,
+                    supportRestApi);
         } else {
             resourceConfig = new PairingApiResourceConfig(pairingApi);
         }
