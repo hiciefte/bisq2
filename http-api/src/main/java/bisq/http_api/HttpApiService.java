@@ -98,7 +98,7 @@ public class HttpApiService implements Service {
             UserProfileRestApi userProfileRestApi = new UserProfileRestApi(userService.getUserProfileService());
             ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
             ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
-            SupportRestApi supportRestApi = new SupportRestApi(chatService);
+            SupportRestApi supportRestApi = new SupportRestApi(chatService, userService.getUserProfileService());
 
             if (restApiConfigEnabled) {
                 var restApiResourceConfig = new RestApiResourceConfig(restApiConfig.getRestApiBaseUrl(),

@@ -25,6 +25,8 @@ import bisq.http_api.rest_api.domain.support.dto.CitationDto;
 import bisq.http_api.rest_api.domain.support.dto.ExportMetadata;
 import bisq.http_api.rest_api.domain.support.dto.MessageDto;
 import bisq.http_api.rest_api.domain.support.dto.SupportChatExport;
+import bisq.user.profile.UserProfile;
+import bisq.user.profile.UserProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -53,11 +55,13 @@ import java.util.concurrent.TimeUnit;
 @Tag(name = "Support API", description = "API for exporting support chat messages")
 public class SupportRestApi extends RestApiBase {
     private final CommonPublicChatChannelService supportChatChannelService;
+    private final UserProfileService userProfileService;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneId.of("UTC"));
 
-    public SupportRestApi(ChatService chatService) {
+    public SupportRestApi(ChatService chatService, UserProfileService userProfileService) {
         this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
+        this.userProfileService = userProfileService;
     }
 
     @GET
@@ -158,15 +162,27 @@ public class SupportRestApi extends RestApiBase {
                         dataRetentionDays = TimeUnit.MILLISECONDS.toDays(ttlMillis);
                     }
 
-                    // Map citation if present
+                    // Look up author nickname from user profile
                     assert message != null;
+                    String authorId = message.getAuthorUserProfileId();
+                    String authorNickname = userProfileService.findUserProfile(authorId)
+                            .map(UserProfile::getNickName)
+                            .orElse(authorId);  // Fallback to ID if profile not found
+
+                    // Map citation if present
                     CitationDto citation = message.getCitation()
-                            .map(c -> new CitationDto(
-                                    c.getChatMessageId().orElse(null),
-                                    c.getAuthorUserProfileId(),
-                                    c.getAuthorUserProfileId(),
-                                    c.getText()
-                            ))
+                            .map(c -> {
+                                String citationAuthorId = c.getAuthorUserProfileId();
+                                String citationAuthorNickname = userProfileService.findUserProfile(citationAuthorId)
+                                        .map(UserProfile::getNickName)
+                                        .orElse(citationAuthorId);
+                                return new CitationDto(
+                                        c.getChatMessageId().orElse(null),
+                                        citationAuthorNickname,  // Use nickname
+                                        citationAuthorId,        // Keep ID for reference
+                                        c.getText()
+                                );
+                            })
                             .orElse(null);
 
                     // Create message DTO
@@ -174,8 +190,8 @@ public class SupportRestApi extends RestApiBase {
                             Instant.ofEpochMilli(message.getDate()).toString(),
                             DATE_FORMATTER.format(Instant.ofEpochMilli(message.getDate())),
                             channelName,
-                            message.getAuthorUserProfileId(),
-                            message.getAuthorUserProfileId(),
+                            authorNickname,      // Use nickname for readability
+                            authorId,            // Keep hash for reference
                             message.getText().orElse(""),
                             message.getId(),
                             message.isWasEdited(),
