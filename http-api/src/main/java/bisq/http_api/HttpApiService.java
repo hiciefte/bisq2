@@ -32,6 +32,7 @@ import bisq.http_api.rest_api.domain.offers.OfferbookRestApi;
 import bisq.http_api.rest_api.domain.payment_accounts.PaymentAccountsRestApi;
 import bisq.http_api.rest_api.domain.reputation.ReputationRestApi;
 import bisq.http_api.rest_api.domain.settings.SettingsRestApi;
+import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
@@ -97,6 +98,7 @@ public class HttpApiService implements Service {
             UserProfileRestApi userProfileRestApi = new UserProfileRestApi(userService.getUserProfileService());
             ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
             ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
+            SupportRestApi supportRestApi = new SupportRestApi(chatService);
 
             if (restApiConfigEnabled) {
                 var restApiResourceConfig = new RestApiResourceConfig(restApiConfig.getRestApiBaseUrl(),
@@ -110,6 +112,7 @@ public class HttpApiService implements Service {
                         paymentAccountsRestApi,
                         reputationRestApi,
                         userProfileRestApi,
+                        supportRestApi,
                         HttpApiRequestFilter.from(restApiConfig));
                 restApiService = Optional.of(new RestApiService(restApiConfig, restApiResourceConfig, baseDir, securityService, networkService));
             } else {
@@ -128,6 +131,7 @@ public class HttpApiService implements Service {
                         paymentAccountsRestApi,
                         reputationRestApi,
                         userProfileRestApi,
+                        supportRestApi,
                         HttpApiRequestFilter.from(webSocketConfig));
                 webSocketService = Optional.of(new WebSocketService(webSocketConfig,
                         webSocketConfig.getRestApiBaseAddress(),
