@@ -152,7 +152,7 @@ public class ApiService implements Service {
                 userService.getRepublishUserProfileService());
         ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
         ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
-        SupportRestApi supportRestApi = new SupportRestApi(chatService);
+        SupportRestApi supportRestApi = new SupportRestApi(chatService, userService.getUserProfileService());
 
         ResourceConfig resourceConfig ;
         if (apiConfig.isRestEnabled()) {

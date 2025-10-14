@@ -25,6 +25,7 @@ import bisq.persistence.PersistenceService;
 import bisq.presentation.notifications.SystemNotificationService;
 import bisq.settings.SettingsService;
 import bisq.user.UserService;
+import bisq.user.profile.UserProfileService;
 import jakarta.ws.rs.container.AsyncResponse;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.AfterEach;
@@ -68,6 +69,7 @@ class SupportRestApiTest {
     private UserService userService;
     private SettingsService settingsService;
     private SystemNotificationService systemNotificationService;
+    private UserProfileService userProfileService;
     private AsyncResponse asyncResponse;
 
     @BeforeEach
@@ -81,6 +83,8 @@ class SupportRestApiTest {
         when(networkService.shutdown()).thenReturn(CompletableFuture.completedFuture(true));
 
         userService = mock(UserService.class);
+        userProfileService = mock(UserProfileService.class);
+        when(userService.getUserProfileService()).thenReturn(userProfileService);
         settingsService = mock(SettingsService.class);
         systemNotificationService = mock(SystemNotificationService.class);
 
@@ -96,8 +100,8 @@ class SupportRestApiTest {
         // Initialize ChatService
         chatService.initialize().join();
 
-        // Create SupportRestApi with real ChatService
-        supportRestApi = new SupportRestApi(chatService);
+        // Create SupportRestApi with real ChatService and mocked UserProfileService
+        supportRestApi = new SupportRestApi(chatService, userProfileService);
 
         // Mock AsyncResponse for testing async behavior
         asyncResponse = mock(AsyncResponse.class);
