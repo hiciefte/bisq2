@@ -7,6 +7,7 @@ import bisq.http_api.rest_api.domain.offers.OfferbookRestApi;
 import bisq.http_api.rest_api.domain.payment_accounts.PaymentAccountsRestApi;
 import bisq.http_api.rest_api.domain.reputation.ReputationRestApi;
 import bisq.http_api.rest_api.domain.settings.SettingsRestApi;
+import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
@@ -29,6 +30,7 @@ public class RestApiResourceConfig extends BaseRestApiResourceConfig {
                                  PaymentAccountsRestApi paymentAccountsRestApi,
                                  ReputationRestApi reputationRestApi,
                                  UserProfileRestApi userProfileRestApi,
+                                 SupportRestApi supportRestApi,
                                  HttpApiRequestFilter httpApiRequestFilter) {
         super(swaggerBaseUrl, httpApiRequestFilter);
 
@@ -47,6 +49,7 @@ public class RestApiResourceConfig extends BaseRestApiResourceConfig {
         register(PaymentAccountsRestApi.class);
         register(ReputationRestApi.class);
         register(UserProfileRestApi.class);
+        register(SupportRestApi.class);
 
         register(new AbstractBinder() {
             @Override
@@ -61,6 +64,7 @@ public class RestApiResourceConfig extends BaseRestApiResourceConfig {
                 bind(paymentAccountsRestApi).to(PaymentAccountsRestApi.class);
                 bind(reputationRestApi).to(ReputationRestApi.class);
                 bind(userProfileRestApi).to(UserProfileRestApi.class);
+                bind(supportRestApi).to(SupportRestApi.class);
             }
         });
     }
