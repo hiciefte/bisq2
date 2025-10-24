@@ -58,10 +58,12 @@ import java.util.concurrent.TimeUnit;
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Support API", description = "API for exporting support chat messages")
 public class SupportRestApi extends RestApiBase {
+    private static final String TIMEZONE_UTC = "UTC";
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+            .withZone(ZoneId.of(TIMEZONE_UTC));
+
     private final CommonPublicChatChannelService supportChatChannelService;
     private final UserProfileService userProfileService;
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-            .withZone(ZoneId.of("UTC"));
 
     public SupportRestApi(ChatService chatService, UserProfileService userProfileService) {
         this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
@@ -119,7 +121,7 @@ public class SupportRestApi extends RestApiBase {
                     ),
                     @ApiResponse(
                             responseCode = "503",
-                            description = "Support chat service not available or request timed out"
+                            description = "Support chat service not available"
                     ),
                     @ApiResponse(
                             responseCode = "500",
@@ -137,7 +139,7 @@ public class SupportRestApi extends RestApiBase {
             }
 
             var channels = supportChatChannelService.getChannels();
-            if (channels.isEmpty()) {
+            if (channels == null || channels.isEmpty()) {
                 log.warn("No support channels found for export");
                 return buildResponse(Response.Status.NOT_FOUND,
                         "No support channels found");
@@ -145,7 +147,7 @@ public class SupportRestApi extends RestApiBase {
 
             log.info("Starting support chat export for {} channels", channels.size());
 
-            // Collect all messages and get TTL from first message
+            // Collect all messages and calculate maximum TTL across all messages
             List<MessageDto> messages = new ArrayList<>();
             long dataRetentionDays = 10; // Default fallback (TTL_10_DAYS is the standard for CommonPublicChatMessage)
 
@@ -157,19 +159,21 @@ public class SupportRestApi extends RestApiBase {
                         continue;
                     }
 
-                    // Get TTL from message metadata (only once, all messages have same TTL)
-                    if (messages.isEmpty()) {
-                        var meta = message.getMetaData();
-                        if (meta != null) {
-                            long ttlMillis = meta.getTtl();
-                            long days = TimeUnit.MILLISECONDS.toDays(ttlMillis)
-                                    + ((ttlMillis % TimeUnit.DAYS.toMillis(1) != 0) ? 1 : 0); // ceil
-                            dataRetentionDays = Math.max(1, days);
-                        }
+                    // Calculate TTL and track maximum across all messages
+                    var meta = message.getMetaData();
+                    if (meta != null) {
+                        long ttlMillis = meta.getTtl();
+                        long days = TimeUnit.MILLISECONDS.toDays(ttlMillis)
+                                + ((ttlMillis % TimeUnit.DAYS.toMillis(1) != 0) ? 1 : 0); // ceil
+                        dataRetentionDays = Math.max(dataRetentionDays, Math.max(1, days));
                     }
 
                     // Look up author nickname from user profile
                     String authorId = message.getAuthorUserProfileId();
+                    if (authorId == null) {
+                        log.warn("Message {} has null authorId, skipping", message.getId());
+                        continue;
+                    }
                     String authorNickname = userProfileService.findUserProfile(authorId)
                             .map(UserProfile::getNickName)
                             .orElse(authorId);  // Fallback to ID if profile not found
@@ -178,6 +182,9 @@ public class SupportRestApi extends RestApiBase {
                     CitationDto citation = message.getCitation()
                             .map(c -> {
                                 String citationAuthorId = c.getAuthorUserProfileId();
+                                if (citationAuthorId == null) {
+                                    return null; // Skip citation with null author
+                                }
                                 String citationAuthorNickname = userProfileService.findUserProfile(citationAuthorId)
                                         .map(UserProfile::getNickName)
                                         .orElse(citationAuthorId);
@@ -185,7 +192,7 @@ public class SupportRestApi extends RestApiBase {
                                         c.getChatMessageId().orElse(null),
                                         citationAuthorNickname,  // Use nickname
                                         citationAuthorId,        // Keep ID for reference
-                                        c.getText()
+                                        c.getText() != null ? c.getText() : "" // Null-safe text
                                 );
                             })
                             .orElse(null);
@@ -212,7 +219,7 @@ public class SupportRestApi extends RestApiBase {
                     channels.size(),
                     messages.size(),
                     (int) dataRetentionDays,
-                    "UTC"
+                    TIMEZONE_UTC
             );
 
             // Create complete export
@@ -225,8 +232,15 @@ public class SupportRestApi extends RestApiBase {
             log.info("Support chat export completed: {} channels, {} messages",
                     metadata.channelCount(), metadata.messageCount());
 
+            // Generate filename with timestamp for easier identification
+            String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+                    .withZone(ZoneId.of(TIMEZONE_UTC))
+                    .format(Instant.now());
+            String filename = String.format("support_chat_export_%s.json", timestamp);
+
             return Response.ok(export)
                     .header("Content-Type", "application/json; charset=UTF-8")
+                    .header("Content-Disposition", String.format("attachment; filename=\"%s\"", filename))
                     .header("Cache-Control", "no-store, no-cache, must-revalidate")
                     .header("Pragma", "no-cache")
                     .build();
