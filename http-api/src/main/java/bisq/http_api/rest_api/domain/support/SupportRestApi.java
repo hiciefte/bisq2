@@ -36,8 +36,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.container.AsyncResponse;
-import jakarta.ws.rs.container.Suspended;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +47,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * REST API endpoint for exporting support chat messages.
+ * Provides JSON export functionality for public support chat channels with metadata.
+ * All exports include author nicknames, timestamps in UTC, and message citations.
+ * Access is restricted to localhost only for security.
+ */
 @Slf4j
 @Path("/support")
 @Produces(MediaType.APPLICATION_JSON)
@@ -123,27 +127,20 @@ public class SupportRestApi extends RestApiBase {
                     )
             }
     )
-    public void exportSupportChatToJson(@Suspended AsyncResponse asyncResponse) {
-        asyncResponse.setTimeout(120, TimeUnit.SECONDS);
-        asyncResponse.setTimeoutHandler(response ->
-                response.resume(buildResponse(Response.Status.SERVICE_UNAVAILABLE, "Export request timed out"))
-        );
-
+    public Response exportSupportChatToJson() {
         try {
             // Input validation
             if (supportChatChannelService == null) {
                 log.error("Support chat service is not available");
-                asyncResponse.resume(buildResponse(Response.Status.SERVICE_UNAVAILABLE,
-                        "Support chat service not available"));
-                return;
+                return buildResponse(Response.Status.SERVICE_UNAVAILABLE,
+                        "Support chat service not available");
             }
 
             var channels = supportChatChannelService.getChannels();
             if (channels.isEmpty()) {
                 log.warn("No support channels found for export");
-                asyncResponse.resume(buildResponse(Response.Status.NOT_FOUND,
-                        "No support channels found"));
-                return;
+                return buildResponse(Response.Status.NOT_FOUND,
+                        "No support channels found");
             }
 
             log.info("Starting support chat export for {} channels", channels.size());
@@ -156,14 +153,22 @@ public class SupportRestApi extends RestApiBase {
                 String channelName = channel.getChannelTitle();
 
                 for (var message : channel.getChatMessages()) {
+                    if (message == null) {
+                        continue;
+                    }
+
                     // Get TTL from message metadata (only once, all messages have same TTL)
-                    if (messages.isEmpty() && message != null) {
-                        long ttlMillis = message.getMetaData().getTtl();
-                        dataRetentionDays = TimeUnit.MILLISECONDS.toDays(ttlMillis);
+                    if (messages.isEmpty()) {
+                        var meta = message.getMetaData();
+                        if (meta != null) {
+                            long ttlMillis = meta.getTtl();
+                            long days = TimeUnit.MILLISECONDS.toDays(ttlMillis)
+                                    + ((ttlMillis % TimeUnit.DAYS.toMillis(1) != 0) ? 1 : 0); // ceil
+                            dataRetentionDays = Math.max(1, days);
+                        }
                     }
 
                     // Look up author nickname from user profile
-                    assert message != null;
                     String authorId = message.getAuthorUserProfileId();
                     String authorNickname = userProfileService.findUserProfile(authorId)
                             .map(UserProfile::getNickName)
@@ -220,18 +225,20 @@ public class SupportRestApi extends RestApiBase {
             log.info("Support chat export completed: {} channels, {} messages",
                     metadata.channelCount(), metadata.messageCount());
 
-            asyncResponse.resume(Response.ok(export)
+            return Response.ok(export)
                     .header("Content-Type", "application/json; charset=UTF-8")
-                    .build());
+                    .header("Cache-Control", "no-store, no-cache, must-revalidate")
+                    .header("Pragma", "no-cache")
+                    .build();
 
         } catch (IllegalArgumentException e) {
             log.error("Invalid input during export", e);
-            asyncResponse.resume(buildResponse(Response.Status.BAD_REQUEST,
-                    "Invalid input: " + e.getMessage()));
+            return buildResponse(Response.Status.BAD_REQUEST,
+                    "Invalid input: " + e.getMessage());
         } catch (Exception e) {
             log.error("Error exporting support chat messages", e);
-            asyncResponse.resume(buildErrorResponse(
-                    "Failed to export support chat messages"));
+            return buildErrorResponse(
+                    "Failed to export support chat messages");
         }
     }
 }
