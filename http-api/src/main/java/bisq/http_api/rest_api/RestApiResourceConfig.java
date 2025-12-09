@@ -12,6 +12,7 @@ import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
+import bisq.http_api.validator.HttpApiRequestFilter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.jersey.internal.inject.AbstractBinder;
@@ -30,9 +31,8 @@ public class RestApiResourceConfig extends BaseRestApiResourceConfig {
                                  PaymentAccountsRestApi paymentAccountsRestApi,
                                  ReputationRestApi reputationRestApi,
                                  UserProfileRestApi userProfileRestApi,
-                                 SupportRestApi supportRestApi,
-                                 HttpApiRequestFilter httpApiRequestFilter) {
-        super(config, httpApiRequestFilter);
+                                 SupportRestApi supportRestApi) {
+        super(config);
 
         //todo apply filtering with whiteListEndPoints/whiteListEndPoints
 

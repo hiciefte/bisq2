@@ -115,8 +115,7 @@ public class HttpApiService implements Service {
                         paymentAccountsRestApi,
                         reputationRestApi,
                         userProfileRestApi,
-                        supportRestApi,
-                        HttpApiRequestFilter.from(restApiConfig));
+                        supportRestApi);
                 restApiService = Optional.of(new RestApiService(restApiConfig, restApiResourceConfig, appDataDirPath, securityService, networkService));
             } else {
                 restApiService = Optional.empty();
@@ -134,8 +133,7 @@ public class HttpApiService implements Service {
                         paymentAccountsRestApi,
                         reputationRestApi,
                         userProfileRestApi,
-                        supportRestApi,
-                        HttpApiRequestFilter.from(webSocketConfig));
+                        supportRestApi);
                 webSocketService = Optional.of(new WebSocketService(webSocketConfig,
                         webSocketResourceConfig,
                         appDataDirPath,

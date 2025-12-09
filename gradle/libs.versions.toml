@@ -75,6 +75,9 @@ typesafe-config-lib = { strictly = '1.4.3' }
 
 zxing-lib = { strictly = '3.5.3' }
 
+bucket4j-lib = { strictly = '8.7.0' }
+prometheus-lib = { strictly = '0.16.0' }
+
 # Referenced in subproject's build.gradle > dependencies block in the form 'implementation libs.guava'
 # Note: keys can contain dash (protobuf-java) but the dash is replaced by dot when referenced
 # in a build.gradle ('implementation libs.protobuf.java')
@@ -173,6 +176,10 @@ tukaani = { module = 'org.tukaani:xz', version.ref = 'tukaani-lib' }
 typesafe-config = { module = 'com.typesafe:config', version.ref = 'typesafe-config-lib' }
 
 zxing = { module = 'com.google.zxing:javase', version.ref = 'zxing-lib' }
+
+bucket4j-core = { module = 'com.bucket4j:bucket4j-core', version.ref = 'bucket4j-lib' }
+prometheus-simpleclient = { module = 'io.prometheus:simpleclient', version.ref = 'prometheus-lib' }
+prometheus-simpleclient-httpserver = { module = 'io.prometheus:simpleclient_httpserver', version.ref = 'prometheus-lib' }
 
 # Defines groups of libs that are commonly used together
 # Referenced in dependencies block as 'implementation libs.bundles.i2p'

@@ -27,6 +27,12 @@ import bisq.http_api.rest_api.domain.support.dto.MessageDto;
 import bisq.http_api.rest_api.domain.support.dto.SupportChatExport;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.Refill;
+import io.prometheus.client.Counter;
+import io.prometheus.client.Gauge;
+import io.prometheus.client.Histogram;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -36,16 +42,26 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.Suspended;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * REST API endpoint for exporting support chat messages.
@@ -61,13 +77,79 @@ public class SupportRestApi extends RestApiBase {
     private static final String TIMEZONE_UTC = "UTC";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneId.of(TIMEZONE_UTC));
+    private static final long CACHE_TTL_MS = 60_000;  // 60 seconds
 
     private final CommonPublicChatChannelService supportChatChannelService;
     private final UserProfileService userProfileService;
 
+    // Rate limiter: 10 requests per minute per IP
+    private final ConcurrentHashMap<String, Bucket> rateLimitBuckets = new ConcurrentHashMap<>();
+
+    // Cache with timestamp
+    private final AtomicReference<CachedResponse> cache = new AtomicReference<>();
+
+    // Thread pool for async processing (separate from HTTP workers)
+    private final ExecutorService asyncExecutor = Executors.newFixedThreadPool(16,
+            r -> {
+                Thread t = new Thread(r);
+                t.setName("support-export-worker");
+                t.setDaemon(true);
+                return t;
+            });
+
+    // Prometheus metrics
+    private static final Counter requestTotal = Counter.build()
+            .name("support_export_requests_total")
+            .help("Total support export requests")
+            .labelNames("status")  // success, rate_limited, error
+            .register();
+
+    private static final Histogram requestDuration = Histogram.build()
+            .name("support_export_duration_seconds")
+            .help("Support export request duration")
+            .labelNames("cache_hit")  // true, false
+            .register();
+
+    private static final Gauge cacheAge = Gauge.build()
+            .name("support_export_cache_age_seconds")
+            .help("Age of cached response in seconds")
+            .register();
+
+    private static class CachedResponse {
+        final SupportChatExport data;
+        final long timestamp;
+
+        CachedResponse(SupportChatExport data) {
+            this.data = data;
+            this.timestamp = System.currentTimeMillis();
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() - timestamp > CACHE_TTL_MS;
+        }
+    }
+
     public SupportRestApi(ChatService chatService, UserProfileService userProfileService) {
         this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
         this.userProfileService = userProfileService;
+    }
+
+    private Bucket createRateLimitBucket() {
+        return Bucket.builder()
+                .addLimit(limit -> limit.capacity(10).refillIntervally(10, Duration.ofMinutes(1)))
+                .build();
+    }
+
+    public void shutdown() {
+        asyncExecutor.shutdown();
+        try {
+            if (!asyncExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                asyncExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            asyncExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     @GET
@@ -78,7 +160,9 @@ public class SupportRestApi extends RestApiBase {
             description = "Exports all public support chat messages as JSON. " +
                     "Messages are automatically removed based on the system's configured TTL. " +
                     "All timestamps are in UTC timezone. " +
-                    "This endpoint is only accessible via localhost.",
+                    "This endpoint is only accessible via localhost. " +
+                    "Rate limited to 10 requests per minute per IP. " +
+                    "Responses are cached for 60 seconds.",
             responses = {
                     @ApiResponse(
                             responseCode = "200",
@@ -120,6 +204,14 @@ public class SupportRestApi extends RestApiBase {
                             description = "No support channels found"
                     ),
                     @ApiResponse(
+                            responseCode = "408",
+                            description = "Request timeout"
+                    ),
+                    @ApiResponse(
+                            responseCode = "429",
+                            description = "Rate limit exceeded"
+                    ),
+                    @ApiResponse(
                             responseCode = "503",
                             description = "Support chat service not available"
                     ),
@@ -129,29 +221,88 @@ public class SupportRestApi extends RestApiBase {
                     )
             }
     )
-    public Response exportSupportChatToJson() {
+    public void exportSupportChatToJson(
+            @Context ContainerRequestContext requestContext,
+            @Suspended AsyncResponse asyncResponse) {
+        // Set timeout for async processing
+        asyncResponse.setTimeout(30, TimeUnit.SECONDS);
+        asyncResponse.setTimeoutHandler(ar -> {
+            requestTotal.labels("timeout").inc();
+            ar.resume(Response.status(408).entity("Request timeout").build());
+        });
+
+        Histogram.Timer timer = requestDuration.labels("unknown").startTimer();
+
         try {
+            // Rate limiting check - get client IP from request context
+            String clientIp = requestContext.getHeaderString("X-Forwarded-For");
+            if (clientIp == null || clientIp.isEmpty()) {
+                clientIp = "unknown";  // Fallback for localhost or missing header
+            } else {
+                // Take first IP if multiple proxies
+                clientIp = clientIp.split(",")[0].trim();
+            }
+            Bucket bucket = rateLimitBuckets.computeIfAbsent(clientIp, k -> createRateLimitBucket());
+
+            if (!bucket.tryConsume(1)) {
+                log.warn("Rate limit exceeded for IP: {}", clientIp);
+                requestTotal.labels("rate_limited").inc();
+                timer.close();
+                asyncResponse.resume(Response.status(429)
+                        .entity("Rate limit exceeded. Try again in 1 minute.")
+                        .build());
+                return;
+            }
+
             // Input validation
             if (supportChatChannelService == null) {
                 log.error("Support chat service is not available");
-                return buildResponse(Response.Status.SERVICE_UNAVAILABLE,
-                        "Support chat service not available");
+                requestTotal.labels("error").inc();
+                timer.close();
+                asyncResponse.resume(Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                        .entity("Support chat service not available")
+                        .build());
+                return;
+            }
+
+            // Check cache
+            CachedResponse cached = cache.get();
+            if (cached != null && !cached.isExpired()) {
+                long cacheAgeMs = System.currentTimeMillis() - cached.timestamp;
+                log.debug("Serving cached response (age: {}ms)", cacheAgeMs);
+                requestTotal.labels("success").inc();
+                cacheAge.set(cacheAgeMs / 1000.0);
+                timer.observeDuration();
+                asyncResponse.resume(Response.ok(cached.data)
+                        .header("X-Cache-Hit", "true")
+                        .header("X-Cache-Age", cacheAgeMs)
+                        .header("Content-Type", "application/json; charset=UTF-8")
+                        .header("Cache-Control", "no-store, no-cache, must-revalidate")
+                        .header("Pragma", "no-cache")
+                        .build());
+                return;
             }
 
             var channels = supportChatChannelService.getChannels();
             if (channels == null || channels.isEmpty()) {
                 log.warn("No support channels found for export");
-                return buildResponse(Response.Status.NOT_FOUND,
-                        "No support channels found");
+                requestTotal.labels("error").inc();
+                timer.close();
+                asyncResponse.resume(Response.status(Response.Status.NOT_FOUND)
+                        .entity("No support channels found")
+                        .build());
+                return;
             }
 
-            log.info("Starting support chat export for {} channels", channels.size());
+            log.info("Starting support chat export for {} channels (async)", channels.size());
 
-            // Collect all messages and calculate maximum TTL across all messages
-            List<MessageDto> messages = new ArrayList<>();
-            long dataRetentionDays = 10; // Default fallback (TTL_10_DAYS is the standard for CommonPublicChatMessage)
+            // Process asynchronously (non-blocking)
+            CompletableFuture.supplyAsync(() -> {
+                // Collect all messages and calculate maximum TTL across all messages
+                List<MessageDto> messages = new ArrayList<>();
+                long dataRetentionDays = 10; // Default fallback (TTL_10_DAYS is the standard for CommonPublicChatMessage)
 
-            for (var channel : channels) {
+                for (var channel : channels) {
                 String channelName = channel.getChannelTitle();
 
                 for (var message : channel.getChatMessages()) {
@@ -214,45 +365,64 @@ public class SupportRestApi extends RestApiBase {
                 }
             }
 
-            // Create export metadata with system-configured TTL
-            var metadata = new ExportMetadata(
-                    channels.size(),
-                    messages.size(),
-                    (int) dataRetentionDays,
-                    TIMEZONE_UTC
-            );
+                // Create export metadata with system-configured TTL
+                var metadata = new ExportMetadata(
+                        channels.size(),
+                        messages.size(),
+                        (int) dataRetentionDays,
+                        TIMEZONE_UTC
+                );
 
-            // Create complete export
-            var export = new SupportChatExport(
-                    Instant.now().toString(),
-                    metadata,
-                    messages
-            );
+                // Create complete export
+                var export = new SupportChatExport(
+                        Instant.now().toString(),
+                        metadata,
+                        messages
+                );
 
-            log.info("Support chat export completed: {} channels, {} messages",
-                    metadata.channelCount(), metadata.messageCount());
+                log.info("Support chat export completed: {} channels, {} messages",
+                        metadata.channelCount(), metadata.messageCount());
 
-            // Generate filename with timestamp for easier identification
-            String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
-                    .withZone(ZoneId.of(TIMEZONE_UTC))
-                    .format(Instant.now());
-            String filename = String.format("support_chat_export_%s.json", timestamp);
+                return export;
+            }, asyncExecutor)
+            .thenAccept(export -> {
+                // Update cache atomically
+                cache.set(new CachedResponse(export));
+                cacheAge.set(0);  // Fresh data
 
-            return Response.ok(export)
-                    .header("Content-Type", "application/json; charset=UTF-8")
-                    .header("Content-Disposition", String.format("attachment; filename=\"%s\"", filename))
-                    .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                    .header("Pragma", "no-cache")
-                    .build();
+                // Generate filename with timestamp for easier identification
+                String timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+                        .withZone(ZoneId.of(TIMEZONE_UTC))
+                        .format(Instant.now());
+                String filename = String.format("support_chat_export_%s.json", timestamp);
 
-        } catch (IllegalArgumentException e) {
-            log.error("Invalid input during export", e);
-            return buildResponse(Response.Status.BAD_REQUEST,
-                    "Invalid input: " + e.getMessage());
+                requestTotal.labels("success").inc();
+                timer.observeDuration();
+                asyncResponse.resume(Response.ok(export)
+                        .header("X-Cache-Hit", "false")
+                        .header("Content-Type", "application/json; charset=UTF-8")
+                        .header("Content-Disposition", String.format("attachment; filename=\"%s\"", filename))
+                        .header("Cache-Control", "no-store, no-cache, must-revalidate")
+                        .header("Pragma", "no-cache")
+                        .build());
+            })
+            .exceptionally(ex -> {
+                log.error("Error exporting support chat messages", ex);
+                requestTotal.labels("error").inc();
+                timer.observeDuration();
+                asyncResponse.resume(Response.status(500)
+                        .entity("Internal error: " + ex.getMessage())
+                        .build());
+                return null;
+            });
+
         } catch (Exception e) {
-            log.error("Error exporting support chat messages", e);
-            return buildErrorResponse(
-                    "Failed to export support chat messages");
+            log.error("Error setting up export", e);
+            requestTotal.labels("error").inc();
+            timer.close();
+            asyncResponse.resume(Response.status(500)
+                    .entity("Failed to export support chat messages: " + e.getMessage())
+                    .build());
         }
     }
 }

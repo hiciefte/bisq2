@@ -13,6 +13,7 @@ import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
+import bisq.http_api.validator.HttpApiRequestFilter;
 import jakarta.ws.rs.ApplicationPath;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,8 +31,7 @@ public class WebSocketRestApiResourceConfig extends RestApiResourceConfig {
                                           PaymentAccountsRestApi paymentAccountsRestApi,
                                           ReputationRestApi reputationRestApi,
                                           UserProfileRestApi userProfileRestApi,
-                                          SupportRestApi supportRestApi,
-                                          HttpApiRequestFilter httpApiRequestFilter) {
-        super(config, offerbookRestApi, tradeRestApi, tradeChatMessagesRestApi, userIdentityRestApi, marketPriceRestApi, settingsRestApi, explorerRestApi, paymentAccountsRestApi, reputationRestApi, userProfileRestApi, supportRestApi, httpApiRequestFilter);
+                                          SupportRestApi supportRestApi) {
+        super(config, offerbookRestApi, tradeRestApi, tradeChatMessagesRestApi, userIdentityRestApi, marketPriceRestApi, settingsRestApi, explorerRestApi, paymentAccountsRestApi, reputationRestApi, userProfileRestApi, supportRestApi);
     }
 }

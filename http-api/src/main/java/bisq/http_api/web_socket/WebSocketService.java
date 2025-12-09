@@ -46,6 +46,8 @@ import jakarta.ws.rs.core.UriBuilder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.grizzly.http.server.HttpServer;
+import org.glassfish.grizzly.http.server.NetworkListener;
+import org.glassfish.grizzly.threadpool.ThreadPoolConfig;
 import org.glassfish.grizzly.websockets.WebSocketAddOn;
 import org.glassfish.grizzly.websockets.WebSocketEngine;
 import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
@@ -165,6 +167,21 @@ public class WebSocketService implements Service {
                             ? GrizzlyHttpServerFactory.createHttpServer(baseUri, restApiResourceConfig, false)
                             : GrizzlyHttpServerFactory.createHttpServer(baseUri, false);
                     httpServer = Optional.of(server);
+
+                    // Configure thread pool for improved performance
+                    ThreadPoolConfig threadPoolConfig = ThreadPoolConfig.defaultConfig()
+                            .setCorePoolSize(32)           // Minimum threads always running
+                            .setMaxPoolSize(128)           // Maximum threads under load
+                            .setQueueLimit(1000);          // Connection backlog limit
+
+                    // Apply thread pool configuration to worker thread pool
+                    server.getListener("grizzly").getTransport().setWorkerThreadPoolConfig(threadPoolConfig);
+
+                    // Configure network listener with connection limits
+                    NetworkListener listener = server.getListeners().iterator().next();
+                    listener.getKeepAlive().setIdleTimeoutInSeconds(60);     // Close idle after 60s
+                    listener.getKeepAlive().setMaxRequestsCount(100);        // Reuse limit
+
                     server.getListener("grizzly").registerAddOn(new WebSocketMetadataAddOn());
                     String password = config.getPassword();
                     if (StringUtils.isNotEmpty(password)) {
