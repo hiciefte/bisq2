@@ -291,7 +291,7 @@ public class HttpApiApplicationService extends JavaSeApplicationService {
     private Optional<OsSpecificNotificationService> findSystemNotificationDelegate() {
         try {
             return switch (OS.getOS()) {
-                case LINUX -> Optional.of(new LinuxNotificationService(config.getBaseDir(), settingsService));
+                case LINUX -> Optional.of(new LinuxNotificationService(config.getAppDataDirPath(), settingsService));
                 case MAC_OS -> Optional.of(new OsxNotificationService());
                 case WINDOWS -> SystemTray.isSupported() ? Optional.of(new AwtNotificationService()) : Optional.empty();
                 default -> Optional.empty();
