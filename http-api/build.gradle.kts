@@ -38,4 +38,8 @@ dependencies {
     implementation(libs.bundles.i2p)
     implementation(libs.bundles.rest.api.libs)
     implementation(libs.bundles.websocket.libs)
+
+    implementation(libs.bucket4j.core)
+    implementation(libs.prometheus.simpleclient)
+    implementation(libs.prometheus.simpleclient.httpserver)
 }

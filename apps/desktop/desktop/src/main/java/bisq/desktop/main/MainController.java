@@ -30,16 +30,22 @@ import bisq.desktop.common.view.Navigation;
 import bisq.desktop.common.view.NavigationController;
 import bisq.desktop.components.overlay.Popup;
 import bisq.desktop.main.alert.AlertBannerController;
+import bisq.desktop.main.banner.BannerNotificationController;
 import bisq.desktop.main.content.ContentController;
 import bisq.desktop.main.left.LeftNavController;
 import bisq.desktop.main.notification.NotificationPanelController;
 import bisq.desktop.main.top.TopPanelController;
 import bisq.desktop.navigation.NavigationTarget;
+import bisq.desktop.overlay.OverlayController;
 import bisq.evolution.updater.UpdaterService;
 import bisq.evolution.updater.UpdaterUtils;
+import bisq.persistence.backup.RestoreService;
+import javafx.collections.ListChangeListener;
+import javafx.scene.Node;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import javax.annotation.Nullable;
 import java.net.URLClassLoader;
 import java.util.Optional;
 
@@ -52,22 +58,28 @@ public class MainController extends NavigationController {
     private final ServiceProvider serviceProvider;
     private final LeftNavController leftNavController;
     private final UpdaterService updaterService;
+    private final RestoreService restoreService;
     private final ApplicationService.Config config;
+    @Nullable
+    private ListChangeListener<Node> nodeListChangeListener;
 
     public MainController(ServiceProvider serviceProvider) {
         super(NavigationTarget.MAIN);
 
         this.serviceProvider = serviceProvider;
         updaterService = serviceProvider.getUpdaterService();
+        restoreService = serviceProvider.getPersistenceService().getRestoreService();
         config = serviceProvider.getConfig();
 
         leftNavController = new LeftNavController(serviceProvider);
+        BannerNotificationController bannerNotificationController = new BannerNotificationController(serviceProvider);
         TopPanelController topPanelController = new TopPanelController(serviceProvider);
         NotificationPanelController notificationPanelController = new NotificationPanelController(serviceProvider);
         AlertBannerController alertBannerController = new AlertBannerController(serviceProvider);
         view = new MainView(model,
                 this,
                 leftNavController.getView().getRoot(),
+                bannerNotificationController.getView().getRoot(),
                 topPanelController.getView().getRoot(),
                 notificationPanelController.getView().getRoot(),
                 alertBannerController.getView().getRoot());
@@ -93,8 +105,7 @@ public class MainController extends NavigationController {
             }
         }
 
-        updaterService.getIsNewReleaseAvailable().addObserver(isNewReleaseAvailable -> UIThread.run(this::maybeShowUpdatePopup));
-        updaterService.getIgnoreNewRelease().addObserver(ignoreNewRelease -> UIThread.run(this::maybeShowUpdatePopup));
+        UIThread.run(this::maybeShowRestorePopup);
     }
 
     @Override
@@ -113,6 +124,29 @@ public class MainController extends NavigationController {
     @Override
     public void onStartProcessNavigationTarget(NavigationTarget navigationTarget, Optional<Object> data) {
         leftNavController.setNavigationTarget(navigationTarget);
+    }
+
+    private void maybeShowRestorePopup() {
+        if (!restoreService.getRestoredBackupFileInfos().isEmpty()) {
+            // make sure updater service is not removing the restore popup
+            nodeListChangeListener = change -> {
+                change.next();
+                if (!change.wasAdded()) {
+                    addUpdaterServiceObservers();
+                    OverlayController.getInstance().getView().getRoot().getChildren().removeListener(nodeListChangeListener);
+                }
+            };
+
+            OverlayController.getInstance().getView().getRoot().getChildren().addListener(nodeListChangeListener);
+            UIScheduler.run(() -> Navigation.navigateTo(NavigationTarget.RESTORE_FROM_BACKUP)).after(500);
+        } else {
+            addUpdaterServiceObservers();
+        }
+    }
+
+    private void addUpdaterServiceObservers() {
+        updaterService.getIsNewReleaseAvailable().addObserver(isNewReleaseAvailable -> UIThread.run(this::maybeShowUpdatePopup));
+        updaterService.getIgnoreNewRelease().addObserver(ignoreNewRelease -> UIThread.run(this::maybeShowUpdatePopup));
     }
 
     private void maybeShowUpdatePopup() {

@@ -182,6 +182,7 @@ public class ExplorerService implements Service {
         }
     }
 
+    @Override
     public CompletableFuture<Boolean> shutdown() {
         shutdownStarted = true;
         return httpClient.map(BaseHttpClient::shutdown)
@@ -196,8 +197,9 @@ public class ExplorerService implements Service {
                             return requestTx(txId, retryException.getRecursionDepth());
                         } else if (ExceptionUtil.getRootCause(throwable) instanceof RetryException retryException) {
                             return requestTx(txId, retryException.getRecursionDepth());
+                        } else {
+                            return CompletableFuture.failedFuture(throwable);
                         }
-                        return CompletableFuture.failedFuture(throwable);
                     });
         } catch (RejectedExecutionException e) {
             return CompletableFuture.failedFuture(new RejectedExecutionException("Too many requests. Try again later."));
@@ -210,11 +212,12 @@ public class ExplorerService implements Service {
 
     private CompletableFuture<Tx> requestTx(String txId, AtomicInteger recursionDepth) {
         if (noProviderAvailable) {
-            throw new RuntimeException("No block explorer provider available");
+            return CompletableFuture.failedFuture(new RuntimeException("No block explorer provider available"));
         }
         if (shutdownStarted) {
-            throw new RuntimeException("Shutdown has already started");
+            return CompletableFuture.failedFuture(new RuntimeException("Shutdown has already started"));
         }
+
         try {
             return CompletableFuture.supplyAsync(() -> {
                         Provider provider = checkNotNull(selectedProvider.get(), "Selected provider must not be null.");

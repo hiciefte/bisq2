@@ -32,6 +32,7 @@ import bisq.http_api.rest_api.domain.offers.OfferbookRestApi;
 import bisq.http_api.rest_api.domain.payment_accounts.PaymentAccountsRestApi;
 import bisq.http_api.rest_api.domain.reputation.ReputationRestApi;
 import bisq.http_api.rest_api.domain.settings.SettingsRestApi;
+import bisq.http_api.rest_api.domain.support.SupportRestApi;
 import bisq.http_api.rest_api.domain.trades.TradeRestApi;
 import bisq.http_api.rest_api.domain.user_identity.UserIdentityRestApi;
 import bisq.http_api.rest_api.domain.user_profile.UserProfileRestApi;
@@ -45,6 +46,7 @@ import bisq.support.SupportService;
 import bisq.trade.TradeService;
 import bisq.user.UserService;
 import bisq.user.reputation.ReputationService;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Path;
@@ -59,6 +61,7 @@ import java.util.concurrent.CompletableFuture;
 @Slf4j
 public class HttpApiService implements Service {
     private final Optional<RestApiService> restApiService;
+    @Getter
     private final Optional<WebSocketService> webSocketService;
 
     public HttpApiService(RestApiService.Config restApiConfig,
@@ -88,14 +91,17 @@ public class HttpApiService implements Service {
                     supportedService,
                     tradeService);
             TradeChatMessagesRestApi tradeChatMessagesRestApi = new TradeChatMessagesRestApi(chatService, userService);
-            UserIdentityRestApi userIdentityRestApi = new UserIdentityRestApi(securityService, userService.getUserIdentityService());
+            UserIdentityRestApi userIdentityRestApi = new UserIdentityRestApi(securityService, userService.getUserIdentityService(), bisqEasyService);
             MarketPriceRestApi marketPriceRestApi = new MarketPriceRestApi(bondedRolesService.getMarketPriceService());
             SettingsRestApi settingsRestApi = new SettingsRestApi(settingsService);
             PaymentAccountsRestApi paymentAccountsRestApi = new PaymentAccountsRestApi(accountService);
-            UserProfileRestApi userProfileRestApi = new UserProfileRestApi(userService.getUserProfileService(),
-                    supportedService.getModerationRequestService());
+            UserProfileRestApi userProfileRestApi = new UserProfileRestApi(
+                    userService.getUserProfileService(),
+                    supportedService.getModerationRequestService(),
+                    userService.getRepublishUserProfileService());
             ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
             ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
+            SupportRestApi supportRestApi = new SupportRestApi(chatService, userService.getUserProfileService());
 
             if (restApiConfigEnabled) {
                 var restApiResourceConfig = new RestApiResourceConfig(restApiConfig,
@@ -108,7 +114,8 @@ public class HttpApiService implements Service {
                         explorerRestApi,
                         paymentAccountsRestApi,
                         reputationRestApi,
-                        userProfileRestApi);
+                        userProfileRestApi,
+                        supportRestApi);
                 restApiService = Optional.of(new RestApiService(restApiConfig, restApiResourceConfig, appDataDirPath, securityService, networkService));
             } else {
                 restApiService = Optional.empty();
@@ -125,7 +132,8 @@ public class HttpApiService implements Service {
                         explorerRestApi,
                         paymentAccountsRestApi,
                         reputationRestApi,
-                        userProfileRestApi);
+                        userProfileRestApi,
+                        supportRestApi);
                 webSocketService = Optional.of(new WebSocketService(webSocketConfig,
                         webSocketResourceConfig,
                         appDataDirPath,

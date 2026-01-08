@@ -1590,19 +1590,6 @@
 
 
 /* ------------------------------------------------------------------------------------ */
-/* Crypto Menus */
-/* ------------------------------------------------------------------------------------ */
-
-#btc-menu {
-    -fx-image: url("/images/markets/crypto-menus/btc-menu.png");
-}
-
-#xmr-menu {
-    -fx-image: url("/images/markets/crypto-menus/xmr-menu.png");
-}
-
-
-/* ------------------------------------------------------------------------------------ */
 /* Learn */
 /* ------------------------------------------------------------------------------------ */
 
@@ -1882,6 +1869,14 @@
 
 #wallet-verify {
     -fx-image: url("/images/wallet/verify.png");
+}
+
+#bisq-btc-logo {
+    -fx-image: url("/images/wallet/bisq-bitcoin-logo.png");
+}
+
+#latest-txs-grey {
+    -fx-image: url("/images/wallet/calendar-grey.png");
 }
 
 

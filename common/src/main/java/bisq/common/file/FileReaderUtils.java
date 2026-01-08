@@ -83,7 +83,7 @@ public class FileReaderUtils {
 
     public static Optional<String> readFromFileIfPresent(Path path) {
         try {
-            return Optional.of(Files.readString(path));
+            return Optional.of(readUTF8String(path));
         } catch (IOException e) {
             return Optional.empty();
         }
@@ -112,6 +112,20 @@ public class FileReaderUtils {
             throw new IOException("Could not load " + resourceName);
         }
         return resource;
+    }
+
+    public static Set<Path> listRegularFilesAsPath(Path dirPath) {
+        if (Files.notExists(dirPath)) {
+            return new HashSet<>();
+        }
+        try (Stream<Path> stream = Files.list(dirPath)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .collect(Collectors.toSet());
+        } catch (IOException e) {
+            log.error(e.toString(), e);
+            return new HashSet<>();
+        }
     }
 
     public static Set<String> listRegularFiles(Path dirPath) {

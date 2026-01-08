@@ -130,6 +130,30 @@
     -fx-background-color: -bisq-dark-grey-20;
 }
 
+
+/*******************************************************************************
+ * Restore from Backup                                                         *
+ ******************************************************************************/
+
+.restore-from-backup-headline {
+    -fx-fill: -fx-light-text-color !important;
+    -fx-text-fill: -fx-light-text-color !important;
+    -fx-font-size: 1.8em !important;
+    -fx-font-family: "IBM Plex Sans Light" !important;
+}
+
+.restore-from-backup-content {
+    -fx-fill: -fx-light-text-color !important;
+    -fx-text-fill: -fx-light-text-color !important;
+    -fx-font-size: 1.1em !important;
+    -fx-font-family: "IBM Plex Sans Light" !important;
+}
+
+.restore-from-backup-table-view {
+    -fx-background-color: -bisq-dark-grey-20;
+}
+
+
 /*******************************************************************************
  * AlertBanner                                                                 *
  ******************************************************************************/
@@ -210,6 +234,27 @@
 .notification-hyperlink:hover:armed {
     -fx-text-fill: -bisq-dark-grey-50;
 }
+
+
+/*******************************************************************************
+ * BannerNotification                                                          *
+ ******************************************************************************/
+
+.banner-notification .inventory-requests-completed {
+    -fx-background-color: -bisq2-green;
+}
+
+.banner-notification .requesting-inventory {
+    -fx-background-color: -bisq2-yellow;
+}
+
+.banner-notification .inventory-requests-label {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-family: "IBM Plex Sans Medium";
+    -fx-font-size: 1.02em;
+}
+
 
 /*******************************************************************************
  * Settings                                                                    *
@@ -473,9 +518,17 @@
     -fx-font-family: "IBM Plex Sans Light";
 }
 
+.wallet-dashboard .btc-balance-value {
+    -fx-fill: -fx-light-text-color;
+    -fx-text-fill: -fx-light-text-color;
+    -fx-font-family: "IBM Plex Sans Thin";
+    -fx-font-size: 4.2em;
+}
+
 .wallet-dashboard .summary-title,
-.wallet-dashboard .summary-code {
-    -fx-font-size: 1.5em;
+.wallet-dashboard .summary-code,
+.wallet-dashboard .currency-converter-balance-code {
+    -fx-font-size: 1.3em;
     -fx-fill: -fx-mid-text-color;
     -fx-text-fill: -fx-mid-text-color;
     -fx-font-family: "IBM Plex Sans Light";
@@ -488,6 +541,36 @@
     -fx-font-family: "IBM Plex Sans Thin";
 }
 
+.wallet-dashboard .currency-converter-balance-value {
+    -fx-font-size: 1.7em;
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+    -fx-font-family: "IBM Plex Sans";
+}
+
 .wallet-dashboard .latest-txs-table.table-view .column-header {
     -fx-background-color: -bisq-dark-grey-40;
+}
+
+.wallet-dashboard .dropdown-menu {
+    -fx-padding: 5 15 5 15;
+}
+
+
+/*******************************************************************************
+ * Support                                                                  *
+ ******************************************************************************/
+
+.support-sub-headline {
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-font-size: 1.4em;
+}
+
+.support-normal-text {
+    -fx-fill: -fx-mid-text-color;
+    -fx-text-fill: -fx-mid-text-color;
+    -fx-font-family: "IBM Plex Sans Light";
+    -fx-font-size: 1.1em;
 }
