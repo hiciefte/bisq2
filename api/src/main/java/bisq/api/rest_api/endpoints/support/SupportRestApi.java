@@ -22,14 +22,13 @@ import bisq.api.rest_api.endpoints.support.dto.CitationDto;
 import bisq.api.rest_api.endpoints.support.dto.ExportMetadata;
 import bisq.api.rest_api.endpoints.support.dto.MessageDto;
 import bisq.api.rest_api.endpoints.support.dto.SupportChatExport;
+import bisq.api.util.LoggingUtils;
 import bisq.chat.ChatChannelDomain;
 import bisq.chat.ChatService;
 import bisq.chat.common.CommonPublicChatChannelService;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
-import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.Histogram;
@@ -55,11 +54,14 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -79,11 +81,24 @@ public class SupportRestApi extends RestApiBase {
             .withZone(ZoneId.of(TIMEZONE_UTC));
     private static final long CACHE_TTL_MS = 60_000;  // 60 seconds
 
+    // Rate limiter configuration
+    private static final long RATE_LIMIT_BUCKET_TTL_MS = 300_000;  // 5 minutes
+    private static final int MAX_RATE_LIMIT_BUCKETS = 1000;
+    private static final int CLEANUP_INTERVAL_SECONDS = 60;
+
     private final CommonPublicChatChannelService supportChatChannelService;
     private final UserProfileService userProfileService;
 
-    // Rate limiter: 10 requests per minute per IP
-    private final ConcurrentHashMap<String, Bucket> rateLimitBuckets = new ConcurrentHashMap<>();
+    // Rate limiter with last access tracking to prevent memory leaks
+    private final ConcurrentHashMap<String, RateLimitEntry> rateLimitBuckets = new ConcurrentHashMap<>();
+
+    // Scheduled cleanup for rate limit buckets
+    private final ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r);
+        t.setName("rate-limit-cleanup");
+        t.setDaemon(true);
+        return t;
+    });
 
     // Cache with timestamp
     private final AtomicReference<CachedResponse> cache = new AtomicReference<>();
@@ -115,6 +130,32 @@ public class SupportRestApi extends RestApiBase {
             .help("Age of cached response in seconds")
             .register();
 
+    private static final Gauge rateLimitBucketCount = Gauge.build()
+            .name("support_rate_limit_buckets")
+            .help("Number of active rate limit buckets")
+            .register();
+
+    /**
+     * Rate limit entry with last access tracking for cleanup.
+     */
+    private static class RateLimitEntry {
+        final Bucket bucket;
+        volatile long lastAccessTime;
+
+        RateLimitEntry(Bucket bucket) {
+            this.bucket = bucket;
+            this.lastAccessTime = System.currentTimeMillis();
+        }
+
+        void touch() {
+            this.lastAccessTime = System.currentTimeMillis();
+        }
+
+        boolean isExpired(long ttlMs) {
+            return System.currentTimeMillis() - lastAccessTime > ttlMs;
+        }
+    }
+
     private static class CachedResponse {
         final SupportChatExport data;
         final long timestamp;
@@ -132,6 +173,35 @@ public class SupportRestApi extends RestApiBase {
     public SupportRestApi(ChatService chatService, UserProfileService userProfileService) {
         this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
         this.userProfileService = userProfileService;
+
+        // Schedule periodic cleanup of expired rate limit buckets
+        cleanupScheduler.scheduleAtFixedRate(this::cleanupExpiredBuckets,
+                CLEANUP_INTERVAL_SECONDS, CLEANUP_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Removes rate limit buckets that haven't been accessed within the TTL.
+     * This prevents unbounded memory growth from unique client identifiers.
+     */
+    private void cleanupExpiredBuckets() {
+        try {
+            int removedCount = 0;
+            Iterator<Map.Entry<String, RateLimitEntry>> iterator = rateLimitBuckets.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, RateLimitEntry> entry = iterator.next();
+                if (entry.getValue().isExpired(RATE_LIMIT_BUCKET_TTL_MS)) {
+                    iterator.remove();
+                    removedCount++;
+                }
+            }
+            if (removedCount > 0) {
+                log.debug("Cleaned up {} expired rate limit buckets, {} remaining",
+                        removedCount, rateLimitBuckets.size());
+            }
+            rateLimitBucketCount.set(rateLimitBuckets.size());
+        } catch (Exception e) {
+            log.warn("Error during rate limit bucket cleanup", e);
+        }
     }
 
     private Bucket createRateLimitBucket() {
@@ -140,7 +210,49 @@ public class SupportRestApi extends RestApiBase {
                 .build();
     }
 
+    /**
+     * Gets a client identifier from the request context.
+     * Uses X-Forwarded-For header if available, otherwise generates a hash-based identifier
+     * to prevent all requests sharing a single bucket.
+     */
+    private String getClientIdentifier(ContainerRequestContext requestContext) {
+        String forwardedFor = requestContext.getHeaderString("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isEmpty()) {
+            // Take first IP if multiple proxies, sanitize for safety
+            String clientIp = forwardedFor.split(",")[0].trim();
+            // Basic validation: only allow alphanumeric, dots, and colons (IPv6)
+            if (clientIp.matches("[a-fA-F0-9.:]+")) {
+                return clientIp;
+            }
+        }
+
+        // Generate identifier from available request properties to avoid shared bucket
+        String userAgent = requestContext.getHeaderString("User-Agent");
+        String acceptLanguage = requestContext.getHeaderString("Accept-Language");
+        int hash = 0;
+        if (userAgent != null) {
+            hash = hash * 31 + userAgent.hashCode();
+        }
+        if (acceptLanguage != null) {
+            hash = hash * 31 + acceptLanguage.hashCode();
+        }
+        // Use absolute value and prefix to make it clear this is a generated ID
+        return "client-" + Math.abs(hash);
+    }
+
     public void shutdown() {
+        // Shutdown cleanup scheduler
+        cleanupScheduler.shutdown();
+        try {
+            if (!cleanupScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                cleanupScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            cleanupScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        // Shutdown async executor
         asyncExecutor.shutdown();
         try {
             if (!asyncExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -150,6 +262,18 @@ public class SupportRestApi extends RestApiBase {
             asyncExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * Adds security headers to the response builder.
+     */
+    private Response.ResponseBuilder addSecurityHeaders(Response.ResponseBuilder builder) {
+        return builder
+                .header("X-Content-Type-Options", "nosniff")
+                .header("X-Frame-Options", "DENY")
+                .header("Referrer-Policy", "no-referrer")
+                .header("Cache-Control", "no-store, no-cache, must-revalidate")
+                .header("Pragma", "no-cache");
     }
 
     @GET
@@ -213,7 +337,7 @@ public class SupportRestApi extends RestApiBase {
                     ),
                     @ApiResponse(
                             responseCode = "503",
-                            description = "Support chat service not available"
+                            description = "Support chat service not available or too many clients"
                     ),
                     @ApiResponse(
                             responseCode = "500",
@@ -228,27 +352,40 @@ public class SupportRestApi extends RestApiBase {
         asyncResponse.setTimeout(30, TimeUnit.SECONDS);
         asyncResponse.setTimeoutHandler(ar -> {
             requestTotal.labels("timeout").inc();
-            ar.resume(Response.status(408).entity("Request timeout").build());
+            ar.resume(addSecurityHeaders(Response.status(408))
+                    .entity("Request timeout")
+                    .build());
         });
 
         Histogram.Timer timer = requestDuration.labels("unknown").startTimer();
 
         try {
-            // Rate limiting check - get client IP from request context
-            String clientIp = requestContext.getHeaderString("X-Forwarded-For");
-            if (clientIp == null || clientIp.isEmpty()) {
-                clientIp = "unknown";  // Fallback for localhost or missing header
-            } else {
-                // Take first IP if multiple proxies
-                clientIp = clientIp.split(",")[0].trim();
-            }
-            Bucket bucket = rateLimitBuckets.computeIfAbsent(clientIp, k -> createRateLimitBucket());
+            // Get client identifier for rate limiting
+            String clientId = getClientIdentifier(requestContext);
 
-            if (!bucket.tryConsume(1)) {
-                log.warn("Rate limit exceeded for IP: {}", clientIp);
+            // Check if we've exceeded max buckets (DoS protection)
+            if (rateLimitBuckets.size() >= MAX_RATE_LIMIT_BUCKETS &&
+                    !rateLimitBuckets.containsKey(clientId)) {
+                log.warn("Max rate limit buckets reached ({}), rejecting new client",
+                        MAX_RATE_LIMIT_BUCKETS);
+                requestTotal.labels("error").inc();
+                timer.close();
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Service temporarily unavailable due to high load")
+                        .build());
+                return;
+            }
+
+            // Get or create rate limit bucket with access tracking
+            RateLimitEntry entry = rateLimitBuckets.computeIfAbsent(clientId,
+                    k -> new RateLimitEntry(createRateLimitBucket()));
+            entry.touch();  // Update last access time
+
+            if (!entry.bucket.tryConsume(1)) {
+                log.warn("Rate limit exceeded for client: {}", LoggingUtils.sanitizeForLog(clientId));
                 requestTotal.labels("rate_limited").inc();
                 timer.close();
-                asyncResponse.resume(Response.status(429)
+                asyncResponse.resume(addSecurityHeaders(Response.status(429))
                         .entity("Rate limit exceeded. Try again in 1 minute.")
                         .build());
                 return;
@@ -259,7 +396,7 @@ public class SupportRestApi extends RestApiBase {
                 log.error("Support chat service is not available");
                 requestTotal.labels("error").inc();
                 timer.close();
-                asyncResponse.resume(Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
                         .entity("Support chat service not available")
                         .build());
                 return;
@@ -273,12 +410,10 @@ public class SupportRestApi extends RestApiBase {
                 requestTotal.labels("success").inc();
                 cacheAge.set(cacheAgeMs / 1000.0);
                 timer.observeDuration();
-                asyncResponse.resume(Response.ok(cached.data)
+                asyncResponse.resume(addSecurityHeaders(Response.ok(cached.data))
                         .header("X-Cache-Hit", "true")
                         .header("X-Cache-Age", cacheAgeMs)
                         .header("Content-Type", "application/json; charset=UTF-8")
-                        .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                        .header("Pragma", "no-cache")
                         .build());
                 return;
             }
@@ -288,7 +423,7 @@ public class SupportRestApi extends RestApiBase {
                 log.warn("No support channels found for export");
                 requestTotal.labels("error").inc();
                 timer.close();
-                asyncResponse.resume(Response.status(Response.Status.NOT_FOUND)
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
                         .entity("No support channels found")
                         .build());
                 return;
@@ -322,7 +457,8 @@ public class SupportRestApi extends RestApiBase {
                     // Look up author nickname from user profile
                     String authorId = message.getAuthorUserProfileId();
                     if (authorId == null) {
-                        log.warn("Message {} has null authorId, skipping", message.getId());
+                        log.warn("Message {} has null authorId, skipping",
+                                LoggingUtils.truncateId(message.getId()));
                         continue;
                     }
                     String authorNickname = userProfileService.findUserProfile(authorId)
@@ -398,20 +534,18 @@ public class SupportRestApi extends RestApiBase {
 
                 requestTotal.labels("success").inc();
                 timer.observeDuration();
-                asyncResponse.resume(Response.ok(export)
+                asyncResponse.resume(addSecurityHeaders(Response.ok(export))
                         .header("X-Cache-Hit", "false")
                         .header("Content-Type", "application/json; charset=UTF-8")
                         .header("Content-Disposition", String.format("attachment; filename=\"%s\"", filename))
-                        .header("Cache-Control", "no-store, no-cache, must-revalidate")
-                        .header("Pragma", "no-cache")
                         .build());
             })
             .exceptionally(ex -> {
                 log.error("Error exporting support chat messages", ex);
                 requestTotal.labels("error").inc();
                 timer.observeDuration();
-                asyncResponse.resume(Response.status(500)
-                        .entity("Internal error: " + ex.getMessage())
+                asyncResponse.resume(addSecurityHeaders(Response.status(500))
+                        .entity("Internal server error")
                         .build());
                 return null;
             });
@@ -420,8 +554,8 @@ public class SupportRestApi extends RestApiBase {
             log.error("Error setting up export", e);
             requestTotal.labels("error").inc();
             timer.close();
-            asyncResponse.resume(Response.status(500)
-                    .entity("Failed to export support chat messages: " + e.getMessage())
+            asyncResponse.resume(addSecurityHeaders(Response.status(500))
+                    .entity("Internal server error")
                     .build());
         }
     }

@@ -30,6 +30,7 @@ import bisq.common.observable.Pin;
 import bisq.common.observable.collection.CollectionObserver;
 import bisq.api.dto.presentation.offerbook.OfferItemPresentationDto;
 import bisq.api.dto.presentation.offerbook.OfferItemPresentationDtoFactory;
+import bisq.api.util.LoggingUtils;
 import bisq.user.UserService;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfileService;
@@ -138,14 +139,6 @@ public class OffersWebSocketService extends BaseWebSocketService {
         });
     }
 
-    private OfferItemPresentationDto createOfferListItemDto(BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
-        return OfferItemPresentationDtoFactory.create(userProfileService,
-                userIdentityService,
-                reputationService,
-                marketPriceService,
-                bisqEasyOfferbookMessage);
-    }
-
     /**
      * Creates an OfferItemPresentationDto safely for WebSocket updates,
      * delegating to the factory's createSafe method.
@@ -168,21 +161,11 @@ public class OffersWebSocketService extends BaseWebSocketService {
         if (result.isEmpty() && log.isDebugEnabled()) {
             // Security: Truncate IDs for safe logging
             String offerId = bisqEasyOfferbookMessage.getBisqEasyOffer()
-                    .map(offer -> truncateId(offer.getId()))
+                    .map(offer -> LoggingUtils.truncateId(offer.getId()))
                     .orElse("unknown");
-            String profileId = truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
+            String profileId = LoggingUtils.truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
             log.debug("WebSocket: Skipping offer {} - user profile {} not available", offerId, profileId);
         }
         return result;
-    }
-
-    /**
-     * Truncates an ID for safe logging (first 8 characters + "...").
-     */
-    private String truncateId(String id) {
-        if (id == null || id.length() <= 8) {
-            return id;
-        }
-        return id.substring(0, 8) + "...";
     }
 }

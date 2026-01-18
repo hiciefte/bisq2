@@ -33,6 +33,7 @@ import bisq.api.dto.DtoMappings;
 import bisq.api.dto.presentation.offerbook.OfferItemPresentationDto;
 import bisq.api.dto.presentation.offerbook.OfferItemPresentationDtoFactory;
 import bisq.api.rest_api.endpoints.RestApiBase;
+import bisq.api.util.LoggingUtils;
 import bisq.offer.Direction;
 import bisq.offer.amount.spec.AmountSpec;
 import bisq.offer.bisq_easy.BisqEasyOffer;
@@ -330,14 +331,6 @@ public class OfferbookRestApi extends RestApiBase {
                 );
     }
 
-    private OfferItemPresentationDto createOfferListItemDto(BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
-        return OfferItemPresentationDtoFactory.create(userProfileService,
-                userIdentityService,
-                reputationService,
-                marketPriceService,
-                bisqEasyOfferbookMessage);
-    }
-
     /**
      * Creates an OfferItemPresentationDto safely, delegating to the factory's
      * createSafe method and logging any skipped offers.
@@ -360,22 +353,11 @@ public class OfferbookRestApi extends RestApiBase {
         if (result.isEmpty() && log.isDebugEnabled()) {
             // Security: Truncate IDs to prevent log injection and limit data exposure
             String offerId = bisqEasyOfferbookMessage.getBisqEasyOffer()
-                    .map(offer -> truncateId(offer.getId()))
+                    .map(offer -> LoggingUtils.truncateId(offer.getId()))
                     .orElse("unknown");
-            String profileId = truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
+            String profileId = LoggingUtils.truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
             log.debug("Skipping offer {} - user profile {} not available", offerId, profileId);
         }
         return result;
-    }
-
-    /**
-     * Truncates an ID for safe logging (first 8 characters + "...").
-     * Prevents log injection and limits sensitive data exposure.
-     */
-    private String truncateId(String id) {
-        if (id == null || id.length() <= 8) {
-            return id;
-        }
-        return id.substring(0, 8) + "...";
     }
 }
