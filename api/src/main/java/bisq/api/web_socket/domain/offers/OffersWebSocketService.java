@@ -119,15 +119,7 @@ public class OffersWebSocketService extends BaseWebSocketService {
                 .flatMap(channel ->
                         channel.getChatMessages().stream()
                                 .filter(BisqEasyOfferbookMessage::hasBisqEasyOffer)
-                                .map(message -> {
-                                    try {
-                                        return createOfferListItemDto(message);
-                                    } catch (Exception e) {
-                                        log.error("Failed to create OfferListItemDto", e);
-                                        return null;
-                                    }
-                                })
-                                .filter(Objects::nonNull))
+                                .flatMap(message -> createOfferItemDtoSafe(message).stream()))
                 .collect(Collectors.toCollection(ArrayList::new));
         return toJson(payload);
     }
@@ -135,13 +127,14 @@ public class OffersWebSocketService extends BaseWebSocketService {
     private void send(String quoteCurrencyCode,
                       BisqEasyOfferbookMessage bisqEasyOfferbookMessage,
                       ModificationType modificationType) {
-        OfferItemPresentationDto item = createOfferListItemDto(bisqEasyOfferbookMessage);
-        // The payload is defined as a list to support batch data delivery at subscribe.
-        ArrayList<OfferItemPresentationDto> payload = new ArrayList<>(List.of(item));
-        toJson(payload).ifPresent(json -> {
-            subscriberRepository.findSubscribers(topic, quoteCurrencyCode)
-                    .ifPresent(subscribers -> subscribers
-                            .forEach(subscriber -> send(json, subscriber, modificationType)));
+        createOfferItemDtoSafe(bisqEasyOfferbookMessage).ifPresent(item -> {
+            // The payload is defined as a list to support batch data delivery at subscribe.
+            ArrayList<OfferItemPresentationDto> payload = new ArrayList<>(List.of(item));
+            toJson(payload).ifPresent(json -> {
+                subscriberRepository.findSubscribers(topic, quoteCurrencyCode)
+                        .ifPresent(subscribers -> subscribers
+                                .forEach(subscriber -> send(json, subscriber, modificationType)));
+            });
         });
     }
 
@@ -151,5 +144,45 @@ public class OffersWebSocketService extends BaseWebSocketService {
                 reputationService,
                 marketPriceService,
                 bisqEasyOfferbookMessage);
+    }
+
+    /**
+     * Creates an OfferItemPresentationDto safely for WebSocket updates,
+     * delegating to the factory's createSafe method.
+     * <p>
+     * Returns Optional.empty() if the offer cannot be processed, preventing
+     * the WebSocket connection from failing due to incomplete P2P network data.
+     *
+     * @param bisqEasyOfferbookMessage the offerbook message to process
+     * @return Optional containing the DTO if successful, empty if skipped
+     */
+    private Optional<OfferItemPresentationDto> createOfferItemDtoSafe(
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+        Optional<OfferItemPresentationDto> result = OfferItemPresentationDtoFactory.createSafe(
+                userProfileService,
+                userIdentityService,
+                reputationService,
+                marketPriceService,
+                bisqEasyOfferbookMessage);
+
+        if (result.isEmpty() && log.isDebugEnabled()) {
+            // Security: Truncate IDs for safe logging
+            String offerId = bisqEasyOfferbookMessage.getBisqEasyOffer()
+                    .map(offer -> truncateId(offer.getId()))
+                    .orElse("unknown");
+            String profileId = truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
+            log.debug("WebSocket: Skipping offer {} - user profile {} not available", offerId, profileId);
+        }
+        return result;
+    }
+
+    /**
+     * Truncates an ID for safe logging (first 8 characters + "...").
+     */
+    private String truncateId(String id) {
+        if (id == null || id.length() <= 8) {
+            return id;
+        }
+        return id.substring(0, 8) + "...";
     }
 }

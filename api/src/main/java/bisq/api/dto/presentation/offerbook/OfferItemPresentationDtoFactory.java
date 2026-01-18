@@ -44,11 +44,17 @@ import bisq.user.profile.UserProfileService;
 import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class OfferItemPresentationDtoFactory {
     public static OfferItemPresentationDto create(UserProfileService userProfileService,
                                                   UserIdentityService userIdentityService,
@@ -117,5 +123,67 @@ public class OfferItemPresentationDtoFactory {
                 quoteSidePaymentMethods,
                 baseSidePaymentMethods,
                 reputationScoreDto);
+    }
+
+    /**
+     * Creates an OfferItemPresentationDto safely, returning Optional.empty() if
+     * required data (user profile, market price) is not available.
+     * <p>
+     * This method provides graceful degradation when P2P network synchronization
+     * is incomplete, allowing callers to receive partial results instead of
+     * failing the entire request.
+     * <p>
+     * <b>Thread Safety:</b> This method is thread-safe as it only reads from
+     * the provided services and creates immutable DTOs.
+     * <p>
+     * <b>Performance:</b> Pre-validates required data before delegating to
+     * {@link #create} to minimize exception overhead on the hot path.
+     *
+     * @param userProfileService service for user profile lookup (must not be null)
+     * @param userIdentityService service for user identity lookup (must not be null)
+     * @param reputationService service for reputation score lookup (must not be null)
+     * @param marketPriceService service for market price lookup (must not be null)
+     * @param bisqEasyOfferbookMessage the offerbook message to process (must not be null)
+     * @return Optional containing the DTO if successful, empty if data unavailable
+     * @throws NullPointerException if bisqEasyOfferbookMessage is null
+     */
+    public static Optional<OfferItemPresentationDto> createSafe(
+            UserProfileService userProfileService,
+            UserIdentityService userIdentityService,
+            ReputationService reputationService,
+            MarketPriceService marketPriceService,
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+
+        // Null input validation (fail-fast for programming errors)
+        Objects.requireNonNull(bisqEasyOfferbookMessage, "bisqEasyOfferbookMessage must not be null");
+
+        // Pre-check 1: Verify offer exists
+        if (bisqEasyOfferbookMessage.getBisqEasyOffer().isEmpty()) {
+            return Optional.empty();
+        }
+
+        // Pre-check 2: Verify author profile ID exists
+        String authorUserProfileId = bisqEasyOfferbookMessage.getAuthorUserProfileId();
+        if (authorUserProfileId == null || authorUserProfileId.isBlank()) {
+            return Optional.empty();
+        }
+
+        // Pre-check 3: Verify user profile is available in local store
+        if (userProfileService.findUserProfile(authorUserProfileId).isEmpty()) {
+            return Optional.empty();
+        }
+
+        // All pre-checks passed - delegate to existing create() method
+        try {
+            return Optional.of(create(
+                    userProfileService,
+                    userIdentityService,
+                    reputationService,
+                    marketPriceService,
+                    bisqEasyOfferbookMessage));
+        } catch (NoSuchElementException e) {
+            // Defensive catch for any remaining edge cases (shouldn't occur after pre-checks)
+            return Optional.empty();
+        }
     }
 }

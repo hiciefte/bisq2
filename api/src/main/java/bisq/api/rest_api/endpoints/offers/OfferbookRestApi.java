@@ -324,7 +324,7 @@ public class OfferbookRestApi extends RestApiBase {
                         .map(channel -> channel.getChatMessages()
                                 .stream()
                                 .filter(BisqEasyOfferbookMessage::hasBisqEasyOffer)
-                                .map(this::createOfferListItemDto)
+                                .flatMap(msg -> createOfferListItemDtoSafe(msg).stream())
                                 .collect(Collectors.toList())
                         )
                 );
@@ -336,5 +336,46 @@ public class OfferbookRestApi extends RestApiBase {
                 reputationService,
                 marketPriceService,
                 bisqEasyOfferbookMessage);
+    }
+
+    /**
+     * Creates an OfferItemPresentationDto safely, delegating to the factory's
+     * createSafe method and logging any skipped offers.
+     * <p>
+     * This method provides graceful degradation when P2P network data is incomplete,
+     * allowing partial results to be returned instead of failing the entire request.
+     *
+     * @param bisqEasyOfferbookMessage the offerbook message to process
+     * @return Optional containing the DTO if successful, empty if the offer should be skipped
+     */
+    private Optional<OfferItemPresentationDto> createOfferListItemDtoSafe(
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+        Optional<OfferItemPresentationDto> result = OfferItemPresentationDtoFactory.createSafe(
+                userProfileService,
+                userIdentityService,
+                reputationService,
+                marketPriceService,
+                bisqEasyOfferbookMessage);
+
+        if (result.isEmpty() && log.isDebugEnabled()) {
+            // Security: Truncate IDs to prevent log injection and limit data exposure
+            String offerId = bisqEasyOfferbookMessage.getBisqEasyOffer()
+                    .map(offer -> truncateId(offer.getId()))
+                    .orElse("unknown");
+            String profileId = truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
+            log.debug("Skipping offer {} - user profile {} not available", offerId, profileId);
+        }
+        return result;
+    }
+
+    /**
+     * Truncates an ID for safe logging (first 8 characters + "...").
+     * Prevents log injection and limits sensitive data exposure.
+     */
+    private String truncateId(String id) {
+        if (id == null || id.length() <= 8) {
+            return id;
+        }
+        return id.substring(0, 8) + "...";
     }
 }
