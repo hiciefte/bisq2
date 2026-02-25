@@ -256,7 +256,7 @@ public final class SupportMarkdownParser {
 
         String label = line.substring(startIndex + 1, textEnd).trim();
         String url = line.substring(textEnd + 2, urlEnd).trim();
-        if (label.isEmpty() || !MarkdownSecurityUtils.isSafeHttpUrl(url)) {
+        if (label.isEmpty() || !isSafeDisplayText(label) || !MarkdownSecurityUtils.isSafeHttpUrl(url)) {
             return null;
         }
 
@@ -280,7 +280,7 @@ public final class SupportMarkdownParser {
 
         String alt = line.substring(startIndex + 2, textEnd).trim();
         String url = line.substring(textEnd + 2, urlEnd).trim();
-        if (!isSupportedImageUrl(url)) {
+        if (!isSafeDisplayText(alt) || !isSupportedImageUrl(url)) {
             return null;
         }
 
@@ -351,6 +351,10 @@ public final class SupportMarkdownParser {
         char next = line.charAt(index + 1);
         return next == '\\' || next == '*' || next == '_' || next == '~' || next == '`'
                 || next == '[' || next == ']' || next == '(' || next == ')' || next == '!';
+    }
+
+    private static boolean isSafeDisplayText(String value) {
+        return value != null && !MarkdownSecurityUtils.containsDangerousCharacters(value);
     }
 
     private static void flushTextSegment(List<SupportMarkdownDocument.Segment> segments, StringBuilder plainText) {

@@ -176,4 +176,30 @@ class SupportMarkdownParserTest {
                         "[safe](https://bisq.network/\u202Eattack)",
                         null));
     }
+
+    @Test
+    void rejectsLinkLabelsContainingBidiControlCharacters() {
+        SupportMarkdownDocument document = SupportMarkdownParser.parse(
+                "[safe\u202Elabel](https://bisq.network)");
+
+        assertThat(document.hasMarkdownFormatting()).isFalse();
+        assertThat(document.lines().get(0).segments()).containsExactly(
+                new SupportMarkdownDocument.Segment(
+                        SupportMarkdownDocument.SegmentType.TEXT,
+                        "[safe\u202Elabel](https://bisq.network)",
+                        null));
+    }
+
+    @Test
+    void rejectsImageAltTextContainingBidiControlCharacters() {
+        SupportMarkdownDocument document = SupportMarkdownParser.parse(
+                "![FAQ\u202E](bisq-icon://faq)");
+
+        assertThat(document.hasMarkdownFormatting()).isFalse();
+        assertThat(document.lines().get(0).segments()).containsExactly(
+                new SupportMarkdownDocument.Segment(
+                        SupportMarkdownDocument.SegmentType.TEXT,
+                        "![FAQ\u202E](bisq-icon://faq)",
+                        null));
+    }
 }
