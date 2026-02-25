@@ -15,20 +15,15 @@
  * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package bisq.api.web_socket.subscription;
+package bisq.api.dto.chat.support;
 
-public enum Topic {
-    MARKET_PRICE,
-    NUM_OFFERS,
-    OFFERS,
-    TRADES,
-    TRADE_PROPERTIES,
-    TRADE_CHAT_MESSAGES,
-    CHAT_REACTIONS,
-    SUPPORT_CHAT_MESSAGES,
-    SUPPORT_CHAT_REACTIONS,
-    REPUTATION,
-    NUM_USER_PROFILES,
-    ALERT_NOTIFICATIONS,
-    TRADE_RESTRICTING_ALERT,
+import javax.annotation.Nullable;
+
+public record SupportChatMessageDto(String messageId,
+                                    String channelId,
+                                    String senderUserProfileId,
+                                    @Nullable String text,
+                                    long timestamp,
+                                    boolean isMyMessage,
+                                    @Nullable String citationMessageId) {
 }

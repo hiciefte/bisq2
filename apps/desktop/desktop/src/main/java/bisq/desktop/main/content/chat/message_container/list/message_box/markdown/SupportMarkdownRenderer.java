@@ -54,8 +54,8 @@ public final class SupportMarkdownRenderer {
             if (line.type() == SupportMarkdownDocument.LineType.HEADING_3) {
                 textFlow.getStyleClass().add("chat-markdown-heading-3-line");
             }
-            textFlow.prefWidthProperty().bind(root.maxWidthProperty());
-            textFlow.maxWidthProperty().bind(root.maxWidthProperty());
+            textFlow.prefWidthProperty().bind(root.widthProperty());
+            textFlow.maxWidthProperty().bind(root.widthProperty());
 
             for (SupportMarkdownDocument.Segment segment : line.segments()) {
                 textFlow.getChildren().add(createNode(segment, line.type()));

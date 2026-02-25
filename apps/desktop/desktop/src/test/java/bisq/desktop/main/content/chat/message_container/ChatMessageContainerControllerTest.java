@@ -27,6 +27,7 @@ import bisq.desktop.common.Transitions;
 import bisq.desktop.ServiceProvider;
 import bisq.desktop.testutil.TestFxHeadlessSupport;
 import bisq.settings.SettingsService;
+import bisq.user.banned.BannedUserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.profile.UserProfile;
 import org.junit.jupiter.api.AfterEach;
@@ -72,11 +73,13 @@ class ChatMessageContainerControllerTest extends TestFxHeadlessSupport {
 
         when(serviceProvider.getUserService().getUserIdentityService().getUserIdentities())
                 .thenReturn(new ObservableSet<>());
-        UserProfile userProfile = mock(UserProfile.class);
         UserIdentity selectedUserIdentity = mock(UserIdentity.class);
+        UserProfile userProfile = mock(UserProfile.class);
         when(selectedUserIdentity.getUserProfile()).thenReturn(userProfile);
         when(serviceProvider.getUserService().getUserIdentityService().getSelectedUserIdentity()).thenReturn(selectedUserIdentity);
-        when(serviceProvider.getUserService().getBannedUserService().isUserProfileBanned(userProfile)).thenReturn(false);
+        BannedUserService bannedUserService = mock(BannedUserService.class);
+        when(serviceProvider.getUserService().getBannedUserService()).thenReturn(bannedUserService);
+        when(bannedUserService.isUserProfileBanned(userProfile)).thenReturn(false);
 
         CommonPublicChatChannel channel = new CommonPublicChatChannel(ChatChannelDomain.SUPPORT, SubDomain.SUPPORT_SUPPORT);
         TestableController controller = new TestableController(serviceProvider, ChatChannelDomain.SUPPORT);
