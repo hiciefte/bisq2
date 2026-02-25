@@ -163,8 +163,13 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
 
     private void stopAutomationServer() {
         if (desktopAutomationServer != null) {
-            desktopAutomationServer.stop();
-            desktopAutomationServer = null;
+            try {
+                desktopAutomationServer.stop();
+            } catch (Throwable t) {
+                log.error("Failed to stop DesktopAutomationServer during shutdown", t);
+            } finally {
+                desktopAutomationServer = null;
+            }
         }
     }
 
@@ -190,7 +195,10 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
 
     private void shutdownAfterStartupFailure(String message, Throwable throwable) {
         log.error(message, throwable);
-        applicationService.shutdown().thenAccept(result -> {
+        applicationService.shutdown().whenComplete((result, shutdownError) -> {
+            if (shutdownError != null) {
+                log.error("Application shutdown failed after startup failure", shutdownError);
+            }
             if (Platform.isFxApplicationThread()) {
                 Platform.exit();
             } else {

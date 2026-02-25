@@ -24,6 +24,7 @@ DESKTOP_BIN="${REPO_DIR}/apps/desktop/desktop-app/build/install/desktop-app/bin/
 # Example:
 # HARNESS_NETWORK_OPTS="-Dapplication.network.supportedTransportTypes.0=CLEAR -Dapplication.network.configByTransportType.clear.defaultNodePort=18101 -Dapplication.network.seedAddressByTransportType.clear.0=127.0.0.1:18000 -Dapplication.network.seedAddressByTransportType.clear.1=127.0.0.1:18000"
 HARNESS_NETWORK_OPTS="${HARNESS_NETWORK_OPTS:-}"
+LOG_LINES="${LOG_LINES:-200}"
 
 AUTOMATION_URL="http://${AUTOMATION_HOST}:${AUTOMATION_PORT}"
 AUTOMATION_HEADER_NAME="X-Bisq-Automation-Token"
@@ -50,7 +51,7 @@ Environment overrides:
   HARNESS_DIR, DATA_DIR, ARTIFACTS_DIR, APP_NAME
   AUTOMATION_HOST, AUTOMATION_PORT
   WINDOW_WIDTH, WINDOW_HEIGHT, P2P_PORT, HARNESS_RESET_ON_START
-  HARNESS_NETWORK_OPTS
+  HARNESS_NETWORK_OPTS, LOG_LINES
 EOF
 }
 
@@ -76,8 +77,11 @@ require_token() {
 generate_token() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 24
+  elif [[ -r /dev/urandom ]]; then
+    od -An -tx1 -N24 /dev/urandom | tr -d ' \n'
   else
-    printf 'h%(%s)T-%s-%s\n' -1 "$$" "$RANDOM"
+    echo "No secure token generator available (missing openssl and /dev/urandom)." >&2
+    return 1
   fi
 }
 
@@ -85,19 +89,30 @@ is_port_bound() {
   local port="$1"
   if command -v lsof >/dev/null 2>&1; then
     lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -nlt "( sport = :${port} )" 2>/dev/null | grep -Eq "[\\.:]${port}[[:space:]]"
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -an 2>/dev/null | grep -E "LISTEN|LISTENING" | grep -Eq "[\\.:]${port}[[:space:]]"
   else
-    return 1
+    echo "No port inspection tool available (need lsof, ss, or netstat)." >&2
+    return 2
   fi
 }
 
 find_free_port() {
   local start="${1:-19101}"
   local end="${2:-19250}"
-  local port
+  local port status
   for port in $(seq "${start}" "${end}"); do
-    if ! is_port_bound "${port}"; then
+    is_port_bound "${port}"
+    status=$?
+    if (( status == 0 )); then
+      continue
+    elif (( status == 1 )); then
       echo "${port}"
       return 0
+    else
+      return "${status}"
     fi
   done
   return 1
@@ -126,7 +141,13 @@ api_request() {
 
 require_ok_status_json() {
   local response="${1:-}"
-  if [[ "${response}" != *"\"status\":\"ok\""* ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "${response}" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+      echo "Automation response did not contain status=ok: ${response}" >&2
+      return 1
+    fi
+  elif [[ ! "${response}" =~ \"status\"[[:space:]]*:[[:space:]]*\"ok\" ]]; then
+    echo "Automation response did not contain status=ok: ${response}" >&2
     return 1
   fi
 }
@@ -181,6 +202,7 @@ start() {
   local token
   token="$(generate_token)"
   printf '%s\n' "${token}" > "${TOKEN_FILE}"
+  chmod 600 "${TOKEN_FILE}"
 
   local automation_opts
   automation_opts="-Dapplication.desktop.automation.enabled=true -Dapplication.desktop.automation.bind.host=${AUTOMATION_HOST} -Dapplication.desktop.automation.bind.port=${AUTOMATION_PORT} -Dapplication.desktop.automation.token=${token} -Dapplication.desktop.automation.artifacts.dir=${ARTIFACTS_DIR} -Dapplication.desktop.automation.window.width=${WINDOW_WIDTH} -Dapplication.desktop.automation.window.height=${WINDOW_HEIGHT}"
@@ -191,7 +213,7 @@ start() {
     local selected_port
     selected_port="${P2P_PORT}"
     if [[ -z "${selected_port}" ]]; then
-      selected_port="$(find_free_port 19101 19250)"
+      selected_port="$(find_free_port 19101 19250 || true)"
     fi
     if [[ -z "${selected_port}" ]]; then
       echo "No free P2P port found in 19101-19250; set P2P_PORT or HARNESS_NETWORK_OPTS."
@@ -207,7 +229,7 @@ start() {
   : > "${LOG_FILE}"
   (
     cd "${REPO_DIR}"
-    env JAVA_OPTS="${combined_opts}" \
+    exec env JAVA_OPTS="${combined_opts}" \
       "${DESKTOP_BIN}" \
       --app-name="${APP_NAME}" \
       --data-dir="${DATA_DIR}" >> "${LOG_FILE}" 2>&1
@@ -220,7 +242,12 @@ start() {
     status
   else
     echo "Harness failed to become healthy. Last log lines:"
-    tail -n 120 "${LOG_FILE}" || true
+    tail -n "${LOG_LINES}" "${LOG_FILE}" || true
+    if is_running; then
+      stop >/dev/null 2>&1 || true
+    else
+      rm -f "${PID_FILE}" "${TOKEN_FILE}" >/dev/null 2>&1 || true
+    fi
     exit 1
   fi
 }
@@ -396,9 +423,12 @@ run_scenario() {
       continue
     fi
 
-    eval "set -- ${line}"
-    local cmd="${1:-}"
-    shift || true
+    local cmd="${line%%[[:space:]]*}"
+    local args=""
+    if [[ "${line}" == *[[:space:]]* ]]; then
+      args="${line#${cmd}}"
+      args="${args#"${args%%[![:space:]]*}"}"
+    fi
 
     case "${cmd}" in
       health)
@@ -408,24 +438,44 @@ run_scenario() {
         nodes
         ;;
       wait-node)
-        wait_node "${1:-}" "${2:-5000}" "${3:-false}"
+        local wait_node_id=""
+        local wait_timeout_ms="5000"
+        local wait_visible="false"
+        read -r wait_node_id wait_timeout_ms wait_visible _ <<< "${args}"
+        wait_node "${wait_node_id}" "${wait_timeout_ms:-5000}" "${wait_visible:-false}"
         ;;
       click)
-        click "${1:-}"
+        local click_id=""
+        read -r click_id _ <<< "${args}"
+        click "${click_id}"
         ;;
       type)
-        local target_id="${1:-}"
-        shift || true
-        type_text "${target_id}" "$*"
+        if [[ ! "${args}" =~ ^([^[:space:]]+)[[:space:]]+(.+)$ ]]; then
+          echo "Invalid type command at line ${line_no}: ${line}"
+          return 1
+        fi
+        local target_id="${BASH_REMATCH[1]}"
+        local text="${BASH_REMATCH[2]}"
+        if [[ "${text}" =~ ^\"(.*)\"$ ]]; then
+          text="${BASH_REMATCH[1]}"
+        elif [[ "${text}" =~ ^\'(.*)\'$ ]]; then
+          text="${BASH_REMATCH[1]}"
+        fi
+        type_text "${target_id}" "${text}"
         ;;
       press-key)
-        press_key "${1:-}" "${2:-}"
+        local key=""
+        local press_id=""
+        read -r key press_id _ <<< "${args}"
+        press_key "${key}" "${press_id}"
         ;;
       screenshot)
-        screenshot "${1:-shot}"
+        local shot_name="shot"
+        read -r shot_name _ <<< "${args}"
+        screenshot "${shot_name:-shot}"
         ;;
       sleep)
-        local ms="${1:-}"
+        local ms="${args%%[[:space:]]*}"
         if [[ ! "${ms}" =~ ^[0-9]+$ ]]; then
           echo "Invalid sleep value at line ${line_no}: ${line}"
           return 1
@@ -445,11 +495,11 @@ run_scenario() {
 }
 
 logs() {
-  sed -n '1,200p' "${LOG_FILE}"
+  sed -n "1,${LOG_LINES}p" "${LOG_FILE}"
 }
 
 tail_logs() {
-  tail -n 120 "${LOG_FILE}"
+  tail -n "${LOG_LINES}" "${LOG_FILE}"
 }
 
 restart() {

@@ -5,7 +5,7 @@ _Note: This document is outdated_
 The wrapper can update itself using:
 
 ```
-./gradlew wrapper --gradle-version 8.13 \
+./gradlew wrapper --gradle-version 8.14.4 \
     --distribution-type bin
 ```
 
@@ -98,10 +98,10 @@ compileJava {
 ```
 
 [^1]: https://gradle.org/release-checksums/
-[^2]: https://docs.gradle.org/current/userguide/platforms.html#sub:platforms-vs-catalog
-[^3]: https://docs.gradle.org/current/userguide/platforms.html#sub:version-catalog-declaration
-[^4]: https://docs.gradle.org/current/userguide/dependency_management_terminology.html#sub:terminology_dependency_constraint
-[^5]: https://docs.gradle.org/current/userguide/rich_versions.html
-[^6]: https://docs.gradle.org/current/userguide/java_platform_plugin.html
+[^2]: https://docs.gradle.org/8.14/userguide/platforms.html#sub:platforms-vs-catalog
+[^3]: https://docs.gradle.org/8.14/userguide/platforms.html#sub:version-catalog-declaration
+[^4]: https://docs.gradle.org/8.14/userguide/dependency_management_terminology.html#sub:terminology_dependency_constraint
+[^5]: https://docs.gradle.org/8.14/userguide/rich_versions.html
+[^6]: https://docs.gradle.org/8.14/userguide/java_platform_plugin.html
 [^7]: https://docs.oracle.com/en/java/javase/17/jpackage/packaging-overview.html#GUID-786E15C0-2CE7-4BDF-9B2F-AC1C57249134
 [^8]: https://github.com/jjohannes/extra-java-module-info

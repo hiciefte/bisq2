@@ -21,6 +21,8 @@ package bisq.api.web_socket.subscription;
 import bisq.api.web_socket.domain.BaseWebSocketService;
 import bisq.api.web_socket.domain.OpenTradeItemsService;
 import bisq.api.web_socket.domain.chat.reactions.ChatReactionsWebSocketService;
+import bisq.api.web_socket.domain.chat.support.SupportChatMessagesWebSocketService;
+import bisq.api.web_socket.domain.chat.support.SupportChatReactionsWebSocketService;
 import bisq.api.web_socket.domain.chat.trade.TradeChatMessagesWebSocketService;
 import bisq.api.web_socket.domain.market_price.MarketPriceWebSocketService;
 import bisq.api.web_socket.domain.offers.NumOffersWebSocketService;
@@ -30,6 +32,7 @@ import bisq.api.web_socket.domain.trades.TradePropertiesWebSocketService;
 import bisq.api.web_socket.domain.trades.TradesWebSocketService;
 import bisq.api.web_socket.domain.user_profile.NumUserProfilesWebSocketService;
 import bisq.api.web_socket.util.JsonUtil;
+import bisq.chat.ChatChannelDomain;
 import bisq.bisq_easy.BisqEasyService;
 import bisq.bonded_roles.BondedRolesService;
 import bisq.chat.ChatService;
@@ -52,8 +55,11 @@ public class SubscriptionService implements Service {
     private final TradePropertiesWebSocketService tradePropertiesWebSocketService;
     private final TradeChatMessagesWebSocketService tradeChatMessagesWebSocketService;
     private final ChatReactionsWebSocketService chatReactionsWebSocketService;
+    private final SupportChatMessagesWebSocketService supportChatMessagesWebSocketService;
+    private final SupportChatReactionsWebSocketService supportChatReactionsWebSocketService;
     private final ReputationWebSocketService reputationWebSocketService;
     private final NumUserProfilesWebSocketService numUserProfilesWebSocketService;
+    private final SubscriptionRequestParser subscriptionRequestParser;
 
     public SubscriptionService(BondedRolesService bondedRolesService,
                                ChatService chatService,
@@ -73,8 +79,16 @@ public class SubscriptionService implements Service {
                 userService.getUserProfileService());
         chatReactionsWebSocketService = new ChatReactionsWebSocketService(  subscriberRepository,
                 chatService.getBisqEasyOpenTradeChannelService());
+        supportChatMessagesWebSocketService = new SupportChatMessagesWebSocketService(
+                subscriberRepository,
+                chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT),
+                userService.getUserIdentityService());
+        supportChatReactionsWebSocketService = new SupportChatReactionsWebSocketService(
+                subscriberRepository,
+                chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT));
         reputationWebSocketService = new ReputationWebSocketService(subscriberRepository, userService.getReputationService());
         numUserProfilesWebSocketService = new NumUserProfilesWebSocketService(subscriberRepository, userService);
+        subscriptionRequestParser = new SubscriptionRequestParser();
     }
 
     @Override
@@ -86,6 +100,8 @@ public class SubscriptionService implements Service {
                 .thenCompose(e -> tradePropertiesWebSocketService.initialize())
                 .thenCompose(e -> tradeChatMessagesWebSocketService.initialize())
                 .thenCompose(e -> chatReactionsWebSocketService.initialize())
+                .thenCompose(e -> supportChatMessagesWebSocketService.initialize())
+                .thenCompose(e -> supportChatReactionsWebSocketService.initialize())
                 .thenCompose(e -> reputationWebSocketService.initialize())
                 .thenCompose(e -> numUserProfilesWebSocketService.initialize());
     }
@@ -99,6 +115,8 @@ public class SubscriptionService implements Service {
                 .thenCompose(e -> tradePropertiesWebSocketService.shutdown())
                 .thenCompose(e -> tradeChatMessagesWebSocketService.shutdown())
                 .thenCompose(e -> chatReactionsWebSocketService.shutdown())
+                .thenCompose(e -> supportChatMessagesWebSocketService.shutdown())
+                .thenCompose(e -> supportChatReactionsWebSocketService.shutdown())
                 .thenCompose(e -> reputationWebSocketService.shutdown())
                 .thenCompose(e -> numUserProfilesWebSocketService.shutdown());
     }
@@ -108,11 +126,13 @@ public class SubscriptionService implements Service {
     }
 
     public boolean canHandle(String json) {
-        return JsonUtil.hasExpectedJsonClassName(SubscriptionRequest.class, json);
+        return subscriptionRequestParser.canParse(json) ||
+                JsonUtil.hasExpectedJsonClassName(SubscriptionRequest.class, json);
     }
 
     public void onMessage(String json, WebSocket webSocket) {
-        SubscriptionRequest.fromJson(json)
+        subscriptionRequestParser.parse(json)
+                .or(() -> SubscriptionRequest.fromJson(json))
                 .ifPresent(subscriptionRequest ->
                         subscribe(subscriptionRequest, webSocket));
     }
@@ -155,6 +175,12 @@ public class SubscriptionService implements Service {
             }
             case CHAT_REACTIONS -> {
                 return Optional.of(chatReactionsWebSocketService);
+            }
+            case SUPPORT_CHAT_MESSAGES -> {
+                return Optional.of(supportChatMessagesWebSocketService);
+            }
+            case SUPPORT_CHAT_REACTIONS -> {
+                return Optional.of(supportChatReactionsWebSocketService);
             }
             case REPUTATION -> {
                 return Optional.of(reputationWebSocketService);

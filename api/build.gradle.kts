@@ -42,4 +42,8 @@ dependencies {
     implementation(libs.bundles.websocket.libs)
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.pkix)
+
+    implementation(libs.bucket4j.core)
+    implementation(libs.prometheus.simpleclient)
+    implementation(libs.prometheus.simpleclient.httpserver)
 }

@@ -257,7 +257,7 @@ public final class SupportMarkdownParser {
 
         String label = line.substring(startIndex + 1, textEnd).trim();
         String url = line.substring(textEnd + 2, urlEnd).trim();
-        if (label.isEmpty() || !isSafeHttpUrl(url)) {
+        if (label.isEmpty() || !isSafeDisplayText(label) || !isSafeHttpUrl(url)) {
             return null;
         }
 
@@ -281,7 +281,7 @@ public final class SupportMarkdownParser {
 
         String alt = line.substring(startIndex + 2, textEnd).trim();
         String url = line.substring(textEnd + 2, urlEnd).trim();
-        if (!isSupportedImageUrl(url)) {
+        if (!isSafeDisplayText(alt) || !isSupportedImageUrl(url)) {
             return null;
         }
 
@@ -385,6 +385,10 @@ public final class SupportMarkdownParser {
             }
         }
         return false;
+    }
+
+    private static boolean isSafeDisplayText(String value) {
+        return value != null && !containsDangerousCharacters(value);
     }
 
     private static boolean isBidiControl(char c) {

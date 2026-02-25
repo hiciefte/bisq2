@@ -53,6 +53,8 @@ class BannedUserServiceTest {
     void enabledRateLimitMarksProfileAsExceeding() {
         BannedUserService service = createService(true, new RateLimiter(1, 1, 1, 1));
         long now = System.currentTimeMillis();
+        // Intentionally reuse the same timestamp to assert the second event in the same millisecond
+        // exceeds limits with the current RateLimiter(1, 1, 1, 1) semantics.
         service.checkRateLimit(USER_PROFILE_ID, now);
         service.checkRateLimit(USER_PROFILE_ID, now);
 

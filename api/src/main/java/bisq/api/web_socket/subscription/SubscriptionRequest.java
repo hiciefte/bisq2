@@ -19,6 +19,9 @@ package bisq.api.web_socket.subscription;
 
 import bisq.api.web_socket.WebSocketMessage;
 import bisq.common.json.JsonMapperProvider;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -26,10 +29,12 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 import java.util.Optional;
 
 @Slf4j
 @Getter
+@JsonIgnoreProperties(ignoreUnknown = true)
 @EqualsAndHashCode
 @ToString
 public class SubscriptionRequest implements WebSocketMessage {
@@ -37,6 +42,15 @@ public class SubscriptionRequest implements WebSocketMessage {
     private Topic topic;
     @Nullable
     private String parameter;
+
+    @JsonCreator
+    public SubscriptionRequest(@JsonProperty("requestId") String requestId,
+                               @JsonProperty("topic") Topic topic,
+                               @JsonProperty("parameter") @Nullable String parameter) {
+        this.requestId = Objects.requireNonNull(requestId, "requestId must not be null");
+        this.topic = Objects.requireNonNull(topic, "topic must not be null");
+        this.parameter = parameter;
+    }
 
     public static Optional<SubscriptionRequest> fromJson(String json) {
         try {
