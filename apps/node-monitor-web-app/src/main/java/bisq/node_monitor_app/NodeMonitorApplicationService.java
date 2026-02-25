@@ -133,7 +133,8 @@ public class NodeMonitorApplicationService extends JavaSeApplicationService {
                 securityService,
                 identityService,
                 networkService,
-                bondedRolesService);
+                bondedRolesService,
+                UserService.Config.from(getConfig("user")));
 
         burningmanService = new BurningmanService(bondedRolesService.getAuthorizedBondedRolesService());
 

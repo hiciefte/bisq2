@@ -124,7 +124,8 @@ public class ApiApplicationService extends JavaSeApplicationService {
                 securityService,
                 identityService,
                 networkService,
-                bondedRolesService);
+                bondedRolesService,
+                UserService.Config.from(getConfig("user")));
 
         settingsService = new SettingsService(persistenceService);
 
