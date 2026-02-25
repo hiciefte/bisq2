@@ -22,9 +22,11 @@ import bisq.desktop.DesktopController;
 import bisq.desktop.common.threading.UIScheduler;
 import bisq.desktop.common.threading.UIThread;
 import bisq.desktop.components.overlay.Popup;
+import bisq.desktop_app.automation.DesktopAutomationServer;
 import bisq.i18n.Res;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.stage.Stage;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
@@ -36,6 +38,10 @@ import static bisq.common.platform.PlatformUtils.EXIT_FAILURE;
 public class DesktopExecutable extends Executable<DesktopApplicationService> {
     @Nullable
     private DesktopController desktopController;
+    @Nullable
+    private DesktopAutomationServer desktopAutomationServer;
+    @Nullable
+    private Stage primaryStage;
     @Nullable
     private Popup shutdownInProcessPopup;
 
@@ -61,21 +67,17 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
                         try {
                             log.info("Java FX Application launched");
                             setupStartupAndShutdownErrorHandlers();
+                            primaryStage = applicationData.getStage();
                             desktopController = new DesktopController(applicationService.getState(),
                                     applicationService.getServiceProvider(),
                                     applicationData,
                                     this::onApplicationLaunched);
                             desktopController.init();
                         } catch (Throwable t) {
-                            t.printStackTrace();
+                            shutdownAfterStartupFailure("Desktop startup failed", t);
                         }
                     } else {
-                        log.error("Could not launch JavaFX application.", throwable);
-                        if (Platform.isFxApplicationThread()) {
-                            applicationService.shutdown().thenAccept(result -> Platform.exit());
-                        } else {
-                            applicationService.shutdown().thenAccept(result -> System.exit(EXIT_FAILURE));
-                        }
+                        shutdownAfterStartupFailure("Could not launch JavaFX application.", throwable);
                     }
                 });
     }
@@ -86,7 +88,12 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
             UIThread.run(() -> new Popup().error(throwable).show());
             return;
         }
-        UIThread.run(() -> desktopController.onApplicationServiceInitialized(result, throwable));
+        UIThread.run(() -> {
+            desktopController.onApplicationServiceInitialized(result, throwable);
+            if (isApplicationServiceInitialized(result, throwable)) {
+                UIThread.runOnNextRenderFrame(this::startAutomationServerIfConfigured);
+            }
+        });
     }
 
     @Override
@@ -126,6 +133,7 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
 
     @Override
     protected void exitJvm() {
+        stopAutomationServer();
         if (applicationService == null) {
             log.warn("Shutdown before applicationService have been created");
             super.exitJvm();
@@ -144,12 +152,51 @@ public class DesktopExecutable extends Executable<DesktopApplicationService> {
 
     private void exitJavaFXPlatform() {
         log.info("Exiting JavaFX Platform");
+        stopAutomationServer();
         try {
             Platform.exit();
         } catch (Exception e) {
             log.error("Platform.exit failed", e);
             super.exitJvm();
         }
+    }
+
+    private void stopAutomationServer() {
+        if (desktopAutomationServer != null) {
+            desktopAutomationServer.stop();
+            desktopAutomationServer = null;
+        }
+    }
+
+    private boolean isApplicationServiceInitialized(Boolean result, @Nullable Throwable throwable) {
+        return throwable == null && Boolean.TRUE.equals(result);
+    }
+
+    private void startAutomationServerIfConfigured() {
+        if (desktopAutomationServer != null) {
+            return;
+        }
+        if (primaryStage == null) {
+            log.error("Desktop automation startup skipped: stage unavailable");
+            return;
+        }
+        try {
+            desktopAutomationServer = DesktopAutomationServer.maybeStart(primaryStage,
+                    applicationService.getDesktopAutomationConfig());
+        } catch (Throwable t) {
+            shutdownAfterStartupFailure("Failed to start DesktopAutomationServer", t);
+        }
+    }
+
+    private void shutdownAfterStartupFailure(String message, Throwable throwable) {
+        log.error(message, throwable);
+        applicationService.shutdown().thenAccept(result -> {
+            if (Platform.isFxApplicationThread()) {
+                Platform.exit();
+            } else {
+                System.exit(EXIT_FAILURE);
+            }
+        });
     }
 
     private void setupStartupAndShutdownErrorHandlers() {

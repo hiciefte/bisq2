@@ -116,10 +116,7 @@ public class ChatMessageContainerView extends bisq.desktop.common.view.View<VBox
 
         inputField.addEventFilter(KEY_PRESSED, keyPressedHandler);
 
-        sendButton.setOnAction(event -> {
-            controller.onSendMessage(inputField.getText().trim());
-            inputField.clear();
-        });
+        sendButton.setOnAction(event -> sendCurrentInput());
 
         userMentionPopup.getObservableList().setAll(model.getMentionableUsers().stream()
                 .map(ChatMentionPopupMenu.ListItem::new)
@@ -183,6 +180,7 @@ public class ChatMessageContainerView extends bisq.desktop.common.view.View<VBox
     }
 
     private HBox createAndGetSendMessageBox() {
+        inputField.setId("chat-messages-input-field");
         inputField.setPromptText(Res.get("chat.message.input.prompt"));
         inputField.getStyleClass().addAll("chat-input-field", "medium-text");
         inputField.setPadding(new Insets(5, 0, 5, 5));
@@ -244,8 +242,7 @@ public class ChatMessageContainerView extends bisq.desktop.common.view.View<VBox
                 inputField.insertText(caretPosition, System.lineSeparator());
                 inputField.positionCaret(caretPosition + System.lineSeparator().length());
             } else if (!inputField.getText().isEmpty()) {
-                controller.onSendMessage(inputField.getText().trim());
-                inputField.clear();
+                sendCurrentInput();
             }
         } else if (keyEvent.getCode() == KeyCode.UP) {
             if (inputField.getText().isEmpty() || inputField.getCaretPosition() == 0) {
@@ -270,5 +267,14 @@ public class ChatMessageContainerView extends bisq.desktop.common.view.View<VBox
                 keyEvent.consume();
             }
         }
+    }
+
+    private void sendCurrentInput() {
+        String text = inputField.getText() != null ? inputField.getText().trim() : "";
+        if (text.isEmpty()) {
+            return;
+        }
+        controller.onSendMessage(text);
+        inputField.clear();
     }
 }

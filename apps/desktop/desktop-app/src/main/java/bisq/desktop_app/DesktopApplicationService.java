@@ -36,6 +36,10 @@ import bisq.contract.ContractService;
 import bisq.desktop.ServiceProvider;
 import bisq.desktop.webcam.WebcamAppService;
 import bisq.evolution.updater.UpdaterService;
+import bisq.api.ApiConfig;
+import bisq.api.ApiService;
+import bisq.api.web_socket.domain.OpenTradeItemsService;
+import bisq.desktop_app.automation.DesktopAutomationServer;
 import bisq.identity.IdentityService;
 import bisq.java_se.application.JavaSeApplicationService;
 import bisq.mu_sig.MuSigService;
@@ -110,8 +114,12 @@ public class DesktopApplicationService extends JavaSeApplicationService {
     private final OpenTradeItemsService openTradeItemsService;
     private final MuSigService muSigService;
     private final BurningmanService burningmanService;
+    @Getter
+    private final DesktopAutomationServer.Config desktopAutomationConfig;
+
     public DesktopApplicationService(String[] args, ShutDownHandler shutDownHandler) {
         super("desktop", args);
+        desktopAutomationConfig = DesktopAutomationServer.Config.from(getConfig("desktop.automation"));
 
         securityService = new SecurityService(persistenceService, SecurityService.Config.from(getConfig("security")));
 
