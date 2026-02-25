@@ -110,7 +110,6 @@ public class DesktopApplicationService extends JavaSeApplicationService {
     private final OpenTradeItemsService openTradeItemsService;
     private final MuSigService muSigService;
     private final BurningmanService burningmanService;
-
     public DesktopApplicationService(String[] args, ShutDownHandler shutDownHandler) {
         super("desktop", args);
 
@@ -146,7 +145,8 @@ public class DesktopApplicationService extends JavaSeApplicationService {
                 securityService,
                 identityService,
                 networkService,
-                bondedRolesService);
+                bondedRolesService,
+                UserService.Config.from(getConfig("user")));
 
         accountService = new AccountService(persistenceService, networkService, userService, bondedRolesService);
 
