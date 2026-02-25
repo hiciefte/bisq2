@@ -38,4 +38,8 @@ dependencies {
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.pkix)
     implementation(libs.zxing.core)
+
+    implementation(libs.bucket4j.core)
+    implementation(libs.prometheus.simpleclient)
+    implementation(libs.prometheus.simpleclient.httpserver)
 }

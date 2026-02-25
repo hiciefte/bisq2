@@ -66,11 +66,11 @@ class OfferbookRestApiTest {
 
         OfferItemPresentationDto validDto = mock(OfferItemPresentationDto.class);
         try (MockedStatic<OfferItemPresentationDtoFactory> factory = mockStatic(OfferItemPresentationDtoFactory.class)) {
-            factory.when(() -> OfferItemPresentationDtoFactory.create(any(), any(), any(), any(), eq(validMessage)))
+            factory.when(() -> OfferItemPresentationDtoFactory.createSafe(eq("REST"), any(), any(), any(), any(), eq(validMessage)))
                     .thenReturn(Optional.of(validDto));
             // The overflowing offer throws in the factory the way an amount conversion does,
             // instead of aborting the whole endpoint stream with a 500.
-            factory.when(() -> OfferItemPresentationDtoFactory.create(any(), any(), any(), any(), eq(overflowingMessage)))
+            factory.when(() -> OfferItemPresentationDtoFactory.createSafe(eq("REST"), any(), any(), any(), any(), eq(overflowingMessage)))
                     .thenThrow(new ArithmeticException("overflow"));
 
             Response response = api.getOffers("USD");

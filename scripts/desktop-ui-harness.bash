@@ -25,6 +25,7 @@ HARNESS_BIN="${REPO_DIR}/apps/desktop/desktop-ui-harness-app/build/install/deskt
 # Example:
 # HARNESS_NETWORK_OPTS="-Dapplication.network.supportedTransportTypes.0=CLEAR -Dapplication.network.configByTransportType.clear.defaultNodePort=18101 -Dapplication.network.seedAddressByTransportType.clear.0=127.0.0.1:18000 -Dapplication.network.seedAddressByTransportType.clear.1=127.0.0.1:18000"
 HARNESS_NETWORK_OPTS="${HARNESS_NETWORK_OPTS:-}"
+LOG_LINES="${LOG_LINES:-200}"
 
 AUTOMATION_URL="http://${AUTOMATION_HOST}:${AUTOMATION_PORT}"
 AUTOMATION_HEADER_NAME="X-Bisq-Automation-Token"
@@ -52,7 +53,7 @@ Environment overrides:
   HARNESS_DIR, DATA_DIR, ARTIFACTS_DIR, APP_NAME
   AUTOMATION_HOST, AUTOMATION_PORT
   WINDOW_WIDTH, WINDOW_HEIGHT, STAGE_TIMEOUT_MS, P2P_PORT, HARNESS_RESET_ON_START
-  HARNESS_NETWORK_OPTS
+  HARNESS_NETWORK_OPTS, LOG_LINES
 EOF
 }
 
@@ -93,8 +94,10 @@ require_token() {
 generate_token() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 24
+  elif [[ -r /dev/urandom ]]; then
+    od -An -tx1 -N24 /dev/urandom | tr -d ' \n'
   else
-    echo "openssl is required to generate the automation token." >&2
+    echo "No secure token generator available (missing openssl and /dev/urandom)." >&2
     return 1
   fi
 }
@@ -105,8 +108,12 @@ is_port_bound() {
     lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1
   elif command -v nc >/dev/null 2>&1; then
     nc -z 127.0.0.1 "${port}" >/dev/null 2>&1
+  elif command -v ss >/dev/null 2>&1; then
+    ss -nlt "( sport = :${port} )" 2>/dev/null | grep -Eq "[\\.:]${port}[[:space:]]"
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -an 2>/dev/null | grep -E "LISTEN|LISTENING" | grep -Eq "[\\.:]${port}[[:space:]]"
   else
-    echo "Neither lsof nor nc is available to verify free ports." >&2
+    echo "No port inspection tool available (need lsof, nc, ss, or netstat)." >&2
     return 2
   fi
 }
@@ -116,13 +123,16 @@ find_free_port() {
   local end="${2:-19250}"
   local port status
   for port in $(seq "${start}" "${end}"); do
-    is_port_bound "${port}" && continue
+    is_port_bound "${port}"
     status=$?
-    if (( status == 2 )); then
-      return 2
+    if (( status == 0 )); then
+      continue
+    elif (( status == 1 )); then
+      echo "${port}"
+      return 0
+    else
+      return "${status}"
     fi
-    echo "${port}"
-    return 0
   done
   return 1
 }
@@ -178,7 +188,13 @@ PY
 
 require_ok_status_json() {
   local response="${1:-}"
-  if [[ "${response}" != *"\"status\":\"ok\""* ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "${response}" | jq -e '.status == "ok"' >/dev/null 2>&1; then
+      echo "Automation response did not contain status=ok: ${response}" >&2
+      return 1
+    fi
+  elif [[ ! "${response}" =~ \"status\"[[:space:]]*:[[:space:]]*\"ok\" ]]; then
+    echo "Automation response did not contain status=ok: ${response}" >&2
     return 1
   fi
 }
@@ -237,6 +253,7 @@ start() {
     umask 077
     printf '%s\n' "${token}" > "${TOKEN_FILE}"
   )
+  chmod 600 "${TOKEN_FILE}"
 
   local automation_opts
   automation_opts="-Dbisq.desktopUiHarness.bind.host=${AUTOMATION_HOST} -Dbisq.desktopUiHarness.bind.port=${AUTOMATION_PORT} -Dbisq.desktopUiHarness.token=${token} -Dbisq.desktopUiHarness.artifacts.dir=${ARTIFACTS_DIR} -Dbisq.desktopUiHarness.window.width=${WINDOW_WIDTH} -Dbisq.desktopUiHarness.window.height=${WINDOW_HEIGHT} -Dbisq.desktopUiHarness.stage.timeoutMs=${STAGE_TIMEOUT_MS}"
@@ -291,7 +308,12 @@ start() {
   else
     cleanup_runtime_files
     echo "Harness failed to become healthy. Last log lines:"
-    tail -n 120 "${LOG_FILE}" || true
+    tail -n "${LOG_LINES}" "${LOG_FILE}" || true
+    if is_running; then
+      stop >/dev/null 2>&1 || true
+    else
+      rm -f "${PID_FILE}" "${TOKEN_FILE}" >/dev/null 2>&1 || true
+    fi
     exit 1
   fi
 }
@@ -532,11 +554,11 @@ run_scenario() {
 }
 
 logs() {
-  sed -n '1,200p' "${LOG_FILE}"
+  sed -n "1,${LOG_LINES}p" "${LOG_FILE}"
 }
 
 tail_logs() {
-  tail -n 120 "${LOG_FILE}"
+  tail -n "${LOG_LINES}" "${LOG_FILE}"
 }
 
 restart() {

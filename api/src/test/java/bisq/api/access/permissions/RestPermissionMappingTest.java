@@ -38,6 +38,7 @@ import bisq.api.rest_api.endpoints.reputation.ReputationRestApi;
 import bisq.api.rest_api.endpoints.settings.SettingsRestApi;
 import bisq.api.rest_api.endpoints.trade_restricting_alert.TradeRestrictingAlertRestApi;
 import bisq.api.rest_api.endpoints.trades.TradeRestApi;
+import bisq.api.rest_api.endpoints.support.SupportRestApi;
 import bisq.api.rest_api.endpoints.user_identity.UserIdentityRestApi;
 import bisq.api.rest_api.endpoints.user_profile.UserProfileRestApi;
 import jakarta.ws.rs.ForbiddenException;
@@ -76,6 +77,7 @@ class RestPermissionMappingTest {
      * paths are the {@code @Path} of the resource that serves them.
      */
     private static final Map<String, Permission> EXPECTED = Map.ofEntries(
+            Map.entry("/support", Permission.TRADE_CHAT_CHANNELS),
             Map.entry("/trade-chat-channels", Permission.TRADE_CHAT_CHANNELS),
             Map.entry("/private-chat-channels", Permission.PRIVATE_CHAT_CHANNELS),
             Map.entry("/public-chat-channels", Permission.PUBLIC_CHAT_CHANNELS),
@@ -232,6 +234,34 @@ class RestPermissionMappingTest {
                 mock(UserProfileRestApi.class),
                 mock(DevicesRestApi.class),
                 mock(ConfigRestApi.class),
-                mock(ContactsRestApi.class));
+                mock(ContactsRestApi.class),
+                mock(SupportRestApi.class));
+    }
+    @Test
+    void mapsSupportExportToTradeChatChannelsPermission() {
+        Permission required = mapping.getRequiredPermission("/api/v1/support/export", "GET");
+
+        assertThat(required).isEqualTo(Permission.TRADE_CHAT_CHANNELS);
+    }
+
+    @Test
+    void mapsSupportChannelMessagesToTradeChatChannelsPermission() {
+        Permission required = mapping.getRequiredPermission(
+                "/api/v1/support/channels/support.support/messages",
+                "POST");
+
+        assertThat(required).isEqualTo(Permission.TRADE_CHAT_CHANNELS);
+    }
+
+    @Test
+    void rejectsUnknownRestPath() {
+        assertThatThrownBy(() -> mapping.getRequiredPermission("/api/v1/not-a-real-endpoint", "GET"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void doesNotStripEmbeddedApiPrefixOutsideRootPrefix() {
+        assertThatThrownBy(() -> mapping.getRequiredPermission("/x/api/v1/support/export", "GET"))
+                .isInstanceOf(ForbiddenException.class);
     }
 }

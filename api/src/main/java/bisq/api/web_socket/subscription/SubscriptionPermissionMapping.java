@@ -41,6 +41,7 @@ public final class SubscriptionPermissionMapping {
             case NUM_OFFERS, OFFERS -> Permission.OFFERBOOK;
             case TRADES, TRADE_PROPERTIES -> Permission.TRADES;
             case TRADE_CHAT_MESSAGES, CHAT_REACTIONS -> Permission.TRADE_CHAT_CHANNELS;
+            case SUPPORT_CHAT_MESSAGES, SUPPORT_CHAT_REACTIONS -> Permission.TRADE_CHAT_CHANNELS;
             case PRIVATE_CHAT_CHANNELS, PRIVATE_CHAT_MESSAGES, PRIVATE_CHAT_REACTIONS -> Permission.PRIVATE_CHAT_CHANNELS;
             case REPUTATION -> Permission.REPUTATION;
             case NUM_USER_PROFILES -> Permission.USER_PROFILES;

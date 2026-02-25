@@ -44,6 +44,7 @@ import javax.annotation.Nullable;
 import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -63,6 +64,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Slf4j
@@ -107,19 +109,35 @@ public final class DesktopAutomationServer {
 
     public static DesktopAutomationServer start(Stage stage, DesktopAutomationConfig config) {
         String bindHost = config.bindHost();
-        if (!isLoopbackHost(bindHost)) {
+        InetAddress bindAddress;
+        try {
+            bindAddress = InetAddress.getByName(bindHost);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid bind host: " + bindHost, e);
+        }
+        if (!bindAddress.isLoopbackAddress()) {
             throw new IllegalArgumentException("Desktop automation server must bind to loopback only. Invalid host: " + bindHost);
         }
         int bindPort = config.bindPort();
         long fxTimeoutMs = config.fxTimeoutMs();
         double defaultWidth = config.defaultWidth();
         double defaultHeight = config.defaultHeight();
-        String token = config.token();
-        Path artifactsDir = Path.of(config.artifactsDir());
+        validateConfig(bindPort, fxTimeoutMs, defaultWidth, defaultHeight);
+        String rawToken = config.token().trim();
+        if (rawToken.isEmpty()) {
+            throw new IllegalStateException("Desktop automation token is required when automation is enabled.");
+        }
+        String token = rawToken;
+        String artifactsDirRaw = config.artifactsDir().trim();
+        if (artifactsDirRaw.isEmpty()) {
+            artifactsDirRaw = Path.of(System.getProperty("java.io.tmpdir"), "bisq2-ui-harness", "artifacts").toString();
+        }
+        Path artifactsDir = Path.of(artifactsDirRaw);
 
         try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(bindHost, bindPort), 0);
-            ExecutorService executor = Executors.newCachedThreadPool(r -> {
+            HttpServer server = HttpServer.create(new InetSocketAddress(bindAddress, bindPort), 0);
+            int maxThreads = Math.max(2, Runtime.getRuntime().availableProcessors());
+            ExecutorService executor = Executors.newFixedThreadPool(maxThreads, r -> {
                 Thread t = new Thread(r);
                 t.setName("desktop-automation-http");
                 t.setDaemon(true);
@@ -262,7 +280,10 @@ public final class DesktopAutomationServer {
             return;
         }
 
-        Map<String, String> query = parseQuery(exchange.getRequestURI());
+        Map<String, String> query = parseQueryOrRespondBadRequest(exchange);
+        if (query == null) {
+            return;
+        }
         String requestedName = query.getOrDefault("name", "shot");
         String sanitized = sanitizeFilePart(requestedName);
         String fileName = Instant.now().toEpochMilli() + "-" + sanitized + ".png";
@@ -310,7 +331,10 @@ public final class DesktopAutomationServer {
             return;
         }
 
-        Map<String, String> query = parseQuery(exchange.getRequestURI());
+        Map<String, String> query = parseQueryOrRespondBadRequest(exchange);
+        if (query == null) {
+            return;
+        }
         String rawSelector = query.get("selector");
         if (rawSelector == null || rawSelector.isBlank()) {
             sendText(exchange, 400, "Missing required query parameter: selector");
@@ -348,7 +372,10 @@ public final class DesktopAutomationServer {
             return;
         }
 
-        Map<String, String> query = parseQuery(exchange.getRequestURI());
+        Map<String, String> query = parseQueryOrRespondBadRequest(exchange);
+        if (query == null) {
+            return;
+        }
         String rawSelector = query.get("selector");
         String text = query.get("text");
         if (rawSelector == null || rawSelector.isBlank()) {
@@ -391,7 +418,10 @@ public final class DesktopAutomationServer {
             return;
         }
 
-        Map<String, String> query = parseQuery(exchange.getRequestURI());
+        Map<String, String> query = parseQueryOrRespondBadRequest(exchange);
+        if (query == null) {
+            return;
+        }
         String key = query.get("key");
         String rawSelector = query.get("selector");
         boolean shiftDown = parseBoolean(query.get("shift"), false);
@@ -438,7 +468,10 @@ public final class DesktopAutomationServer {
             return;
         }
 
-        Map<String, String> query = parseQuery(exchange.getRequestURI());
+        Map<String, String> query = parseQueryOrRespondBadRequest(exchange);
+        if (query == null) {
+            return;
+        }
         String rawSelector = query.get("selector");
         long timeoutMs = parseLong(query.get("timeoutMs"), 5000L);
         boolean requireVisible = parseBoolean(query.get("visible"), false);
@@ -604,7 +637,12 @@ public final class DesktopAutomationServer {
             if (available) {
                 return true;
             }
-            Thread.sleep(100);
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            }
         }
         return false;
     }
@@ -655,13 +693,6 @@ public final class DesktopAutomationServer {
         return false;
     }
 
-    private static boolean isLoopbackHost(String host) {
-        String normalized = host == null ? "" : host.trim().toLowerCase(Locale.ROOT);
-        return normalized.equals("127.0.0.1")
-                || normalized.equals("localhost")
-                || normalized.equals("::1");
-    }
-
     private static Map<String, String> parseQuery(URI uri) {
         String raw = uri.getRawQuery();
         Map<String, String> result = new LinkedHashMap<>();
@@ -693,6 +724,16 @@ public final class DesktopAutomationServer {
             return URLDecoder.decode(value, StandardCharsets.UTF_8);
         } catch (IllegalArgumentException ignored) {
             return value;
+        }
+    }
+
+    @Nullable
+    private Map<String, String> parseQueryOrRespondBadRequest(HttpExchange exchange) throws IOException {
+        try {
+            return parseQuery(exchange.getRequestURI());
+        } catch (IllegalArgumentException e) {
+            sendText(exchange, 400, "Malformed query string");
+            return null;
         }
     }
 
@@ -808,7 +849,34 @@ public final class DesktopAutomationServer {
         }
         FutureTask<T> task = new FutureTask<>(callable);
         Platform.runLater(task);
-        return task.get(fxTimeoutMs, TimeUnit.MILLISECONDS);
+        try {
+            return task.get(fxTimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            task.cancel(false);
+            throw e;
+        } catch (InterruptedException e) {
+            task.cancel(false);
+            Thread.currentThread().interrupt();
+            throw e;
+        }
+    }
+
+    private static void validateConfig(int bindPort,
+                                       long fxTimeoutMs,
+                                       double defaultWidth,
+                                       double defaultHeight) {
+        if (bindPort < 1 || bindPort > 65_535) {
+            throw new IllegalArgumentException("Invalid automation bind port: " + bindPort);
+        }
+        if (fxTimeoutMs <= 0) {
+            throw new IllegalArgumentException("Invalid automation fx timeout: " + fxTimeoutMs);
+        }
+        if (!Double.isFinite(defaultWidth) || defaultWidth <= 0) {
+            throw new IllegalArgumentException("Invalid automation window width: " + defaultWidth);
+        }
+        if (!Double.isFinite(defaultHeight) || defaultHeight <= 0) {
+            throw new IllegalArgumentException("Invalid automation window height: " + defaultHeight);
+        }
     }
 
 }

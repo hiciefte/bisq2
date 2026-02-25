@@ -44,6 +44,8 @@ class SubscriptionPermissionMappingTest {
             Map.entry(Topic.TRADE_PROPERTIES, Permission.TRADES),
             Map.entry(Topic.TRADE_CHAT_MESSAGES, Permission.TRADE_CHAT_CHANNELS),
             Map.entry(Topic.CHAT_REACTIONS, Permission.TRADE_CHAT_CHANNELS),
+            Map.entry(Topic.SUPPORT_CHAT_MESSAGES, Permission.TRADE_CHAT_CHANNELS),
+            Map.entry(Topic.SUPPORT_CHAT_REACTIONS, Permission.TRADE_CHAT_CHANNELS),
             Map.entry(Topic.REPUTATION, Permission.REPUTATION),
             Map.entry(Topic.NUM_USER_PROFILES, Permission.USER_PROFILES),
             Map.entry(Topic.ALERT_NOTIFICATIONS, Permission.SETTINGS),
