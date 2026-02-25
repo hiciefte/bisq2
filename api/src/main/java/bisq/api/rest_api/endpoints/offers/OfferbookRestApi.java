@@ -292,10 +292,6 @@ public class OfferbookRestApi extends RestApiBase {
                             content = @Content(schema = @Schema(implementation = OfferItemPresentationDto.class))
                     ),
                     @ApiResponse(
-                            responseCode = "404",
-                            description = "No offers found for the specified currency code."
-                    ),
-                    @ApiResponse(
                             responseCode = "500",
                             description = "Internal server error occurred while processing the request."
                     )
@@ -306,12 +302,11 @@ public class OfferbookRestApi extends RestApiBase {
     public Response getOffers(@PathParam("currencyCode") String currencyCode) {
         try {
             String marketCodes = "BTC/" + currencyCode.toUpperCase(Locale.ROOT);
-            return findOffer(marketCodes)
-                    .map(this::buildOkResponse)
-                    .orElseGet(() -> {
-                        log.warn("No offers found for market: {}", marketCodes);
-                        return buildNotFoundResponse("No offers found for the specified market.");
-                    });
+            List<OfferItemPresentationDto> offers = findOffer(marketCodes).orElseGet(ArrayList::new);
+            if (offers.isEmpty()) {
+                log.info("No offers found for market: {}", marketCodes);
+            }
+            return buildOkResponse(offers);
 
         } catch (Exception e) {
             log.error("Error while fetching offers for currency code: {}", currencyCode, e);

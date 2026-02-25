@@ -35,6 +35,9 @@ public record MessageDto(
         @Schema(description = "Support channel name", example = "General Support")
         String channel,
 
+        @Schema(description = "Support channel identifier", example = "support.support")
+        String channelId,
+
         @Schema(description = "Message author username", example = "user123")
         String author,
 

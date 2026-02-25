@@ -25,7 +25,14 @@ import bisq.api.rest_api.endpoints.support.dto.SupportChatExport;
 import bisq.api.util.LoggingUtils;
 import bisq.chat.ChatChannelDomain;
 import bisq.chat.ChatService;
+import bisq.chat.Citation;
+import bisq.chat.common.CommonPublicChatChannel;
 import bisq.chat.common.CommonPublicChatChannelService;
+import bisq.chat.common.CommonPublicChatMessage;
+import bisq.chat.reactions.CommonPublicChatMessageReaction;
+import bisq.chat.reactions.Reaction;
+import bisq.user.identity.UserIdentity;
+import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
 import io.github.bucket4j.Bucket;
@@ -38,8 +45,11 @@ import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.container.AsyncResponse;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -57,6 +67,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -88,6 +99,7 @@ public class SupportRestApi extends RestApiBase {
 
     private final CommonPublicChatChannelService supportChatChannelService;
     private final UserProfileService userProfileService;
+    private final SupportChannelResolver supportChannelResolver;
 
     // Rate limiter with last access tracking to prevent memory leaks
     private final ConcurrentHashMap<String, RateLimitEntry> rateLimitBuckets = new ConcurrentHashMap<>();
@@ -170,9 +182,12 @@ public class SupportRestApi extends RestApiBase {
         }
     }
 
-    public SupportRestApi(ChatService chatService, UserProfileService userProfileService) {
+    public SupportRestApi(ChatService chatService,
+                          UserIdentityService userIdentityService,
+                          UserProfileService userProfileService) {
         this.supportChatChannelService = chatService.getCommonPublicChatChannelServices().get(ChatChannelDomain.SUPPORT);
         this.userProfileService = userProfileService;
+        this.supportChannelResolver = new SupportChannelResolver(this.supportChatChannelService, userIdentityService);
 
         // Schedule periodic cleanup of expired rate limit buckets
         cleanupScheduler.scheduleAtFixedRate(this::cleanupExpiredBuckets,
@@ -276,6 +291,259 @@ public class SupportRestApi extends RestApiBase {
                 .header("Pragma", "no-cache");
     }
 
+    @POST
+    @Path("/channels/{channelId}/messages")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "Send a support chat message",
+            description = "Accepts a support message for asynchronous publication and returns the local message id and timestamp.",
+            responses = {
+                    @ApiResponse(responseCode = "202", description = "Message accepted for asynchronous publication"),
+                    @ApiResponse(responseCode = "400", description = "Invalid input"),
+                    @ApiResponse(responseCode = "404", description = "No support channel or selected identity found"),
+                    @ApiResponse(responseCode = "503", description = "Support chat service unavailable")
+            }
+    )
+    public void sendSupportMessage(@PathParam("channelId") String channelId,
+                                   SendSupportMessageRequest request,
+                                   @Suspended AsyncResponse asyncResponse) {
+        asyncResponse.setTimeout(30, TimeUnit.SECONDS);
+        asyncResponse.setTimeoutHandler(response ->
+                response.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Request timed out")
+                        .build()));
+        try {
+            if (supportChatChannelService == null) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Support chat service not available")
+                        .build());
+                return;
+            }
+            if (request == null || request.text() == null || request.text().trim().isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.BAD_REQUEST))
+                        .entity("Invalid input: text must be provided")
+                        .build());
+                return;
+            }
+            Optional<CommonPublicChatChannel> optionalChannel = supportChannelResolver.findSupportChannel(channelId);
+            if (optionalChannel.isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                        .entity("No support channel found for channel ID " + channelId)
+                        .build());
+                return;
+            }
+
+            Optional<UserIdentity> optionalIdentity = supportChannelResolver.findSelectedIdentity();
+            if (optionalIdentity.isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                        .entity("No selected user identity found")
+                        .build());
+                return;
+            }
+
+            UserIdentity userIdentity = optionalIdentity.get();
+            CommonPublicChatChannel channel = optionalChannel.get();
+            Optional<Citation> citation = Optional.ofNullable(request.citation())
+                    .map(String::trim)
+                    .filter(text -> !text.isEmpty())
+                    .map(text -> {
+                        Optional<String> citationMessageId = normalizeNonBlank(request.citationMessageId());
+                        Optional<String> explicitCitationAuthorUserProfileId = normalizeNonBlank(request.citationAuthorUserProfileId());
+                        String citationAuthorUserProfileId = SupportCitationResolver.resolveCitationAuthorUserProfileId(
+                                channel,
+                                text,
+                                citationMessageId,
+                                explicitCitationAuthorUserProfileId,
+                                userIdentity.getId());
+                        return new Citation(citationAuthorUserProfileId, text, citationMessageId);
+                    });
+
+            CommonPublicChatMessage message = new CommonPublicChatMessage(
+                    ChatChannelDomain.SUPPORT,
+                    channel.getId(),
+                    userIdentity.getId(),
+                    request.text(),
+                    citation,
+                    System.currentTimeMillis(),
+                    false
+            );
+            CompletableFuture<?> publishFuture = supportChatChannelService.publishChatMessage(message, userIdentity);
+            if (isImmediateFailure(publishFuture)) {
+                log.warn("Support message publish failed before accept for channelId={}",
+                        LoggingUtils.sanitizeForLog(channelId));
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Failed to enqueue support message")
+                        .build());
+                return;
+            }
+
+            publishFuture.whenComplete((result, throwable) -> {
+                if (throwable != null) {
+                    log.warn("Support message publish failed asynchronously for channelId={}",
+                            LoggingUtils.sanitizeForLog(channelId), throwable);
+                }
+            });
+
+            asyncResponse.resume(addSecurityHeaders(Response.accepted(new SendSupportMessageResponse(
+                    message.getId(),
+                    message.getDate())))
+                    .build());
+        } catch (IllegalArgumentException e) {
+            asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.BAD_REQUEST))
+                    .entity("Invalid input: " + e.getMessage())
+                    .build());
+        } catch (Exception e) {
+            asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.INTERNAL_SERVER_ERROR))
+                    .entity("Internal server error")
+                    .build());
+        }
+    }
+
+
+    @POST
+    @Path("/channels/{channelId}/{messageId}/reactions")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "Send or remove a support chat reaction",
+            description = "Accepts an add/remove reaction request for asynchronous processing in a support channel.",
+            responses = {
+                    @ApiResponse(responseCode = "202", description = "Reaction accepted for asynchronous processing"),
+                    @ApiResponse(responseCode = "400", description = "Invalid input"),
+                    @ApiResponse(responseCode = "404", description = "No support channel, message, reaction or selected identity found"),
+                    @ApiResponse(responseCode = "503", description = "Support chat service unavailable")
+            }
+    )
+    public void sendSupportMessageReaction(@PathParam("channelId") String channelId,
+                                           @PathParam("messageId") String messageId,
+                                           SendSupportMessageReactionRequest request,
+                                           @Suspended AsyncResponse asyncResponse) {
+        asyncResponse.setTimeout(30, TimeUnit.SECONDS);
+        asyncResponse.setTimeoutHandler(response ->
+                response.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Request timed out")
+                        .build()));
+
+        try {
+            if (supportChatChannelService == null) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Support chat service not available")
+                        .build());
+                return;
+            }
+            if (request == null) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.BAD_REQUEST))
+                        .entity("Invalid input: request body must be provided")
+                        .build());
+                return;
+            }
+            if (request.reactionId() < 0 || request.reactionId() >= Reaction.values().length) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.BAD_REQUEST))
+                        .entity("Invalid input: reactionId must be between 0 and " + (Reaction.values().length - 1))
+                        .build());
+                return;
+            }
+
+            Optional<CommonPublicChatChannel> optionalChannel = supportChannelResolver.findSupportChannel(channelId);
+            if (optionalChannel.isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                        .entity("No support channel found for channel ID " + channelId)
+                        .build());
+                return;
+            }
+
+            Optional<UserIdentity> optionalIdentity = supportChannelResolver.findSelectedIdentity();
+            if (optionalIdentity.isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                        .entity("No selected user identity found")
+                        .build());
+                return;
+            }
+
+            CommonPublicChatChannel channel = optionalChannel.get();
+            UserIdentity userIdentity = optionalIdentity.get();
+            Optional<CommonPublicChatMessage> optionalMessage = SupportReactionLookup.findSupportMessage(channel, messageId);
+            if (optionalMessage.isEmpty()) {
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                        .entity("No message found for message ID " + messageId)
+                        .build());
+                return;
+            }
+
+            CommonPublicChatMessage message = optionalMessage.get();
+            Optional<CommonPublicChatMessageReaction> optionalOwnReaction = SupportReactionLookup.findOwnReaction(
+                    message, userIdentity.getId(), request.reactionId());
+
+            if (request.isRemoved()) {
+                if (optionalOwnReaction.isEmpty()) {
+                    asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.NOT_FOUND))
+                            .entity("No matching reaction found to remove")
+                            .build());
+                    return;
+                }
+
+                CompletableFuture<?> removeFuture = supportChatChannelService.deleteChatMessageReaction(
+                        optionalOwnReaction.get(), userIdentity.getNetworkIdWithKeyPair());
+                if (isImmediateFailure(removeFuture)) {
+                    log.warn("Support reaction remove failed before accept for channelId={}, messageId={}",
+                            LoggingUtils.sanitizeForLog(channelId),
+                            LoggingUtils.sanitizeForLog(messageId));
+                    asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                            .entity("Failed to enqueue reaction removal")
+                            .build());
+                    return;
+                }
+
+                removeFuture.whenComplete((result, throwable) -> {
+                    if (throwable != null) {
+                        log.warn("Support reaction remove failed asynchronously for channelId={}, messageId={}",
+                                LoggingUtils.sanitizeForLog(channelId),
+                                LoggingUtils.sanitizeForLog(messageId),
+                                throwable);
+                    }
+                });
+                asyncResponse.resume(addSecurityHeaders(Response.accepted()).build());
+                return;
+            }
+
+            if (optionalOwnReaction.isPresent()) {
+                asyncResponse.resume(addSecurityHeaders(Response.accepted()).build());
+                return;
+            }
+
+            Reaction reaction = Reaction.values()[request.reactionId()];
+            CompletableFuture<?> publishReactionFuture = supportChatChannelService.publishChatMessageReaction(message, reaction, userIdentity);
+            if (isImmediateFailure(publishReactionFuture)) {
+                log.warn("Support reaction publish failed before accept for channelId={}, messageId={}",
+                        LoggingUtils.sanitizeForLog(channelId),
+                        LoggingUtils.sanitizeForLog(messageId));
+                asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.SERVICE_UNAVAILABLE))
+                        .entity("Failed to enqueue reaction")
+                        .build());
+                return;
+            }
+
+            publishReactionFuture.whenComplete((result, throwable) -> {
+                if (throwable != null) {
+                    log.warn("Support reaction publish failed asynchronously for channelId={}, messageId={}",
+                            LoggingUtils.sanitizeForLog(channelId),
+                            LoggingUtils.sanitizeForLog(messageId),
+                            throwable);
+                }
+            });
+
+            asyncResponse.resume(addSecurityHeaders(Response.accepted()).build());
+        } catch (IllegalArgumentException e) {
+            asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.BAD_REQUEST))
+                    .entity("Invalid input: " + e.getMessage())
+                    .build());
+        } catch (Exception e) {
+            asyncResponse.resume(addSecurityHeaders(Response.status(Response.Status.INTERNAL_SERVER_ERROR))
+                    .entity("Internal server error")
+                    .build());
+        }
+    }
+
     @GET
     @Path("/export")
     @Produces(MediaType.APPLICATION_JSON)
@@ -310,6 +578,7 @@ public class SupportRestApi extends RestApiBase {
                                                           "date": "2025-10-14T12:00:00Z",
                                                           "dateFormatted": "2025-10-14 12:00:00",
                                                           "channel": "General Support",
+                                                          "channelId": "support.support",
                                                           "author": "user123",
                                                           "authorId": "user123",
                                                           "message": "How do I reset my password?",
@@ -489,6 +758,7 @@ public class SupportRestApi extends RestApiBase {
                             Instant.ofEpochMilli(message.getDate()).toString(),
                             DATE_FORMATTER.format(Instant.ofEpochMilli(message.getDate())),
                             channelName,
+                            channel.getId(),
                             authorNickname,      // Use nickname for readability
                             authorId,            // Keep hash for reference
                             message.getText().orElse(""),
@@ -559,4 +829,26 @@ public class SupportRestApi extends RestApiBase {
                     .build());
         }
     }
+
+    private static Optional<String> normalizeNonBlank(String value) {
+        return Optional.ofNullable(value)
+                .map(String::trim)
+                .filter(trimmed -> !trimmed.isEmpty());
+    }
+
+    private static boolean isImmediateFailure(CompletableFuture<?> future) {
+        if (future == null) {
+            return true;
+        }
+        if (!future.isDone()) {
+            return false;
+        }
+        try {
+            future.join();
+            return false;
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
 }

@@ -25,8 +25,10 @@ import bisq.persistence.PersistenceService;
 import bisq.presentation.notifications.SystemNotificationService;
 import bisq.settings.SettingsService;
 import bisq.user.UserService;
+import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfileService;
 import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,15 +69,17 @@ class SupportRestApiTest {
     private PersistenceService persistenceService;
     private NetworkService networkService;
     private UserService userService;
+    private UserIdentityService userIdentityService;
     private SettingsService settingsService;
     private SystemNotificationService systemNotificationService;
     private UserProfileService userProfileService;
     private AsyncResponse asyncResponse;
+    private ContainerRequestContext requestContext;
 
     @BeforeEach
     void setUp() {
         // Initialize persistence service with temp directory
-        persistenceService = new PersistenceService(tempDir.toAbsolutePath().toString());
+        persistenceService = new PersistenceService(tempDir.toAbsolutePath());
 
         // Mock external dependencies that require complex setup
         networkService = mock(NetworkService.class);
@@ -83,7 +87,9 @@ class SupportRestApiTest {
         when(networkService.shutdown()).thenReturn(CompletableFuture.completedFuture(true));
 
         userService = mock(UserService.class);
+        userIdentityService = mock(UserIdentityService.class);
         userProfileService = mock(UserProfileService.class);
+        when(userService.getUserIdentityService()).thenReturn(userIdentityService);
         when(userService.getUserProfileService()).thenReturn(userProfileService);
         settingsService = mock(SettingsService.class);
         systemNotificationService = mock(SystemNotificationService.class);
@@ -101,10 +107,11 @@ class SupportRestApiTest {
         chatService.initialize().join();
 
         // Create SupportRestApi with real ChatService and mocked UserProfileService
-        supportRestApi = new SupportRestApi(chatService, userProfileService);
+        supportRestApi = new SupportRestApi(chatService, userIdentityService, userProfileService);
 
         // Mock AsyncResponse for testing async behavior
         asyncResponse = mock(AsyncResponse.class);
+        requestContext = mock(ContainerRequestContext.class);
     }
 
     @AfterEach
@@ -120,7 +127,7 @@ class SupportRestApiTest {
         ArgumentCaptor<Response> responseCaptor = ArgumentCaptor.forClass(Response.class);
 
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert
         verify(asyncResponse).setTimeout(120, TimeUnit.SECONDS);
@@ -146,7 +153,7 @@ class SupportRestApiTest {
         ArgumentCaptor<Response> responseCaptor = ArgumentCaptor.forClass(Response.class);
 
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert
         verify(asyncResponse).resume(responseCaptor.capture());
@@ -172,7 +179,7 @@ class SupportRestApiTest {
     @Test
     void testExportSupportChatToJson_TimeoutConfiguration() {
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert - Verify timeout is configured
         verify(asyncResponse).setTimeout(120, TimeUnit.SECONDS);
@@ -185,7 +192,7 @@ class SupportRestApiTest {
         ArgumentCaptor<Response> responseCaptor = ArgumentCaptor.forClass(Response.class);
 
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert
         verify(asyncResponse).resume(responseCaptor.capture());
@@ -206,7 +213,7 @@ class SupportRestApiTest {
         ArgumentCaptor<Response> responseCaptor = ArgumentCaptor.forClass(Response.class);
 
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert
         verify(asyncResponse).resume(responseCaptor.capture());
@@ -229,7 +236,7 @@ class SupportRestApiTest {
         ArgumentCaptor<Response> responseCaptor = ArgumentCaptor.forClass(Response.class);
 
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert
         verify(asyncResponse).resume(responseCaptor.capture());
@@ -244,7 +251,7 @@ class SupportRestApiTest {
     @Test
     void testExportSupportChatToJson_AsyncBehavior() {
         // Act
-        supportRestApi.exportSupportChatToJson(asyncResponse);
+        supportRestApi.exportSupportChatToJson(requestContext, asyncResponse);
 
         // Assert - Verify async response methods are called
         verify(asyncResponse, times(1)).setTimeout(anyLong(), any(TimeUnit.class));
