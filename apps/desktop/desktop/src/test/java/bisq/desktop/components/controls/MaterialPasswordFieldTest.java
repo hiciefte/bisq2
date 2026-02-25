@@ -19,12 +19,15 @@ package bisq.desktop.components.controls;
 
 import bisq.common.observable.Observable;
 import bisq.desktop.common.Transitions;
+import bisq.desktop.testutil.TestFxHeadlessSupport;
 import bisq.settings.SettingsService;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.PasswordField;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -35,30 +38,12 @@ import org.testfx.framework.junit5.Start;
 import static org.mockito.Mockito.when;
 import static org.testfx.assertions.api.Assertions.assertThat;
 
-// Disable MaterialPasswordFieldTest as it requires extra setup in headless environment
-// (https://nofluffjuststuff.com/blog/andres_almiray/2016/02/running_testfx_tests_in_headless_mode,
-// https://wiki.openjdk.org/display/OpenJFX/Monocle).
-//
-//The UI test here can be considered more a POC for UI testing. If we use more automated UI testing we
-// need to update the installation requirements for headless environments so that the tests do not fail.
-
 @ExtendWith(ApplicationExtension.class)
-class MaterialPasswordFieldTest {
+class MaterialPasswordFieldTest extends TestFxHeadlessSupport {
     @Mock
     SettingsService settingsService;
     AutoCloseable closeable;
     MaterialPasswordField materialPasswordField;
-
-    static {
-        // Set these properties based on the environment (local or CI)
-        //https://nofluffjuststuff.com/blog/andres_almiray/2016/02/running_testfx_tests_in_headless_mode
-        System.setProperty("testfx.robot", "glass");
-        // Set to false to see the robot when running locally. On OSX one need to grant permissions at the privacy settings. 
-        // See: https://github.com/TestFX/TestFX/issues/641 
-        System.setProperty("testfx.headless", "true");
-        System.setProperty("prism.order", "sw");
-        System.setProperty("prism.text", "t2k");
-    }
 
     @Start
     void start(Stage stage) {
@@ -75,7 +60,7 @@ class MaterialPasswordFieldTest {
         closeable.close();
     }
 
-    // @Test
+    @Test
     void basicTest(FxRobot robot) {
         textIsPickedUpByPasswordField(robot);
         unmasksTextWhenIconIsClicked(robot);
@@ -83,14 +68,16 @@ class MaterialPasswordFieldTest {
 
     private void textIsPickedUpByPasswordField(FxRobot robot) {
         final String passwordSample = "Text sample";
-        robot.write(passwordSample);
-        assertThat(robot.lookup(".password-field").queryAs(PasswordField.class)).hasText(passwordSample);
+        PasswordField passwordField = robot.lookup(".password-field").queryAs(PasswordField.class);
+        robot.interact(() -> passwordField.setText(passwordSample));
+        assertThat(passwordField).hasText(passwordSample);
     }
 
     private void unmasksTextWhenIconIsClicked(FxRobot robot) {
         materialPasswordField.showIcon();
         assertThat(materialPasswordField.isMasked()).isTrue();
-        robot.clickOn(".icon-button");
+        Button iconButton = robot.lookup(".icon-button").queryAs(Button.class);
+        robot.interact(iconButton::fire);
         assertThat(materialPasswordField.isMasked()).isFalse();
     }
 }
