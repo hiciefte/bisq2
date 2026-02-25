@@ -120,9 +120,9 @@ public class PeerTextMessageBox extends BubbleMessageBox {
 
         // Message
         quotedMessageVBox.setId("chat-message-quote-box-peer-msg");
-        message.setAlignment(Pos.CENTER_LEFT);
-        message.maxWidthProperty().bind(list.widthProperty().subtract(140));
-        VBox messageVBox = new VBox(quotedMessageVBox, message);
+        setMessageAlignment(Pos.CENTER_LEFT);
+        bindMessageMaxWidth(list.widthProperty().subtract(140));
+        VBox messageVBox = new VBox(quotedMessageVBox, messageNode);
         HBox.setMargin(messageVBox, new Insets(0, 0, 0, -10));
 
         // Message background
@@ -134,7 +134,7 @@ public class PeerTextMessageBox extends BubbleMessageBox {
     public void dispose() {
         super.dispose();
 
-        message.maxWidthProperty().unbind();
+        unbindMessageMaxWidth();
 
         userName.setOnMouseClicked(null);
         userProfileIcon.setOnMouseClicked(null);
