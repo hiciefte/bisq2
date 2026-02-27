@@ -36,6 +36,7 @@ import javafx.scene.control.ListView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
@@ -62,6 +63,9 @@ public final class MyTextMessageBox extends BubbleMessageBox {
         messageBgHBox.getStyleClass().add("chat-message-bg-my-message");
 
         VBox messageVBox = new VBox(quotedMessageVBox, messageNode, editInputField);
+        messageVBox.setFillWidth(true);
+        messageVBox.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(messageVBox, Priority.SOMETIMES);
 
         bindMessageMaxWidth(list.widthProperty().subtract(140));
         userProfileIcon.setSize(30);

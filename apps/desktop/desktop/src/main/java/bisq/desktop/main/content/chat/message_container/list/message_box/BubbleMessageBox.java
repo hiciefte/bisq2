@@ -341,6 +341,7 @@ public abstract class BubbleMessageBox extends MessageBox {
             if (markdownDocument.hasMarkdownFormatting()) {
                 VBox markdownRoot = SupportMarkdownRenderer.render(markdownDocument, Pos.CENTER_LEFT);
                 markdownRoot.setPadding(new Insets(10));
+                markdownRoot.setMaxWidth(Double.MAX_VALUE);
                 markdownRoot.getStyleClass().add("chat-markdown-message");
                 return markdownRoot;
             }
@@ -358,10 +359,16 @@ public abstract class BubbleMessageBox extends MessageBox {
 
     protected void bindMessageMaxWidth(ObservableValue<? extends Number> observable) {
         messageNode.maxWidthProperty().bind(observable);
+        if (messageNode != message) {
+            messageNode.prefWidthProperty().bind(observable);
+        }
     }
 
     protected void unbindMessageMaxWidth() {
         messageNode.maxWidthProperty().unbind();
+        if (messageNode != message) {
+            messageNode.prefWidthProperty().unbind();
+        }
     }
 
     protected double getMessageNodeHeight() {

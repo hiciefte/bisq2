@@ -31,6 +31,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.ListView;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
@@ -123,6 +124,9 @@ public class PeerTextMessageBox extends BubbleMessageBox {
         setMessageAlignment(Pos.CENTER_LEFT);
         bindMessageMaxWidth(list.widthProperty().subtract(140));
         VBox messageVBox = new VBox(quotedMessageVBox, messageNode);
+        messageVBox.setFillWidth(true);
+        messageVBox.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(messageVBox, Priority.SOMETIMES);
         HBox.setMargin(messageVBox, new Insets(0, 0, 0, -10));
 
         // Message background
