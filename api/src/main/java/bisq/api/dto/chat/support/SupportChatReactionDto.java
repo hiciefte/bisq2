@@ -17,6 +17,9 @@
 
 package bisq.api.dto.chat.support;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record SupportChatReactionDto(String reaction,
                                      String messageId,
                                      String senderUserProfileId,

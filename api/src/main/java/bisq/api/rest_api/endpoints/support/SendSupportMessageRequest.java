@@ -17,9 +17,12 @@
 
 package bisq.api.rest_api.endpoints.support;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import javax.annotation.Nullable;
 import javax.annotation.Nonnull;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record SendSupportMessageRequest(@Nonnull String text,
                                         @Nullable String citation,
                                         @Nullable String citationAuthorUserProfileId,

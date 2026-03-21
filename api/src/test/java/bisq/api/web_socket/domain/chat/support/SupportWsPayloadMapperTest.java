@@ -15,7 +15,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 class SupportWsPayloadMapperTest {
@@ -74,7 +74,7 @@ class SupportWsPayloadMapperTest {
                 System.currentTimeMillis()
         );
 
-        SupportChatReactionDto dto = SupportWsPayloadMapper.fromReaction(reaction);
+        SupportChatReactionDto dto = SupportWsPayloadMapper.fromReaction(reaction).orElseThrow();
         assertEquals("HEART", dto.reaction());
         assertEquals("m1", dto.messageId());
         assertEquals(PROFILE_ID, dto.senderUserProfileId());
@@ -82,13 +82,13 @@ class SupportWsPayloadMapperTest {
     }
 
     @Test
-    void testMapSupportReaction_throwsForInvalidReactionId() {
+    void testMapSupportReaction_returnsEmptyForInvalidReactionId() {
         CommonPublicChatMessageReaction reaction = Mockito.mock(CommonPublicChatMessageReaction.class);
         when(reaction.getReactionId()).thenReturn(999);
         when(reaction.getChatMessageId()).thenReturn("m2");
         when(reaction.getUserProfileId()).thenReturn(PROFILE_ID);
         when(reaction.getChatChannelId()).thenReturn(CHANNEL_ID);
 
-        assertThrows(IllegalArgumentException.class, () -> SupportWsPayloadMapper.fromReaction(reaction));
+        assertTrue(SupportWsPayloadMapper.fromReaction(reaction).isEmpty());
     }
 }

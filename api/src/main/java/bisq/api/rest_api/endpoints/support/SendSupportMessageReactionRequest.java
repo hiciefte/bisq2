@@ -17,5 +17,8 @@
 
 package bisq.api.rest_api.endpoints.support;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record SendSupportMessageReactionRequest(int reactionId, boolean isRemoved) {
 }

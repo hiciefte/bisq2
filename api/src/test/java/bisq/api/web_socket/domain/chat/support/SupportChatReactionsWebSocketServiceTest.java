@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -116,6 +117,35 @@ class SupportChatReactionsWebSocketServiceTest {
         assertEquals(REACTOR_PROFILE_ID, payload.get("senderUserProfileId").asText());
         assertEquals(CHANNEL_ID, payload.get("channelId").asText());
         assertTrue(!payload.has("conversationId"));
+    }
+
+    @Test
+    void testAddedEventIgnoresUnsupportedReactionId() throws Exception {
+        SubscriberRepository subscriberRepository = new SubscriberRepository();
+        WebSocket webSocket = mock(WebSocket.class);
+        @SuppressWarnings("unchecked")
+        GrizzlyFuture<DataFrame> sendFuture = mock(GrizzlyFuture.class);
+        when(webSocket.send(anyString())).thenReturn(sendFuture);
+        when(sendFuture.get()).thenReturn(mock(DataFrame.class));
+        subscriberRepository.add(new SubscriptionRequest("request-1", Topic.SUPPORT_CHAT_REACTIONS, null), webSocket);
+
+        SupportChatReactionsWebSocketService service = new SupportChatReactionsWebSocketService(
+                subscriberRepository,
+                null
+        );
+        CommonPublicChatMessageReaction reaction = new CommonPublicChatMessageReaction(
+                "reaction-3",
+                REACTOR_PROFILE_ID,
+                CHANNEL_ID,
+                ChatChannelDomain.SUPPORT,
+                "message-99",
+                999,
+                System.currentTimeMillis()
+        );
+
+        invokeHandleReaction(service, reaction, ModificationType.ADDED);
+
+        verify(webSocket, never()).send(anyString());
     }
 
     private Optional<String> invokeGetJsonPayload(SupportChatReactionsWebSocketService service,

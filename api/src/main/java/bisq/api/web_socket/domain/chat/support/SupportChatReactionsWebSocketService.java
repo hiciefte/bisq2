@@ -171,28 +171,26 @@ public class SupportChatReactionsWebSocketService extends BaseWebSocketService {
                                 .filter(Objects::nonNull)
                                 .filter(CommonPublicChatMessageReaction.class::isInstance)
                                 .map(CommonPublicChatMessageReaction.class::cast)
-                                .map(reaction -> {
+                                .flatMap(reaction -> {
                                     try {
-                                        return SupportWsPayloadMapper.fromReaction(reaction);
+                                        return SupportWsPayloadMapper.fromReaction(reaction).stream();
                                     } catch (Exception e) {
                                         log.warn("Support ws payload mapping failed for messageId={}, channelId={}",
                                                 LoggingUtils.truncateId(reaction.getChatMessageId()),
                                                 LoggingUtils.truncateId(reaction.getChatChannelId()),
                                                 e);
-                                        return null;
+                                        return Stream.empty();
                                     }
-                                })
-                                .filter(Objects::nonNull)))
+                                })))
                 .collect(Collectors.toCollection(ArrayList::new));
         return toJson(payload);
     }
 
     private void handleReaction(CommonPublicChatMessageReaction reaction, ModificationType modificationType) {
-        final SupportChatReactionDto dto;
+        final Optional<SupportChatReactionDto> maybeDto;
         final Optional<String> payloadJson;
         try {
-            dto = SupportWsPayloadMapper.fromReaction(reaction);
-            payloadJson = toJson(dto);
+            maybeDto = SupportWsPayloadMapper.fromReaction(reaction);
         } catch (Exception e) {
             log.warn("Support ws-dispatch mapping failed for messageId={}, channelId={}, modificationType={}",
                     LoggingUtils.truncateId(reaction.getChatMessageId()),
@@ -201,6 +199,11 @@ public class SupportChatReactionsWebSocketService extends BaseWebSocketService {
                     e);
             return;
         }
+        if (maybeDto.isEmpty()) {
+            return;
+        }
+        SupportChatReactionDto dto = maybeDto.get();
+        payloadJson = toJson(dto);
         if (log.isDebugEnabled()) {
             log.debug("Support ws trace: ws-dispatch reaction messageId={}, channelId={}, senderUserProfileId={}, reaction={}, modificationType={}",
                     LoggingUtils.truncateId(dto.messageId()),

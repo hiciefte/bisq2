@@ -62,14 +62,20 @@ public class SupportWsPayloadMapper {
         );
     }
 
-    public static SupportChatReactionDto fromReaction(CommonPublicChatMessageReaction reaction) {
+    public static java.util.Optional<SupportChatReactionDto> fromReaction(CommonPublicChatMessageReaction reaction) {
         String channelId = reaction.getChatChannelId();
         int reactionId = reaction.getReactionId();
-        Reaction[] reactions = Reaction.values();
-        if (reactionId < 0 || reactionId >= reactions.length) {
-            throw new IllegalArgumentException("Unsupported reactionId: " + reactionId);
+        java.util.Optional<Reaction> resolvedReaction = Reaction.fromOrdinal(reactionId);
+        if (resolvedReaction.isEmpty()) {
+            if (log.isDebugEnabled()) {
+                log.debug("Support ws trace: ignoring unsupported reactionId={} for messageId={}, channelId={}",
+                        reactionId,
+                        LoggingUtils.truncateId(reaction.getChatMessageId()),
+                        LoggingUtils.truncateId(channelId));
+            }
+            return java.util.Optional.empty();
         }
-        String reactionName = reactions[reactionId].name();
+        String reactionName = resolvedReaction.get().name();
         if (log.isDebugEnabled()) {
             log.debug("Support ws trace: ws-map reaction messageId={}, channelId={}, senderUserProfileId={}, reaction={}",
                     LoggingUtils.truncateId(reaction.getChatMessageId()),
@@ -77,11 +83,11 @@ public class SupportWsPayloadMapper {
                     LoggingUtils.truncateId(reaction.getUserProfileId()),
                     reactionName);
         }
-        return new SupportChatReactionDto(
+        return java.util.Optional.of(new SupportChatReactionDto(
                 reactionName,
                 reaction.getChatMessageId(),
                 reaction.getUserProfileId(),
                 channelId
-        );
+        ));
     }
 }
