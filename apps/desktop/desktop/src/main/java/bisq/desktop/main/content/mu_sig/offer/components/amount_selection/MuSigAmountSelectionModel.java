@@ -17,84 +17,103 @@
 
 package bisq.desktop.main.content.mu_sig.offer.components.amount_selection;
 
-import bisq.bisq_easy.BisqEasyTradeAmountLimits;
 import bisq.common.market.Market;
 import bisq.common.market.MarketRepository;
 import bisq.common.monetary.Monetary;
+import bisq.common.monetary.MonetaryRange;
 import bisq.desktop.common.view.Model;
 import bisq.offer.Direction;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.DoubleProperty;
-import javafx.beans.property.IntegerProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
-import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleObjectProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.beans.property.StringProperty;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.Map;
+
 @Getter
 public class MuSigAmountSelectionModel implements Model {
-    private final double sliderMin = 0;
-    private final double sliderMax = 1;
-    public final int amountBoxWidth = 300;
-    public final int amountBoxHeight = 120;
+    static final String SLIDER_TRACK_DEFAULT_COLOR = "-bisq-dark-grey-50";
+    static final String SLIDER_TRACK_MARKER_COLOR = "-bisq2-green";
+    static final int RANGE_INPUT_TEXT_MAX_LENGTH = 11;
+    static final int FIXED_INPUT_TEXT_MAX_LENGTH = 18;
 
-    private final ObjectProperty<Monetary> maxOrFixedBaseSideAmount = new SimpleObjectProperty<>();
-    private final ObjectProperty<Monetary> maxOrFixedQuoteSideAmount = new SimpleObjectProperty<>();
+    private final Map<Integer, Integer> widthByNumCharsMap;
+    @Setter
+    private Market market = MarketRepository.getDefaultBtcFiatMarket();
+    @Setter
+    private Direction direction = Direction.BUY;
+
+    // Range
+    private final BooleanProperty useRangeAmount = new SimpleBooleanProperty();
+
+    private final ObjectProperty<MonetaryRange> quoteSideTradeAmountLimits = new SimpleObjectProperty<>();
+    private final ObjectProperty<MonetaryRange> tradeAmountLimitsInUsd = new SimpleObjectProperty<>();
+
+    private final ObjectProperty<MonetaryRange> rangeBaseSideAmount = new SimpleObjectProperty<>();
+    private final ObjectProperty<MonetaryRange> rangeQuoteSideAmount = new SimpleObjectProperty<>();
+
+    private final ObjectProperty<Monetary> maxAllowedQuoteSideAmount = new SimpleObjectProperty<>();
+    private final ObjectProperty<Monetary> maxAllowedBaseSideAmount = new SimpleObjectProperty<>();
+
+    private final StringProperty formattedMinTradeAmountLimit = new SimpleStringProperty();
+    private final StringProperty formattedMaxTradeAmountLimit = new SimpleStringProperty();
+    private final StringProperty formattedMinTradeAmountLimitInUsd = new SimpleStringProperty();
+    private final StringProperty formattedMaxTradeAmountLimitInUsd = new SimpleStringProperty();
+    private final StringProperty tradeAmountLimitCode = new SimpleStringProperty();
+    private final BooleanProperty showTradeAmountLimitInUsd = new SimpleBooleanProperty();
+
+
+    // Amounts
     private final ObjectProperty<Monetary> minBaseSideAmount = new SimpleObjectProperty<>();
     private final ObjectProperty<Monetary> minQuoteSideAmount = new SimpleObjectProperty<>();
-    private final StringProperty spendOrReceiveString = new SimpleStringProperty();
+    private final ObjectProperty<Monetary> maxOrFixedBaseSideAmount = new SimpleObjectProperty<>();
+    private final ObjectProperty<Monetary> maxOrFixedQuoteSideAmount = new SimpleObjectProperty<>();
 
+
+    // Slider
     private final DoubleProperty maxOrFixedAmountSliderValue = new SimpleDoubleProperty();
     private final DoubleProperty minAmountSliderValue = new SimpleDoubleProperty();
     private final BooleanProperty maxOrFixedAmountSliderFocus = new SimpleBooleanProperty();
     private final BooleanProperty minAmountSliderFocus = new SimpleBooleanProperty();
     private final BooleanProperty rangeSliderLowThumbFocus = new SimpleBooleanProperty();
     private final BooleanProperty rangeSliderHighThumbFocus = new SimpleBooleanProperty();
-    private final BooleanProperty isRangeAmountEnabled = new SimpleBooleanProperty();
 
-    @Setter
-    private ObjectProperty<Monetary> minRangeMonetary = new SimpleObjectProperty<>(BisqEasyTradeAmountLimits.DEFAULT_MIN_BTC_TRADE_AMOUNT);
-    @Setter
-    private ObjectProperty<Monetary> maxRangeMonetary = new SimpleObjectProperty<>(BisqEasyTradeAmountLimits.DEFAULT_MAX_BTC_TRADE_AMOUNT);
-    @Setter
-    private ObjectProperty<Monetary> minRangeBaseSideValue = new SimpleObjectProperty<>();
-    @Setter
-    private ObjectProperty<Monetary> maxRangeBaseSideValue = new SimpleObjectProperty<>();
-    @Setter
-    private ObjectProperty<Monetary> minRangeQuoteSideValue = new SimpleObjectProperty<>();
-    @Setter
-    private ObjectProperty<Monetary> maxRangeQuoteSideValue = new SimpleObjectProperty<>();
-    private final ObjectProperty<Monetary> maxQuoteAllowedLimitation = new SimpleObjectProperty<>();
-    private final ObjectProperty<Monetary> maxBaseAllowedLimitation = new SimpleObjectProperty<>();
     @Setter
     private Monetary leftMarkerQuoteSideValue;
     @Setter
     private Monetary rightMarkerQuoteSideValue;
     private final StringProperty sliderTrackStyle = new SimpleStringProperty();
-    @Setter
-    private Market market = MarketRepository.getDefaultBtcFiatMarket();
-    @Setter
-    private Direction direction = Direction.BUY;
-    private final StringProperty description = new SimpleStringProperty();
-    private final StringProperty minRangeValueAsString = new SimpleStringProperty();
-    private final StringProperty minRangeCodeAsString = new SimpleStringProperty();
-    private final StringProperty maxRangeValueLimitationAsString = new SimpleStringProperty();
-    private final StringProperty maxRangeCodeAsString = new SimpleStringProperty();
-    private final BooleanProperty showRangeAmountSelection = new SimpleBooleanProperty(false);
-    private final BooleanProperty allowInvertingBaseAndQuoteCurrencies = new SimpleBooleanProperty(false);
-    private final IntegerProperty baseAmountSelectionHBoxWidth = new SimpleIntegerProperty(amountBoxWidth);
-    private final BooleanProperty areBaseAndQuoteCurrenciesInverted = new SimpleBooleanProperty(false);
-    private final BooleanProperty shouldShowMinAmounts = new SimpleBooleanProperty(false);
+
+
+    // Input type
+    private final BooleanProperty isDefaultAmountInputBtc = new SimpleBooleanProperty(false);
     private final BooleanProperty shouldShowInvertedMinAmounts = new SimpleBooleanProperty(false);
-    private final BooleanProperty shouldShowMaxOrFixedAmounts = new SimpleBooleanProperty(false);
     private final BooleanProperty shouldShowInvertedMaxOrFixedAmounts = new SimpleBooleanProperty(false);
+    private final BooleanProperty shouldShowMaxOrFixedAmounts = new SimpleBooleanProperty(false);
+    private final BooleanProperty shouldShowMinAmounts = new SimpleBooleanProperty(false);
+    private final BooleanProperty showRangeAmountSelection = new SimpleBooleanProperty(false);
+
+    // Strings
+    private final StringProperty spendOrReceiveString = new SimpleStringProperty();
+    private final StringProperty description = new SimpleStringProperty();
+
+    // Layout
+    private final double sliderMin = 0;
+    private final double sliderMax = 1;
+    public final int amountBoxWidth = 300;
+    public final int amountBoxHeight = 120;
     private final BooleanProperty shouldFocusInputTextField = new SimpleBooleanProperty(false);
     private final BooleanProperty shouldApplyNewInputTextFontStyle = new SimpleBooleanProperty(false);
+
+    public MuSigAmountSelectionModel(Map<Integer, Integer> widthByNumCharsMap) {
+        this.widthByNumCharsMap = widthByNumCharsMap;
+    }
 
     void reset() {
         maxOrFixedBaseSideAmount.set(null);
@@ -108,29 +127,27 @@ public class MuSigAmountSelectionModel implements Model {
         minAmountSliderFocus.set(false);
         rangeSliderLowThumbFocus.set(false);
         rangeSliderHighThumbFocus.set(false);
-        isRangeAmountEnabled.set(false);
-        minRangeMonetary.set(BisqEasyTradeAmountLimits.DEFAULT_MIN_BTC_TRADE_AMOUNT);
-        maxRangeMonetary.set(BisqEasyTradeAmountLimits.DEFAULT_MAX_BTC_TRADE_AMOUNT);
-        minRangeBaseSideValue.set(null);
-        maxRangeBaseSideValue.set(null);
-        minRangeQuoteSideValue.set(null);
-        maxRangeQuoteSideValue.set(null);
-        maxQuoteAllowedLimitation.set(null);
-        maxBaseAllowedLimitation.set(null);
+        useRangeAmount.set(false);
+        quoteSideTradeAmountLimits.set(null);
+        tradeAmountLimitsInUsd.set(null);
+        rangeBaseSideAmount.set(null);
+        rangeQuoteSideAmount.set(null);
+        maxAllowedQuoteSideAmount.set(null);
+        maxAllowedBaseSideAmount.set(null);
         leftMarkerQuoteSideValue = null;
         rightMarkerQuoteSideValue = null;
         sliderTrackStyle.set(null);
         market = MarketRepository.getDefaultBtcFiatMarket();
         direction = Direction.BUY;
         description.set(null);
-        minRangeValueAsString.set(null);
-        minRangeCodeAsString.set(null);
-        maxRangeValueLimitationAsString.set(null);
-        maxRangeCodeAsString.set(null);
+        formattedMinTradeAmountLimit.set(null);
+        formattedMaxTradeAmountLimit.set(null);
+        tradeAmountLimitCode.set(null);
+        formattedMinTradeAmountLimitInUsd.set(null);
+        formattedMaxTradeAmountLimitInUsd.set(null);
+        showTradeAmountLimitInUsd.set(false);
         showRangeAmountSelection.set(false);
-        allowInvertingBaseAndQuoteCurrencies.set(false);
-        baseAmountSelectionHBoxWidth.set(amountBoxWidth);
-        areBaseAndQuoteCurrenciesInverted.set(false);
+        isDefaultAmountInputBtc.set(false);
         shouldShowMinAmounts.set(false);
         shouldShowInvertedMinAmounts.set(false);
         shouldShowMaxOrFixedAmounts.set(false);

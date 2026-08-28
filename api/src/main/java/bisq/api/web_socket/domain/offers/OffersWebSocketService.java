@@ -19,6 +19,7 @@ package bisq.api.web_socket.domain.offers;
 
 import bisq.api.web_socket.domain.BaseWebSocketService;
 import bisq.api.web_socket.subscription.ModificationType;
+import bisq.api.web_socket.subscription.Subscriber;
 import bisq.api.web_socket.subscription.SubscriberRepository;
 import bisq.bonded_roles.BondedRolesService;
 import bisq.bonded_roles.market_price.MarketPriceService;
@@ -40,7 +41,7 @@ import org.apache.commons.lang3.NotImplementedException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Objects;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -110,8 +111,24 @@ public class OffersWebSocketService extends BaseWebSocketService {
     }
 
     @Override
+    public Optional<String> canonicalizeParameter(Optional<String> parameter) {
+        return parameter.map(p -> p.trim().toUpperCase(Locale.ROOT)).filter(p -> !p.isEmpty());
+    }
+
+    @Override
     public Optional<String> getJsonPayload() {
         return getJsonPayload(bisqEasyOfferbookChannelService.getChannels().stream());
+    }
+
+    @Override
+    public Optional<String> getJsonPayload(Optional<String> parameter) {
+        Stream<BisqEasyOfferbookChannel> channels = bisqEasyOfferbookChannelService.getChannels().stream();
+        if (parameter.isPresent()) {
+            String quoteCurrencyCode = parameter.get();
+            channels = channels.filter(channel ->
+                    channel.getMarket().getQuoteCurrencyCode().equalsIgnoreCase(quoteCurrencyCode));
+        }
+        return getJsonPayload(channels);
     }
 
     private Optional<String> getJsonPayload(Stream<BisqEasyOfferbookChannel> channels) {
@@ -119,15 +136,7 @@ public class OffersWebSocketService extends BaseWebSocketService {
                 .flatMap(channel ->
                         channel.getChatMessages().stream()
                                 .filter(BisqEasyOfferbookMessage::hasBisqEasyOffer)
-                                .map(message -> {
-                                    try {
-                                        return createOfferListItemDto(message);
-                                    } catch (Exception e) {
-                                        log.error("Failed to create OfferListItemDto", e);
-                                        return null;
-                                    }
-                                })
-                                .filter(Objects::nonNull))
+                                .flatMap(message -> createOfferItemDtoSafe(message).stream()))
                 .collect(Collectors.toCollection(ArrayList::new));
         return toJson(payload);
     }
@@ -135,18 +144,48 @@ public class OffersWebSocketService extends BaseWebSocketService {
     private void send(String quoteCurrencyCode,
                       BisqEasyOfferbookMessage bisqEasyOfferbookMessage,
                       ModificationType modificationType) {
-        OfferItemPresentationDto item = createOfferListItemDto(bisqEasyOfferbookMessage);
-        // The payload is defined as a list to support batch data delivery at subscribe.
-        ArrayList<OfferItemPresentationDto> payload = new ArrayList<>(List.of(item));
-        toJson(payload).ifPresent(json -> {
-            subscriberRepository.findSubscribers(topic, quoteCurrencyCode)
-                    .ifPresent(subscribers -> subscribers
-                            .forEach(subscriber -> send(json, subscriber, modificationType)));
-        });
+        try {
+            List<Subscriber> subscribers = Stream.concat(
+                    subscriberRepository.findSubscribers(topic, canonicalizeParameter(Optional.of(quoteCurrencyCode))).stream(),
+                    subscriberRepository.findSubscribers(topic, Optional.empty()).stream()
+            ).toList();
+            if (subscribers.isEmpty()) {
+                return;
+            }
+            createOfferItemDtoSafe(bisqEasyOfferbookMessage).ifPresentOrElse(item -> {
+                // The payload is defined as a list to support batch data delivery at subscribe.
+                ArrayList<OfferItemPresentationDto> payload = new ArrayList<>(List.of(item));
+                toJson(payload).ifPresent(json -> {
+                    for (Subscriber subscriber : subscribers) {
+                        try {
+                            send(json, subscriber, modificationType);
+                        } catch (Exception e) {
+                            log.error("Failed to send offer update to subscriber={}, json={}", subscriber, json, e);
+                        }
+                    }
+                });
+            }, () -> log.debug("Skipping websocket send for offer from authorUserProfileId={}: user profile not yet available",
+                    bisqEasyOfferbookMessage.getAuthorUserProfileId()));
+        } catch (Exception e) {
+            log.error("Failed to send OfferListItemDto update for quoteCurrencyCode={}", quoteCurrencyCode, e);
+        }
     }
 
-    private OfferItemPresentationDto createOfferListItemDto(BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
-        return OfferItemPresentationDtoFactory.create(userProfileService,
+    /**
+     * Creates an OfferItemPresentationDto safely for WebSocket updates,
+     * delegating to the factory's createSafe method.
+     * <p>
+     * Returns Optional.empty() if the offer cannot be processed, preventing
+     * the WebSocket connection from failing due to incomplete P2P network data.
+     *
+     * @param bisqEasyOfferbookMessage the offerbook message to process
+     * @return Optional containing the DTO if successful, empty if skipped
+     */
+    private Optional<OfferItemPresentationDto> createOfferItemDtoSafe(
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+        return OfferItemPresentationDtoFactory.createSafe(
+                "WebSocket",
+                userProfileService,
                 userIdentityService,
                 reputationService,
                 marketPriceService,

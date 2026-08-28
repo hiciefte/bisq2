@@ -19,14 +19,11 @@ package bisq.trade.mu_sig;
 
 import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.account.payment_method.PaymentMethodSpecUtil;
-import bisq.account.protocol_type.TradeProtocolType;
 import bisq.account.payment_method.crypto.CryptoPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentMethod;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
 import bisq.common.locale.LocaleRepository;
 import bisq.common.market.Market;
-import bisq.contract.Party;
-import bisq.contract.Role;
 import bisq.contract.mu_sig.MuSigContract;
 import bisq.offer.Direction;
 import bisq.offer.mu_sig.MuSigOffer;
@@ -117,29 +114,26 @@ class MuSigTradeFormatterTest {
     }
 
     private MuSigContract createContract(Market market, long baseSideAmount, long quoteSideAmount) {
+        PaymentMethodSpec<?> nonBtcPaymentMethodSpec = market.isBaseCurrencyBitcoin()
+                ? PaymentMethodSpecUtil.createPaymentMethodSpec(FiatPaymentMethod.fromPaymentRail(FiatPaymentRail.ACH_TRANSFER), "USD")
+                : PaymentMethodSpecUtil.createPaymentMethodSpec(new CryptoPaymentMethod("XMR"), "XMR");
         MuSigOffer offer = new MuSigOffer("test-id",
                 null,
                 Direction.BUY,
                 market,
                 null,
                 null,
-                List.of(),
+                List.of(nonBtcPaymentMethodSpec.getPaymentMethod()),
                 List.of(),
                 "1.0.0");
-        PaymentMethodSpec<?> baseSpec = market.isBaseCurrencyBitcoin()
-                ? PaymentMethodSpecUtil.createBitcoinMainChainPaymentMethodSpec().get(0)
-                : PaymentMethodSpecUtil.createPaymentMethodSpec(new CryptoPaymentMethod("XMR"), "XMR");
-        PaymentMethodSpec<?> quoteSpec = market.isBaseCurrencyBitcoin()
-                ? PaymentMethodSpecUtil.createPaymentMethodSpec(FiatPaymentMethod.fromPaymentRail(FiatPaymentRail.ACH_TRANSFER), "USD")
-                : PaymentMethodSpecUtil.createBitcoinMainChainPaymentMethodSpec().get(0);
         return new MuSigContract(System.currentTimeMillis(),
                 offer,
-                TradeProtocolType.MU_SIG,
-                new Party(Role.TAKER, null),
+                null,
                 baseSideAmount,
                 quoteSideAmount,
-                baseSpec,
-                quoteSpec,
+                nonBtcPaymentMethodSpec,
+                new byte[20],
+                Optional.empty(),
                 Optional.empty(),
                 null,
                 0);

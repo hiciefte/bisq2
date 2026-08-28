@@ -87,7 +87,7 @@ public class MuSigTakeOfferAmountView extends View<StackPane, MuSigTakeOfferAmou
         linkToWiki = new Hyperlink("https://bisq.wiki/Reputation");
         amountLimitInfoOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("muSig.offer.wizard.amount.limitInfo.overlay.headline")
+                .headlineFromI18nKey("muSig.offer.wizard.amount.limitInfo.overlay.headline")
                 .description(createAndGetOverlayContent(amountLimitInfoOverlayInfo, linkToWikiText, linkToWiki))
                 .buttons(closeOverlayButton)
                 .build();

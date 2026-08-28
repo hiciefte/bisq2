@@ -291,10 +291,6 @@ public class OfferbookRestApi extends RestApiBase {
                             content = @Content(schema = @Schema(implementation = OfferItemPresentationDto.class))
                     ),
                     @ApiResponse(
-                            responseCode = "404",
-                            description = "No offers found for the specified currency code."
-                    ),
-                    @ApiResponse(
                             responseCode = "500",
                             description = "Internal server error occurred while processing the request."
                     )
@@ -305,12 +301,11 @@ public class OfferbookRestApi extends RestApiBase {
     public Response getOffers(@PathParam("currencyCode") String currencyCode) {
         try {
             String marketCodes = "BTC/" + currencyCode.toUpperCase(Locale.ROOT);
-            return findOffer(marketCodes)
-                    .map(this::buildOkResponse)
-                    .orElseGet(() -> {
-                        log.warn("No offers found for market: {}", marketCodes);
-                        return buildNotFoundResponse("No offers found for the specified market.");
-                    });
+            List<OfferItemPresentationDto> offers = findOffer(marketCodes).orElseGet(ArrayList::new);
+            if (offers.isEmpty()) {
+                log.info("No offers found for market: {}", marketCodes);
+            }
+            return buildOkResponse(offers);
 
         } catch (Exception e) {
             log.error("Error while fetching offers for currency code: {}", currencyCode, e);
@@ -324,14 +319,27 @@ public class OfferbookRestApi extends RestApiBase {
                         .map(channel -> channel.getChatMessages()
                                 .stream()
                                 .filter(BisqEasyOfferbookMessage::hasBisqEasyOffer)
-                                .map(this::createOfferListItemDto)
+                                .flatMap(msg -> createOfferListItemDtoSafe(msg).stream())
                                 .collect(Collectors.toList())
                         )
                 );
     }
 
-    private OfferItemPresentationDto createOfferListItemDto(BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
-        return OfferItemPresentationDtoFactory.create(userProfileService,
+    /**
+     * Creates an OfferItemPresentationDto safely, delegating to the factory's
+     * createSafe method and logging any skipped offers.
+     * <p>
+     * This method provides graceful degradation when P2P network data is incomplete,
+     * allowing partial results to be returned instead of failing the entire request.
+     *
+     * @param bisqEasyOfferbookMessage the offerbook message to process
+     * @return Optional containing the DTO if successful, empty if the offer should be skipped
+     */
+    private Optional<OfferItemPresentationDto> createOfferListItemDtoSafe(
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+        return OfferItemPresentationDtoFactory.createSafe(
+                "REST",
+                userProfileService,
                 userIdentityService,
                 reputationService,
                 marketPriceService,

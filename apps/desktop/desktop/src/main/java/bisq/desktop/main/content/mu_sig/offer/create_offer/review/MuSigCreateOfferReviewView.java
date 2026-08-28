@@ -158,7 +158,7 @@ class MuSigCreateOfferReviewView extends View<StackPane, MuSigCreateOfferReviewM
         createOfferSuccessButton.setDefaultButton(true);
         createOfferSuccessOverlay = new WizardOverlay(root)
                 .info()
-                .headline("muSig.offer.create.review.createOfferSuccess.headline")
+                .headlineFromI18nKey("muSig.offer.create.review.createOfferSuccess.headline")
                 .descriptionFromI18nKey("muSig.offer.create.review.createOfferSuccess.subTitle")
                 .buttons(createOfferSuccessButton)
                 .build();

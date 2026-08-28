@@ -19,6 +19,7 @@ package bisq.desktop.main.content.mu_sig.offer.take_offer.payment;
 
 import bisq.account.accounts.Account;
 import bisq.account.payment_method.PaymentMethod;
+import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.desktop.common.threading.UIThread;
 import bisq.desktop.common.utils.GridPaneUtil;
 import bisq.desktop.common.view.View;
@@ -28,12 +29,10 @@ import bisq.desktop.components.controls.AutoCompleteComboBox;
 import bisq.desktop.components.controls.BisqTooltip;
 import bisq.desktop.main.content.mu_sig.offer.components.MuSigPaymentMethodChipButton;
 import bisq.i18n.Res;
-import bisq.account.payment_method.PaymentMethodSpec;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
@@ -45,10 +44,8 @@ import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 @Slf4j
 public class MuSigTakeOfferPaymentView extends View<StackPane, MuSigTakeOfferPaymentModel, MuSigTakeOfferPaymentController> {
@@ -58,7 +55,6 @@ public class MuSigTakeOfferPaymentView extends View<StackPane, MuSigTakeOfferPay
     private final Button noAccountOverlayCloseButton, createAccountButton, multipleAccountsOverlayCloseButton,
             noPaymentMethodSelectedOverlayCloseButton;
     private final AutoCompleteComboBox<Account<?, ?>> singlePaymentMethodAccountSelection, accountSelection;
-    private final Set<ImageView> closeIcons = new HashSet<>();
     private final List<MuSigPaymentMethodChipButton> paymentMethodChipButtons = new ArrayList<>();
     private final WizardOverlay noAccountOverlay, multipleAccountsOverlay, noPaymentMethodSelectedOverlay;
     private Subscription selectedPaymentMethodPin, selectedTogglePin, shouldShowNoAccountOverlayPin,
@@ -118,7 +114,7 @@ public class MuSigTakeOfferPaymentView extends View<StackPane, MuSigTakeOfferPay
         noPaymentMethodSelectedOverlayCloseButton = new Button(Res.get("action.close"));
         noPaymentMethodSelectedOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("muSig.offer.taker.payment.noPaymentMethodSelectedWizardOverlay.title")
+                .headlineFromI18nKey("muSig.offer.taker.payment.noPaymentMethodSelectedWizardOverlay.title")
                 .descriptionFromI18nKey("muSig.offer.taker.payment.noPaymentMethodSelectedWizardOverlay.subtitle")
                 .buttons(noPaymentMethodSelectedOverlayCloseButton)
                 .build();
@@ -202,16 +198,11 @@ public class MuSigTakeOfferPaymentView extends View<StackPane, MuSigTakeOfferPay
         accountSelection.setOnChangeConfirmed(null);
         singlePaymentMethodAccountSelection.setOnChangeConfirmed(null);
 
-        closeIcons.forEach(imageView -> imageView.setOnMousePressed(null));
-        closeIcons.clear();
-
         root.setOnKeyPressed(null);
         root.setOnMousePressed(null);
     }
 
     private void setUpAndFillPaymentMethods() {
-        closeIcons.forEach(imageView -> imageView.setOnMousePressed(null));
-        closeIcons.clear();
         gridPane.getChildren().clear();
         gridPane.getColumnConstraints().clear();
         paymentMethodChipButtons.clear();

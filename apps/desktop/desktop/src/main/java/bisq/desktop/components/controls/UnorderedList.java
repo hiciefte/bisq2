@@ -36,6 +36,12 @@ public class UnorderedList extends TextList {
         this(text, style, 7, 0, REGEX, BULLET_SYMBOL);
     }
 
+    public UnorderedList(String text, @Nullable String style, double gap, double vSpacing) {
+        super(text, style, gap, vSpacing, REGEX, BULLET_SYMBOL);
+
+        getStyleClass().add(STYLE_CLASS);
+    }
+
     public UnorderedList(String text, @Nullable String style, double gap, double vSpacing, String regex, String mark) {
         super(text, style, gap, vSpacing, regex, mark);
 

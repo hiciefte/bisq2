@@ -24,8 +24,9 @@ import bisq.account.accounts.MultiCurrencyAccountPayload;
 import bisq.account.accounts.SelectableCurrencyAccountPayload;
 import bisq.account.accounts.SingleCurrencyAccountPayload;
 import bisq.account.accounts.fiat.UserDefinedFiatAccount;
-import bisq.account.payment_method.PaymentMethodUtil;
 import bisq.account.payment_method.PaymentMethod;
+import bisq.account.payment_method.PaymentMethodUtil;
+import bisq.common.data.Pair;
 import bisq.common.market.Market;
 import bisq.common.observable.map.ReadOnlyObservableMap;
 import bisq.desktop.ServiceProvider;
@@ -37,7 +38,11 @@ import bisq.desktop.main.content.mu_sig.offer.components.MuSigPaymentMethodChipB
 import bisq.desktop.navigation.NavigationTarget;
 import bisq.desktop.overlay.OverlayController;
 import bisq.i18n.Res;
+import bisq.mu_sig.MuSigTradeAmountLimits;
 import bisq.offer.Direction;
+import bisq.presentation.formatters.AmountFormatter;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
 import lombok.Getter;
@@ -63,6 +68,7 @@ public class MuSigCreateOfferPaymentController implements Controller {
     private final Region owner;
     private final AccountService accountService;
     private final Consumer<Boolean> navigationButtonsVisibleHandler;
+    private final ListChangeListener<PaymentMethod<?>> selectedPaymentMethodsListener;
     private Subscription paymentMethodWithoutAccountPin, paymentMethodWithMultipleAccountsPin;
 
     public MuSigCreateOfferPaymentController(ServiceProvider serviceProvider,
@@ -75,6 +81,8 @@ public class MuSigCreateOfferPaymentController implements Controller {
         model = new MuSigCreateOfferPaymentModel();
         view = new MuSigCreateOfferPaymentView(model, this);
         model.getSortedAccountsForPaymentMethod().setComparator(Comparator.comparing(Account::getAccountName));
+
+        selectedPaymentMethodsListener = c -> updateTradeLimitInfo();
     }
 
     public ReadOnlyObservableMap<PaymentMethod<?>, Account<?, ?>> getSelectedAccountByPaymentMethod() {
@@ -90,7 +98,7 @@ public class MuSigCreateOfferPaymentController implements Controller {
                 .filter(account ->
                         account.getAccountPayload().getSelectedCurrencyCodes().stream()
                                 .anyMatch(code -> code.equals(currencyCode)))
-                                .collect(Collectors.toList());
+                .collect(Collectors.toList());
     }
 
     public boolean validate() {
@@ -129,7 +137,7 @@ public class MuSigCreateOfferPaymentController implements Controller {
     @Override
     public void onActivate() {
         model.getSortedPaymentMethods().setComparator(Comparator.comparing(PaymentMethod::getShortDisplayString));
-        model.getPaymentMethods().setAll(PaymentMethodUtil.getPaymentMethods(model.getPaymentMethodCurrencyCode()));
+        model.getPaymentMethods().setAll(PaymentMethodUtil.getStandardAccountPaymentMethods(model.getPaymentMethodCurrencyCode()));
         model.getAccountsByPaymentMethod().putAll(getEligibleAccounts().stream()
                 .collect(Collectors.groupingBy(
                         Account::getPaymentMethod,
@@ -154,6 +162,9 @@ public class MuSigCreateOfferPaymentController implements Controller {
                 updateShouldShowMultipleAccountsOverlay(true);
             }
         });
+
+        model.getSelectedPaymentMethods().addListener(selectedPaymentMethodsListener);
+        updateTradeLimitInfo();
     }
 
     @Override
@@ -164,6 +175,8 @@ public class MuSigCreateOfferPaymentController implements Controller {
 
         paymentMethodWithoutAccountPin.unsubscribe();
         paymentMethodWithMultipleAccountsPin.unsubscribe();
+
+        model.getSelectedPaymentMethods().removeListener(selectedPaymentMethodsListener);
     }
 
     void onTogglePaymentMethod(PaymentMethod<?> paymentMethod, MuSigPaymentMethodChipButton button) {
@@ -177,7 +190,9 @@ public class MuSigCreateOfferPaymentController implements Controller {
                     return;
                 }
 
-                model.getSelectedPaymentMethods().add(paymentMethod);
+                if (!model.getSelectedPaymentMethods().contains(paymentMethod)) {
+                    model.getSelectedPaymentMethods().add(paymentMethod);
+                }
                 if (model.getAccountsByPaymentMethod().containsKey(paymentMethod)) {
                     List<Account<?, ?>> accountsForPaymentMethod = model.getAccountsByPaymentMethod().get(paymentMethod);
                     checkArgument(!accountsForPaymentMethod.isEmpty());
@@ -200,6 +215,10 @@ public class MuSigCreateOfferPaymentController implements Controller {
 
     public void selectAccount(Account<? extends PaymentMethod<?>, ?> account, PaymentMethod<?> paymentMethod) {
         doSelectAccount(account, paymentMethod);
+
+        if (!model.getSelectedPaymentMethods().contains(paymentMethod)) {
+            model.getSelectedPaymentMethods().add(paymentMethod);
+        }
     }
 
     void onSelectAccount(Account<? extends PaymentMethod<?>, ?> account, PaymentMethod<?> paymentMethod) {
@@ -243,7 +262,8 @@ public class MuSigCreateOfferPaymentController implements Controller {
     }
 
     void onKeyPressedWhileShowingMultipleAccountsOverlay(KeyEvent keyEvent) {
-        KeyHandlerUtil.handleEnterKeyEvent(keyEvent, () -> {});
+        KeyHandlerUtil.handleEnterKeyEvent(keyEvent, () -> {
+        });
         KeyHandlerUtil.handleEscapeKeyEvent(keyEvent, this::onCloseMultipleAccountsOverlay);
     }
 
@@ -258,6 +278,24 @@ public class MuSigCreateOfferPaymentController implements Controller {
         KeyHandlerUtil.handleEnterKeyEvent(keyEvent, () -> {
         });
         KeyHandlerUtil.handleEscapeKeyEvent(keyEvent, this::onCloseNoPaymentMethodSelectedOverlay);
+    }
+
+    private void updateTradeLimitInfo() {
+        ObservableList<PaymentMethod<?>> selectedPaymentMethods = model.getSelectedPaymentMethods();
+        boolean isSinglePaymentMethod = selectedPaymentMethods.size() == 1;
+        selectedPaymentMethods.stream()
+                .map(paymentMethod -> new Pair<>(paymentMethod.getDisplayString(),
+                        MuSigTradeAmountLimits.getMaxTradeLimitInUsd(paymentMethod.getPaymentRail())))
+                .min(Comparator.comparing(Pair::getSecond))
+                .ifPresentOrElse(pair -> {
+                            String formatted = AmountFormatter.formatQuoteAmountWithCode(pair.getSecond());
+                            if (isSinglePaymentMethod) {
+                                model.getTradeLimitInfo().set(Res.get("muSig.offer.create.paymentMethods.tradeAmountLimitInfo.single", pair.getFirst(), formatted));
+                            } else {
+                                model.getTradeLimitInfo().set(Res.get("muSig.offer.create.paymentMethods.tradeAmountLimitInfo.multiple", formatted));
+                            }
+                        },
+                        () -> model.getTradeLimitInfo().set(""));
     }
 
     private void updateShouldShowNoAccountOverlay(boolean shouldShow) {

@@ -18,6 +18,7 @@
 package bisq.common.util;
 
 import bisq.common.data.Pair;
+import bisq.common.locale.LocaleRepository;
 import bisq.common.platform.OS;
 import bisq.common.platform.PlatformUtils;
 import com.google.common.base.CaseFormat;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -37,8 +39,22 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class StringUtils {
+    public static final String UNIT_SEPARATOR = "\u001F"; // Unit Separator, ASCII 31
+
     public static final String DOT_ELLIPSIS = "...";
     public static final String UNICODE_ELLIPSIS = "…";
+
+    // Strips every character that could forge or reorder a log line before truncating, so an
+    // attacker-controlled value (e.g. a peer-supplied id) cannot inject a fake record. \p{Cntrl}
+    // alone misses the C1 controls (U+0085 NEL) and the format/bidi category (U+202E), so the
+    // class is spelled out: \p{Cc} all controls, \p{Cf} format/bidi, U+2028/U+2029 the line and
+    // paragraph separators.
+    public static String sanitizeForLog(String value) {
+        if (value == null) {
+            return "";
+        }
+        return truncate(value.replaceAll("[\\p{Cc}\\p{Cf}\\u2028\\u2029]", "?"), 60);
+    }
 
     public static String truncate(Object value) {
         return truncate(value.toString());
@@ -49,6 +65,7 @@ public class StringUtils {
     }
 
     public static String truncate(Object value, int maxLength) {
+        checkNotNull(value, "value at truncate must not be null", value);
         return truncate(value.toString(), maxLength);
     }
 
@@ -345,5 +362,13 @@ public class StringUtils {
 
     public static String flattenLineBreaks(String value) {
         return value.replaceAll("\\R", ", ");
+    }
+
+    public static char getDecimalSeparator() {
+        return getDecimalSeparator(LocaleRepository.getDefaultLocale());
+    }
+
+    public static char getDecimalSeparator(Locale locale) {
+        return DecimalFormatSymbols.getInstance(locale).getDecimalSeparator();
     }
 }

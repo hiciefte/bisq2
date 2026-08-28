@@ -40,10 +40,12 @@ import bisq.user.profile.UserProfile;
 import lombok.extern.slf4j.Slf4j;
 
 import java.security.GeneralSecurityException;
+import java.security.PublicKey;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static bisq.trade.bisq_easy.validation.BisqEasyOfferAmountValidator.validateOfferAmount;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -60,6 +62,13 @@ public class BisqEasyTakeOfferRequestHandler extends BisqEasyTradeMessageHandler
     protected void verify(BisqEasyTakeOfferRequest message) {
         BisqEasyContract takersContract = checkNotNull(message.getBisqEasyContract(), "Takers contract must not be null");
         BisqEasyOffer takersOffer = checkNotNull(takersContract.getOffer(), "Offer from takers contract must not be null");
+
+        if (serviceProvider.getUserService().getUserProfileService().isChatUserIgnored(message.getSender().getId())) {
+            log.warn("We reject the take offer request because we have ignored the taker's user profile. " +
+                    "We do not disclose that to the taker but send a generic rejection reason. takersOffer={}", takersOffer);
+            throw new TradeProtocolException("The maker has rejected the take offer request because the offer is not available anymore.",
+                    TradeProtocolFailure.OFFER_NOT_AVAILABLE);
+        }
 
         List<BisqEasyOffer> myOffers = serviceProvider.getChatService().getBisqEasyOfferbookChannelService().getChannels().stream()
                 .flatMap(channel -> channel.getChatMessages().stream())
@@ -97,7 +106,14 @@ public class BisqEasyTakeOfferRequestHandler extends BisqEasyTradeMessageHandler
 
         checkArgument(message.getSender().equals(takersContract.getTaker().getNetworkId()),
                 "Senders networkId must be same as takers networkId from takers contract");
+        ContractService contractService = serviceProvider.getContractService();
+        PublicKey takerPublicKey = takersContract.getTaker().getNetworkId().getPubKey().getPublicKey();
+        checkArgument(contractService.arePublicKeysMatching(message.getSenderPublicKey(), takerPublicKey),
+                "Takers message sender public key must match takers network id public key");
 
+        validateOfferAmount(takersOffer,
+                takersContract.getBaseSideAmount(),
+                takersContract.getQuoteSideAmount());
         validateAmount(takersOffer, takersContract);
 
         checkArgument(takersOffer.getBaseSidePaymentMethodSpecs().contains(takersContract.getBaseSidePaymentMethodSpec()),
@@ -113,14 +129,18 @@ public class BisqEasyTakeOfferRequestHandler extends BisqEasyTradeMessageHandler
             String errorMessage = String.format("Mediators do not match.\n" +
                     "Maker's mediator: %s\n" +
                     "Taker's mediator: %s", mediator, takersContract.getMediator());
+            log.warn(errorMessage);
             throw new TradeProtocolException(errorMessage, TradeProtocolFailure.MEDIATORS_NOT_MATCHING);
         }
 
         log.info("Selected mediator for trade {}: {}", trade.getShortId(), mediator.map(UserProfile::getUserName).orElse("N/A"));
 
         ContractSignatureData takersContractSignatureData = message.getContractSignatureData();
+        checkArgument(contractService.arePublicKeysMatching(takersContractSignatureData,
+                        takerPublicKey),
+                "Takers contract signature public key must match takers network id public key");
         try {
-            checkArgument(serviceProvider.getContractService().verifyContractSignature(takersContract, takersContractSignatureData),
+            checkArgument(contractService.verifyContractSignature(takersContract, takersContractSignatureData),
                     "Verifying takers contract signature failed");
         } catch (GeneralSecurityException e) {
             throw new RuntimeException(e);

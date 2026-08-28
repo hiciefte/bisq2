@@ -63,6 +63,7 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
     private ComboBox<FiatPaymentMethod> fiatPaymentMethodsComboBox;
     private Subscription showCreateOfferSuccessPin, takeOfferStatusPin;
     private boolean minWaitingTimePassed = false;
+    private UIScheduler minWaitingTimeScheduler;
 
     TradeWizardReviewView(TradeWizardReviewModel model,
                           TradeWizardReviewController controller,
@@ -171,7 +172,7 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
         createOfferSuccessButton.setDefaultButton(true);
         createOfferSuccessOverlay = new WizardOverlay(root)
                 .info()
-                .headline("bisqEasy.tradeWizard.review.createOfferSuccess.headline")
+                .headlineFromI18nKey("bisqEasy.tradeWizard.review.createOfferSuccess.headline")
                 .descriptionFromI18nKey("bisqEasy.tradeWizard.review.createOfferSuccess.subTitle")
                 .buttons(createOfferSuccessButton)
                 .build();
@@ -179,7 +180,7 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
         takeOfferSendMessageWaitingAnimation = new WaitingAnimation(WaitingState.TAKE_BISQ_EASY_OFFER);
         sendTakeOfferMessageOverlay = new WizardOverlay(root)
                 .headlineIcon(takeOfferSendMessageWaitingAnimation)
-                .headline("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.headline")
+                .headlineFromI18nKey("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.headline")
                 .descriptionFromI18nKeys("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.subTitle",
                         "bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.info")
                 .build();
@@ -188,7 +189,7 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
         takeOfferSuccessButton.setDefaultButton(true);
         takeOfferSuccessOverlay = new WizardOverlay(root)
                 .info()
-                .headline("bisqEasy.tradeWizard.review.takeOfferSuccess.headline")
+                .headlineFromI18nKey("bisqEasy.tradeWizard.review.takeOfferSuccess.headline")
                 .descriptionFromI18nKey("bisqEasy.tradeWizard.review.takeOfferSuccess.subTitle")
                 .buttons(takeOfferSuccessButton)
                 .build();
@@ -298,6 +299,7 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
         takeOfferStatusPin.unsubscribe();
 
         takeOfferSendMessageWaitingAnimation.stop();
+        stopMinWaitingTimeScheduler();
 
         if (bitcoinPaymentMethodsComboBox != null) {
             bitcoinPaymentMethodsComboBox.setOnAction(null);
@@ -309,13 +311,15 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
 
     private void showTakeOfferStatusFeedback(TradeWizardReviewModel.TakeOfferStatus status) {
         if (status == TradeWizardReviewModel.TakeOfferStatus.SENT) {
+            minWaitingTimePassed = false;
             sendTakeOfferMessageOverlay.setVisible(true);
 
             Transitions.blurStrong(gridPane, 0);
             Transitions.slideInTop(sendTakeOfferMessageOverlay, 450);
             takeOfferSendMessageWaitingAnimation.playIndefinitely();
 
-            UIScheduler.run(() -> {
+            stopMinWaitingTimeScheduler();
+            minWaitingTimeScheduler = UIScheduler.run(() -> {
                 minWaitingTimePassed = true;
                 if (model.getTakeOfferStatus().get() == TradeWizardReviewModel.TakeOfferStatus.SUCCESS) {
                     sendTakeOfferMessageOverlay.setVisible(false);
@@ -329,7 +333,17 @@ class TradeWizardReviewView extends View<StackPane, TradeWizardReviewModel, Trad
             takeOfferSendMessageWaitingAnimation.stop();
         } else if (status == TradeWizardReviewModel.TakeOfferStatus.NOT_STARTED) {
             sendTakeOfferMessageOverlay.setVisible(false);
+            takeOfferSuccessOverlay.setVisible(false);
+            takeOfferSendMessageWaitingAnimation.stop();
+            stopMinWaitingTimeScheduler();
             Transitions.removeEffect(gridPane);
+        }
+    }
+
+    private void stopMinWaitingTimeScheduler() {
+        if (minWaitingTimeScheduler != null) {
+            minWaitingTimeScheduler.stop();
+            minWaitingTimeScheduler = null;
         }
     }
 

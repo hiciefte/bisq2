@@ -32,33 +32,41 @@ import bisq.api.access.transport.TlsContextService;
 import bisq.api.rest_api.PairingApiResourceConfig;
 import bisq.api.rest_api.RestApiResourceConfig;
 import bisq.api.rest_api.endpoints.access.AccessApi;
+import bisq.api.rest_api.endpoints.alert_notifications.AlertNotificationsRestApi;
 import bisq.api.rest_api.endpoints.chat.trade.TradeChatMessagesRestApi;
+import bisq.api.rest_api.endpoints.config.ConfigRestApi;
 import bisq.api.rest_api.endpoints.devices.DevicesRestApi;
 import bisq.api.rest_api.endpoints.explorer.ExplorerRestApi;
 import bisq.api.rest_api.endpoints.market_price.MarketPriceRestApi;
 import bisq.api.rest_api.endpoints.offers.OfferbookRestApi;
-import bisq.api.rest_api.endpoints.payment_accounts.FiatPaymentAccountsRestApi;
+import bisq.api.rest_api.endpoints.payment_accounts.UserDefinedPaymentAccountsRestApi;
 import bisq.api.rest_api.endpoints.payment_accounts.PaymentAccountsRestApi;
 import bisq.api.rest_api.endpoints.reputation.ReputationRestApi;
 import bisq.api.rest_api.endpoints.settings.SettingsRestApi;
+import bisq.api.rest_api.endpoints.support.SupportRestApi;
+import bisq.api.rest_api.endpoints.trade_restricting_alert.TradeRestrictingAlertRestApi;
 import bisq.api.rest_api.endpoints.trades.TradeRestApi;
 import bisq.api.rest_api.endpoints.user_identity.UserIdentityRestApi;
 import bisq.api.rest_api.endpoints.user_profile.UserProfileRestApi;
 import bisq.api.web_socket.WebSocketService;
+import bisq.api.web_socket.domain.ClosedTradeItemsService;
 import bisq.api.web_socket.domain.OpenTradeItemsService;
 import bisq.bisq_easy.BisqEasyService;
 import bisq.bonded_roles.BondedRolesService;
+import bisq.bonded_roles.release.AppType;
+import bisq.bonded_roles.security_manager.alert.AlertNotificationsService;
 import bisq.chat.ChatService;
 import bisq.common.application.Service;
 import bisq.common.network.Address;
 import bisq.common.observable.Observable;
+import bisq.common.observable.Pin;
 import bisq.common.observable.ReadOnlyObservable;
+import bisq.common.timer.Scheduler;
 import bisq.common.util.CompletableFutureUtils;
 import bisq.network.NetworkService;
 import bisq.notifications.mobile.registration.DeviceRegistrationService;
 import bisq.persistence.PersistenceService;
 import bisq.security.SecurityService;
-import bisq.security.tls.TlsException;
 import bisq.settings.SettingsService;
 import bisq.support.SupportService;
 import bisq.trade.TradeService;
@@ -68,15 +76,14 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.glassfish.jersey.server.ResourceConfig;
 
+import javax.annotation.Nullable;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Swagger docs at: http://localhost:8090/doc/v1/index.html if rest is enabled
@@ -107,7 +114,12 @@ public class ApiService implements Service {
     private final HttpServerBootstrapService httpServerBootstrapService;
     @Getter
     private final TlsContextService tlsContextService;
+    private final AlertNotificationsService alertNotificationsService;
     private final Observable<State> state = new Observable<>(State.NEW);
+    private final Object pairingQrCodeLock = new Object();
+    @Nullable
+    private Pin pairingCodePin;
+    private Optional<Scheduler> pairingCodeScheduler = Optional.empty();
 
     public ApiService(ApiConfig apiConfig,
                       Path appDataDirPath,
@@ -122,6 +134,7 @@ public class ApiService implements Service {
                       SettingsService settingsService,
                       BisqEasyService bisqEasyService,
                       OpenTradeItemsService openTradeItemsService,
+                      ClosedTradeItemsService closedTradeItemsService,
                       AccountService accountService,
                       ReputationService reputationService,
                       DeviceRegistrationService deviceRegistrationService) {
@@ -141,6 +154,7 @@ public class ApiService implements Service {
         pairingService = new PairingService(apiConfig, appDataDirPath, apiAccessStoreService, permissionService);
         sessionService = new SessionService(apiConfig.getSessionTtlInMinutes());
         tlsContextService = new TlsContextService(apiConfig, appDataDirPath);
+        alertNotificationsService = new AlertNotificationsService(settingsService, bondedRolesService.getAlertService(), AppType.UNSPECIFIED);
 
         SessionAuthenticationService sessionAuthenticationService = new SessionAuthenticationService(pairingService, sessionService);
 
@@ -154,23 +168,32 @@ public class ApiService implements Service {
                 bondedRolesService.getMarketPriceService(),
                 userService,
                 supportedService,
-                tradeService);
+                tradeService,
+                closedTradeItemsService);
         TradeChatMessagesRestApi tradeChatMessagesRestApi = new TradeChatMessagesRestApi(chatService, userService);
         UserIdentityRestApi userIdentityRestApi = new UserIdentityRestApi(securityService, userService.getUserIdentityService(), bisqEasyService);
         MarketPriceRestApi marketPriceRestApi = new MarketPriceRestApi(bondedRolesService.getMarketPriceService());
         SettingsRestApi settingsRestApi = new SettingsRestApi(settingsService);
+        AlertNotificationsRestApi alertNotificationsRestApi = new AlertNotificationsRestApi(alertNotificationsService);
+        TradeRestrictingAlertRestApi tradeRestrictingAlertRestApi = new TradeRestrictingAlertRestApi(bondedRolesService.getAlertService());
         PaymentAccountsRestApi paymentAccountsRestApi = new PaymentAccountsRestApi(accountService);
-        FiatPaymentAccountsRestApi fiatPaymentAccountsRestApi = new FiatPaymentAccountsRestApi(accountService);
+        UserDefinedPaymentAccountsRestApi userDefinedPaymentAccountsRestApi = new UserDefinedPaymentAccountsRestApi(accountService);
         UserProfileRestApi userProfileRestApi = new UserProfileRestApi(
                 userService.getUserProfileService(),
                 supportedService.getModerationRequestService(),
                 userService.getRepublishUserProfileService());
         ExplorerRestApi explorerRestApi = new ExplorerRestApi(bondedRolesService.getExplorerService());
         ReputationRestApi reputationRestApi = new ReputationRestApi(reputationService, userService);
-        DevicesRestApi devicesRestApi= new DevicesRestApi(deviceRegistrationService);
+        DevicesRestApi devicesRestApi = new DevicesRestApi(deviceRegistrationService);
+        ConfigRestApi configRestApi = new ConfigRestApi();
+        SupportRestApi supportRestApi = new SupportRestApi(chatService,
+                userService.getUserIdentityService(),
+                userService.getUserProfileService());
 
         ResourceConfig resourceConfig;
-        if (apiConfig.isRestEnabled()) {
+        if (apiConfig.isRestEnabled() || apiConfig.isWebsocketEnabled()) {
+            // WebSocket REST bridge forwards requests to the local HTTP server,
+            // so all endpoints must be registered when WebSocket is enabled.
             resourceConfig = new RestApiResourceConfig(apiConfig,
                     permissionService,
                     sessionAuthenticationService,
@@ -181,12 +204,16 @@ public class ApiService implements Service {
                     userIdentityRestApi,
                     marketPriceRestApi,
                     settingsRestApi,
+                    alertNotificationsRestApi,
+                    tradeRestrictingAlertRestApi,
                     explorerRestApi,
                     paymentAccountsRestApi,
-                    fiatPaymentAccountsRestApi,
+                    userDefinedPaymentAccountsRestApi,
                     reputationRestApi,
                     userProfileRestApi,
-                    devicesRestApi);
+                    devicesRestApi,
+                    configRestApi,
+                    supportRestApi);
         } else {
             resourceConfig = new PairingApiResourceConfig(accessApi);
         }
@@ -195,10 +222,12 @@ public class ApiService implements Service {
             webSocketService = Optional.of(new WebSocketService(apiConfig,
                     tlsContextService,
                     bondedRolesService,
+                    alertNotificationsService,
                     chatService,
                     tradeService,
                     userService,
                     bisqEasyService,
+                    networkService,
                     openTradeItemsService));
         } else {
             webSocketService = Optional.empty();
@@ -224,6 +253,7 @@ public class ApiService implements Service {
 
         // REST API and Websocket are handled inside httpServerBootstrapService
         futures.add(httpServerBootstrapService.initialize());
+        futures.add(alertNotificationsService.initialize());
 
         futures.add(apiAccessTransportService.initialize());
 
@@ -251,6 +281,7 @@ public class ApiService implements Service {
                     } else {
                         try {
                             createPairingQrCode();
+                            setupPairingCodeAutoRegeneration();
                             return CompletableFuture.completedFuture(true);
                         } catch (Exception e) {
                             return CompletableFuture.failedFuture(e);
@@ -267,7 +298,14 @@ public class ApiService implements Service {
         }
 
         setState(State.STOPPING);
+        pairingCodeScheduler.ifPresent(Scheduler::stop);
+        pairingCodeScheduler = Optional.empty();
+        if (pairingCodePin != null) {
+            pairingCodePin.unbind();
+            pairingCodePin = null;
+        }
         List<CompletableFuture<Boolean>> futures = new ArrayList<>();
+        futures.add(alertNotificationsService.shutdown());
         futures.add(apiAccessTransportService.shutdown());
         futures.add(httpServerBootstrapService.shutdown());
         return CompletableFutureUtils.allOf(futures)
@@ -277,27 +315,81 @@ public class ApiService implements Service {
                 });
     }
 
-    public void createPairingQrCode() throws TlsException {
-        checkArgument(webSocketService.isPresent(),
-                "webSocketService must be present");
+    public void createPairingQrCode() {
+        synchronized (pairingQrCodeLock) {
+            if (webSocketService.isEmpty()) {
+                log.warn("Cannot create pairing QR code: WebSocket service not initialized");
+                return;
+            }
 
-        checkArgument(webSocketService.get().getState().get() == WebSocketService.State.RUNNING,
-                "webSocketServiceState must be RUNNING");
+            WebSocketService.State wsState = webSocketService.get().getState().get();
+            if (wsState != WebSocketService.State.RUNNING) {
+                log.warn("Cannot create pairing QR code: WebSocket service state is {} (expected RUNNING)", wsState);
+                return;
+            }
 
-        String webSocketUrl;
-        if (apiConfig.useTor()) {
-            Address onionAddress = apiAccessTransportService.getOnionAddress().get();
-            checkNotNull(onionAddress, "OnionAddress must not be null");
-            webSocketUrl = apiConfig.getWebSocketProtocol() + "://" + onionAddress.getHost() + ":" + onionAddress.getPort();
-        } else {
-            webSocketUrl = apiConfig.getWebSocketServerUrl();
+            pairingService.cleanupExpiredPairingCodes();
+
+            String webSocketUrl;
+            if (apiConfig.useTor()) {
+                Address onionAddress = apiAccessTransportService.getOnionAddress().get();
+                if (onionAddress == null) {
+                    log.warn("Cannot create pairing QR code: onion address not available yet");
+                    return;
+                }
+                webSocketUrl = apiConfig.getWebSocketProtocol() + "://" + onionAddress.getHost() + ":" + onionAddress.getPort();
+            } else {
+                String host = apiConfig.getBindHost();
+                if ("0.0.0.0".equals(host)) {
+                    // 0.0.0.0 is not a reachable address — attempt auto-detection for the QR code.
+                    Address lanAddress = apiAccessTransportService.findLanAddress();
+                    webSocketUrl = apiConfig.getWebSocketProtocol() + "://" + lanAddress.getHost() + ":" + lanAddress.getPort();
+                    log.warn("CLEAR mode: bind host is 0.0.0.0, using auto-detected LAN address {} for pairing QR code. " +
+                            "For reliable pairing, set bind.host to a specific IP.", lanAddress);
+                } else {
+                    // Use the configured bind host directly — whether it's a specific LAN IP
+                    // or loopback (loopback only works for emulators, warned at startup).
+                    webSocketUrl = apiConfig.getWebSocketServerUrl();
+                }
+            }
+
+            Set<Permission> grantedPermissions = apiConfig.getGrantedPermissions();
+            PairingCode pairingCode = pairingService.createPairingCode(grantedPermissions);
+            pairingService.createPairingQrCode(pairingCode,
+                    webSocketUrl,
+                    tlsContextService.getTlsContext(),
+                    apiAccessTransportService.getTorContext());
+
+            if (pairingService.getPairingQrCode().get() != null) {
+                log.info("Pairing QR code created. Code ID: {} (expires at: {})",
+                        pairingCode.getId(), pairingCode.getExpiresAt());
+            } else {
+                log.warn("Failed to create pairing QR code for Code ID: {}", pairingCode.getId());
+            }
         }
-        Set<Permission> grantedPermissions = apiConfig.getGrantedPermissions();
-        PairingCode pairingCode = pairingService.createPairingCode(grantedPermissions);
-        pairingService.createPairingQrCode(pairingCode,
-                webSocketUrl,
-                tlsContextService.getOrCreateTlsContext(),
-                apiAccessTransportService.getTorContext());
+    }
+
+    private void setupPairingCodeAutoRegeneration() {
+        // Schedule periodic regeneration before TTL expires.
+        // Use at most 5 minutes interval so headless users get fresh codes promptly.
+        int ttlMinutes = pairingService.getPairingCodeTtlInSeconds() / 60;
+        int regenerationIntervalMinutes = Math.max(1, Math.min(ttlMinutes - 1, 5));
+        pairingCodeScheduler = Optional.of(Scheduler.run(this::createPairingQrCode)
+                .host(this)
+                .runnableName("regeneratePairingCode")
+                .periodically(regenerationIntervalMinutes, TimeUnit.MINUTES));
+        log.info("Pairing code auto-regeneration scheduled every {} minutes (TTL: {} minutes)",
+                regenerationIntervalMinutes, ttlMinutes);
+
+        // Regenerate immediately when a pairing code is consumed
+        pairingCodePin = pairingService.getPairingCode().addObserver(pairingCode -> {
+            if (pairingCode == null && state.get() == State.RUNNING) {
+                log.info("Pairing code was consumed, regenerating immediately");
+                createPairingQrCode();
+            } else if (pairingCode == null) {
+                log.warn("Pairing code was consumed but ApiService state is {} — skipping regeneration", state.get());
+            }
+        });
     }
 
     public ReadOnlyObservable<State> getState() {

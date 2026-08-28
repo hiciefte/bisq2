@@ -28,7 +28,7 @@ import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.common.view.Navigation;
 import bisq.desktop.components.overlay.Popup;
 import bisq.desktop.main.content.bisq_easy.open_trades.trade_details.TradeDetailsController;
-import bisq.desktop.main.content.bisq_easy.open_trades.trade_state.OpenTradesUtils;
+import bisq.desktop.main.content.bisq_easy.TradesUtils;
 import bisq.desktop.main.content.components.UserProfileDisplay;
 import bisq.desktop.navigation.NavigationTarget;
 import bisq.i18n.Res;
@@ -37,7 +37,6 @@ import bisq.presentation.formatters.PriceFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import bisq.settings.DontShowAgainService;
 import bisq.trade.bisq_easy.BisqEasyTrade;
-import bisq.trade.bisq_easy.BisqEasyTradeUtils;
 import bisq.user.profile.UserProfile;
 import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
@@ -51,8 +50,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Optional;
-
-import static bisq.settings.DontShowAgainKey.CONFIRM_CLOSE_BISQ_EASY_TRADE;
 
 @Slf4j
 public abstract class State4<C extends State4.Controller<?, ?>> extends BaseState {
@@ -76,9 +73,10 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
                              BisqEasyOpenTradeChannel channel) {
             super(serviceProvider, bisqEasyTrade, channel);
 
+            dontShowAgainService = serviceProvider.getDontShowAgainService();
+
             explorerService = serviceProvider.getBondedRolesService().getExplorerService();
             reputationService = serviceProvider.getUserService().getReputationService();
-            dontShowAgainService = serviceProvider.getDontShowAgainService();
         }
 
         @Override
@@ -91,9 +89,9 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
             String name = paymentRail.name();
             model.setPaymentProofDescription(Res.get("bisqEasy.tradeState.paymentProof." + name));
             model.setBlockExplorerLinkVisible(paymentRail.equals(BitcoinPaymentRail.MAIN_CHAIN));
-            String paymentProof = bisqEasyTrade.getPaymentProof().get();
-            model.setPaymentProof(paymentProof);
-            model.setPaymentProofVisible(paymentProof != null);
+            Optional<String> paymentProof = bisqEasyTrade.getPaymentProof();
+            model.setPaymentProof(paymentProof.orElse(null));
+            model.setPaymentProofVisible(paymentProof.isPresent());
             UserProfile tradePeer = model.getChannel().getPeer();
             model.setTradePeer(tradePeer);
             model.setBuyer(bisqEasyTrade.isBuyer());
@@ -109,7 +107,7 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
                     .orElse("");
             model.setTradeDuration(tradeDuration);
 
-            model.setPrice(PriceFormatter.format(BisqEasyTradeUtils.getPriceQuote(bisqEasyTrade)));
+            model.setPrice(PriceFormatter.format(bisqEasyTrade.getPriceQuote()));
             model.setPriceSymbol(model.getBisqEasyOffer().getMarket().getMarketCodes());
             model.setTradePeerReputationScore(reputationService.findReputationScore(tradePeer).orElse(ReputationScore.NONE));
         }
@@ -119,32 +117,41 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
             super.onDeactivate();
         }
 
-        protected void onCloseCompletedTrade() {
-            if (dontShowAgainService.showAgain(CONFIRM_CLOSE_BISQ_EASY_TRADE)) {
-                new Popup().feedback(Res.get("bisqEasy.openTrades.closeTrade.warning.completed"))
-                        .actionButtonText(Res.get("bisqEasy.openTrades.confirmCloseTrade"))
-                        .onAction(this::doCloseCompletedTrade)
+        protected void onArchiveTrade() {
+            String key = "archiveTradeInfo";
+            if (dontShowAgainService.showAgain(key)) {
+                new Popup()
+                        .headline(Res.get("popup.headline.information"))
+                        .backgroundInfo(Res.get("bisqEasy.openTrades.closeTrade.info"))
+                        .actionButtonText(Res.get("bisqEasy.openTrades.closeTrade.info.actionButton"))
+                        .onAction(this::doArchiveTrade)
                         .closeButtonText(Res.get("action.cancel"))
-                        .dontShowAgainId(CONFIRM_CLOSE_BISQ_EASY_TRADE)
+                        .dontShowAgainId(key)
                         .show();
             } else {
-                doCloseCompletedTrade();
+                doArchiveTrade();
             }
         }
 
-        private void doCloseCompletedTrade() {
+        private void doArchiveTrade() {
             BisqEasyOpenTradeChannel channel = model.getChannel();
-            bisqEasyTradeService.removeTrade(model.getTrade(), channel.getMyUserIdentity().getUserProfile(), channel.getPeer());
+            bisqEasyTradeService.closeTrade(model.getTrade(), channel.getMyUserIdentity().getUserProfile(), channel.getPeer());
             leavePrivateChatManager.leaveChannel(channel);
+            goToTradeHistory();
+        }
+
+        private void goToTradeHistory() {
+            Navigation.navigateTo(NavigationTarget.BISQ_EASY_HISTORY);
         }
 
         protected void onShowDetails() {
+            BisqEasyOpenTradeChannel channel = model.getChannel();
             Navigation.navigateTo(NavigationTarget.BISQ_EASY_TRADE_DETAILS,
-                    new TradeDetailsController.InitData(model.getTrade(), model.getChannel()));
+                    new TradeDetailsController.InitData(model.getTrade(), channel.getMyUserIdentity().getUserProfile(), channel.getPeer(), channel.getMediator()));
         }
 
         protected void onExportTrade() {
-            OpenTradesUtils.exportTrade(model.getTrade(), getView().getRoot().getScene());
+            TradesUtils.exportTrade(model.getTrade(), getView().getRoot().getScene());
         }
 
         public void openExplorer() {
@@ -195,7 +202,7 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
 
     public static abstract class View<M extends State4.Model, C extends State4.Controller<?, ?>> extends BaseState.View<M, C> {
         private final UserProfileDisplay peerProfileDisplay;
-        protected final Button closeTradeButton, exportButton, detailsButton;
+        protected final Button archiveTradeButton, exportButton, detailsButton;
         protected final TradeCompletedTable tradeCompletedTable;
 
         protected View(M model, C controller) {
@@ -206,9 +213,9 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
 
             detailsButton = new Button(Res.get("bisqEasy.tradeState.info.phase4.showDetails"));
             exportButton = new Button(Res.get("bisqEasy.tradeState.info.phase4.exportTrade"));
-            closeTradeButton = new Button(Res.get("bisqEasy.tradeState.info.phase4.leaveChannel"));
-            closeTradeButton.setDefaultButton(true);
-            HBox buttons = new HBox(20, detailsButton, exportButton, closeTradeButton);
+            archiveTradeButton = new Button(Res.get("bisqEasy.tradeState.info.phase4.leaveChannel"));
+            archiveTradeButton.setDefaultButton(true);
+            HBox buttons = new HBox(20, detailsButton, exportButton, archiveTradeButton);
             buttons.setAlignment(Pos.BOTTOM_RIGHT);
             VBox.setMargin(buttons, new Insets(0, 0, 20, 0));
 
@@ -238,7 +245,7 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
             }
             detailsButton.setOnAction(e -> controller.onShowDetails());
             exportButton.setOnAction(e -> controller.onExportTrade());
-            closeTradeButton.setOnAction(e -> controller.onCloseCompletedTrade());
+            archiveTradeButton.setOnAction(e -> controller.onArchiveTrade());
         }
 
         @Override
@@ -250,7 +257,7 @@ public abstract class State4<C extends State4.Controller<?, ?>> extends BaseStat
 
             detailsButton.setOnAction(null);
             exportButton.setOnAction(null);
-            closeTradeButton.setOnAction(null);
+            archiveTradeButton.setOnAction(null);
         }
     }
 }

@@ -29,6 +29,9 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+
 @EqualsAndHashCode
 @Getter
 @ToString
@@ -118,6 +121,7 @@ public abstract class Monetary implements Comparable<Monetary>, PersistableProto
     public double toDouble(long value) {
         return MathUtils.roundDouble(BigDecimal.valueOf(value).movePointLeft(precision).doubleValue(), precision);
     }
+
     public double asDouble() {
         return toDouble(value);
     }
@@ -193,6 +197,32 @@ public abstract class Monetary implements Comparable<Monetary>, PersistableProto
             case IS_GREATER_THAN_OR_EQUAL -> valueForPrecision >= otherValueForPrecision;
             case IS_EQUAL -> valueForPrecision == otherValueForPrecision;
         };
+    }
+
+    public Monetary clamp(Monetary min, Monetary max) {
+        checkNotNull(min, "min must not be null");
+        checkNotNull(max, "max must not be null");
+        checkArgument(code.equals(min.getCode()),
+                "min must use same code as this monetary. this.code=%s; min.code=%s", code, min.getCode());
+        checkArgument(code.equals(max.getCode()),
+                "max must use same code as this monetary. this.code=%s; max.code=%s", code, max.getCode());
+        if (value < min.getValue()) {
+            return Monetary.from(this, min.getValue());
+        } else if (value > max.getValue()) {
+            return Monetary.from(this, max.getValue());
+        } else {
+            return this;
+        }
+    }
+
+    public Monetary clamp(MonetaryRange limits) {
+        checkNotNull(limits, "limits must not be null");
+        return clamp(limits.getMin(), limits.getMax());
+    }
+
+    public Monetary multiply(double factor) {
+        long newValue = MathUtils.roundDoubleToLong(value * factor);
+        return from(this, newValue);
     }
 
     private enum ComparisonOperator {

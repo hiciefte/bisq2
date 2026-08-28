@@ -79,6 +79,11 @@ public class MuSigCreateOfferAmountAndPriceController implements Controller {
         model.getIsPriceOverlayVisible().unbind();
     }
 
+
+    /* --------------------------------------------------------------------- */
+    // Public API
+    /* --------------------------------------------------------------------- */
+
     public void reset() {
         muSigCreateOfferAmountController.reset();
         muSigCreateOfferPriceController.reset();

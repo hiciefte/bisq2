@@ -33,10 +33,11 @@ import bisq.presentation.formatters.DateFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import bisq.support.mediation.bisq_easy.BisqEasyMediationCase;
 import bisq.trade.bisq_easy.BisqEasyTradeFormatter;
-import bisq.trade.bisq_easy.BisqEasyTradeUtils;
 import bisq.user.profile.UserProfile;
 import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.property.StringProperty;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
@@ -66,9 +67,10 @@ public class BisqEasyMediationCaseListItem implements ActivatableTableItem, Date
     private final Badge makersBadge = new Badge();
     private final Badge takersBadge = new Badge();
     private Pin changedChatNotificationPin;
+    private Pin isClosedPin;
     private Long closeCaseDate = 0L;
-    private String closeCaseDateString = "";
-    private String closeCaseTimeString = "";
+    private final StringProperty closeCaseDateString = new SimpleStringProperty("");
+    private final StringProperty closeCaseTimeString = new SimpleStringProperty("");
 
     BisqEasyMediationCaseListItem(ServiceProvider serviceProvider,
                                   BisqEasyMediationCase bisqEasyMediationCase,
@@ -100,7 +102,7 @@ public class BisqEasyMediationCaseListItem implements ActivatableTableItem, Date
         dateString = DateFormatter.formatDate(date);
         timeString = DateFormatter.formatTime(date);
         market = offer.getMarket().toString();
-        price = BisqEasyTradeUtils.getPriceQuote(contract).getValue();
+        price = contract.getPriceQuote().getValue();
         priceString = BisqEasyTradeFormatter.formatPriceWithCode(contract);
         baseAmount = contract.getBaseSideAmount();
         baseAmountString = BisqEasyTradeFormatter.formatBaseSideAmount(contract);
@@ -113,10 +115,8 @@ public class BisqEasyMediationCaseListItem implements ActivatableTableItem, Date
 
     @Override
     public void onActivate() {
-        Optional<Long> optionalCloseCaseDate = bisqEasyMediationCase.getCloseCaseDate();
-        closeCaseDate = optionalCloseCaseDate.orElse(0L);
-        closeCaseDateString = optionalCloseCaseDate.map(DateFormatter::formatDate).orElse("");
-        closeCaseTimeString = optionalCloseCaseDate.map(DateFormatter::formatTime).orElse("");
+        isClosedPin = bisqEasyMediationCase.isClosedObservable().addObserver(isClosed ->
+                UIThread.run(() -> applyCloseCaseDate(bisqEasyMediationCase.getCloseCaseDate())));
 
         chatNotificationService.getNotConsumedNotifications().forEach(this::handleNotification);
         changedChatNotificationPin = chatNotificationService.getChangedNotification().addObserver(this::handleNotification);
@@ -124,7 +124,33 @@ public class BisqEasyMediationCaseListItem implements ActivatableTableItem, Date
 
     @Override
     public void onDeactivate() {
+        if (isClosedPin != null) {
+            isClosedPin.unbind();
+            isClosedPin = null;
+        }
         changedChatNotificationPin.unbind();
+    }
+
+    public String getCloseCaseDateString() {
+        return closeCaseDateString.get();
+    }
+
+    public StringProperty getCloseCaseDateStringProperty() {
+        return closeCaseDateString;
+    }
+
+    public String getCloseCaseTimeString() {
+        return closeCaseTimeString.get();
+    }
+
+    public StringProperty getCloseCaseTimeStringProperty() {
+        return closeCaseTimeString;
+    }
+
+    private void applyCloseCaseDate(Optional<Long> optionalCloseCaseDate) {
+        closeCaseDate = optionalCloseCaseDate.orElse(0L);
+        closeCaseDateString.set(optionalCloseCaseDate.map(DateFormatter::formatDate).orElse(""));
+        closeCaseTimeString.set(optionalCloseCaseDate.map(DateFormatter::formatTime).orElse(""));
     }
 
     private void handleNotification(ChatNotification notification) {

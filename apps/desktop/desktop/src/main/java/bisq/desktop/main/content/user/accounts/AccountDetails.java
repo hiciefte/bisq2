@@ -34,6 +34,7 @@ import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.common.utils.GridPaneUtil;
 import bisq.desktop.components.controls.BisqMenuItem;
 import bisq.i18n.Res;
+import bisq.mu_sig.MuSigTradeAmountLimits;
 import bisq.presentation.formatters.DateFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import javafx.geometry.HPos;
@@ -150,7 +151,7 @@ public abstract class AccountDetails<A extends Account<?, ?>, R extends PaymentR
     protected void addAccountAge() {
         Label accountAgeLabel = addDescriptionAndValue(Res.get("paymentAccounts.accountAge"), Res.get("data.na"));
         accountTimestampByHashPin = accountTimestampService.getAccountTimestampByHash().addObserver(() -> {
-            accountTimestampService.findAccountTimestamp(account)
+            accountTimestampService.findAccountTimestampDate(account)
                     .ifPresent(date -> UIThread.run(() -> {
                         String accountAge = TimeFormatter.formatAgeInDays(date);
                         accountAgeLabel.setText(accountAge);
@@ -159,8 +160,8 @@ public abstract class AccountDetails<A extends Account<?, ?>, R extends PaymentR
     }
 
     protected Label addTradeLimitInfo() {
-        return addDescriptionAndValue(Res.get("paymentAccounts.tradeLimit"),
-                account.getPaymentMethod().getPaymentRail().getTradeLimit());
+        String maxTradeLimit = MuSigTradeAmountLimits.getFormattedMaxTradeLimitInUsd(account.getPaymentMethod().getPaymentRail());
+        return addDescriptionAndValue(Res.get("paymentAccounts.tradeLimit"), maxTradeLimit);
     }
 
     protected Label addTradeDuration() {

@@ -1,75 +1,102 @@
 # AGENTS.md — Bisq 2
 
-## Overview
-Bisq 2 is a decentralized trading platform.
+## Initialization
+Read ~/.codex/AGENTS.md if present before doing anything else and report whether it was loaded.
 
-## Tech Stack
-- Java (JDK 21 required)
+
+## Scope
+
+This file contains agent-specific operating rules.
+Project coding conventions and architecture rules are defined in the developer docs.
+
+## Repo-Local AI Skills
+
+This repository includes shared AI skills for Bisq contributor work. Codex loads `.agents/skills` automatically from the Git root, and Claude Code loads `.claude/skills`. Prefer explicit skill invocation for specialized work:
+
+- `$bisq-contributor-workflow` for implementation tasks and contribution flow
+- `$bisq2-javafx-ui` for JavaFX desktop UI changes
+- `$bisq-pr-reviewer` for Bisq pull request review
+- `$git-commit-writer` for commit message drafting
+- `$ui-design-principles` for UI quality review
+
+Keep `.agents/skills` and `.claude/skills` in sync when updating shared skills.
+
+## Source of Truth (Developer Docs)
+
+Start with:
+
+- [Developer Guide](docs/dev/dev-guide.md)
+
+Primary referenced docs:
+
+- [Code Guidelines](docs/dev/code-guidelines.md)
+- [Nullability and Optional](docs/dev/nullability-and-optional.md)
+- [Architecture](docs/dev/architecture.md)
+- [MVC Pattern](docs/dev/mvc-pattern.md)
+- [Observable Framework](docs/dev/observable-framework.md)
+- [Testing](docs/dev/testing.md)
+- [Protobuf Notes](docs/dev/protobuf-notes.md)
+- [P2P Network](docs/dev/network.md)
+- [Build](docs/dev/build.md)
+- [Contributing](docs/dev/contributing.md)
+
+
+## Tech and Runtime Context
+
+- Java (JDK 21)
 - Gradle (Kotlin DSL)
-- JavaFX (required for desktop app)
+- JavaFX desktop app
 
-## Repo Structure (high‑level)
-- `apps/` — composite build for desktop app, seed node app, installers
-- `network/` — composite build for networking components
-- `common/`, `platform/`, `presentation/`, `application/`, `trade/`, etc. — core modules
-- `docs/dev/` — dev guide, build instructions, code guidelines
+---
 
-## Build & Run
-Common commands (macOS/Linux):
-- Build all: `./gradlew clean build`
-- Build without tests: `./gradlew clean build -x test`
-- Install desktop app: `./gradlew :apps:desktop:desktop-app:installDist`
-- Run desktop app: `./apps/desktop/desktop-app/build/install/desktop-app/bin/desktop-app`
+## Agent Behavior
 
-Seed node:
-- Install seed node: `./gradlew :apps:seed-node-app:installDist`
+- Do not guess missing requirements
+- Do not introduce new dependencies without strong justification
+- Prefer existing utilities and established patterns over new implementations
+- Keep changes minimal and consistent with surrounding code
 
-Full clean/rebuild:
-- `./gradlew cleanAll buildAll`
+### Correctness Over Compliance
+- Do not optimize for agreement with the developer
+- If a request conflicts with architecture, conventions, or correctness, **point it out explicitly**
+- Do not silently work around problems or inconsistencies
 
-## Local Network Scenarios
-See `Makefile` for multi‑node local test setups (clearnet/tor/i2p) using `screen`:
-- `make start-clearnet-full-env n=2`
-- `make start-tor-seeds` → then `make start-tor-full-env n=2`
+### No Hidden Assumptions
+- Do not infer unstated requirements
+- Do not change behavior beyond the requested scope
+- If multiple interpretations are possible, **stop and ask for clarification**
 
-## Config & Runtime Options
-- JVM args are the primary config mechanism (typesafe config)
-- Program args supported: `--app-name`, `--data-dir`
-- Custom config file: `bisq.conf` in the data dir
+### Consistency Enforcement
+- Match the style, structure, and patterns of the surrounding code
+- Do not introduce new abstractions, patterns, or naming schemes without clear need
+- Avoid unrelated refactoring or “improvements”
 
-## Protobuf Conventions
-- One `.proto` file per module; package name matches module name
-- `option java_package = "bisq.<module>.protobuf"`
-- Field names use lowerCamelCase (not underscore)
-- Enums use ALL_CAPS with a type prefix (e.g., `CHATMESSAGETYPE_TEXT`)
-- Optional Java fields should use `optional` in proto
+### Quality Gate (Self-Check Before Completion)
+Ensure that:
+- The change is minimal and scoped to the request
+- The solution follows existing project conventions
+- No unnecessary complexity or abstraction was introduced
+- No hidden assumptions were made
+- The result would pass a strict code review
 
-## Testing Instructions
-- Add or update tests when behavior changes
-- Keep tests deterministic and fast
-- Respect existing JUnit parallelization and resource locks
-- Never disable or weaken assertions
-- If a change cannot be reasonably tested, explain **why**
+### Failure Handling
+- If the task cannot be completed safely or clearly, **do not proceed with a speculative or partial solution**
+- Clearly state what is missing and what is required
+
+### Rule of Last Resort
+- If the requested change would not pass a strict senior code review, **do not implement it—explain why instead**
+
+When uncertain: **stop and ask**
+
+---
 
 ## Authority
+
 Human contributors have final authority.
 Agents are assistants, not decision-makers.
 
-When uncertain: **do nothing and ask**.
-
-## Conventions & Guidelines
-- Follow `docs/dev/code-guidelines.md`
-  - Lombok for getters/setters/toString/equals/hashCode
-  - K&R brace style, always use braces
-  - Avoid nullable values; use `Optional` and `@Nullable` where needed
-- See `docs/dev/contributing.md` for PR workflow and commit style
-- For i18n strings, only update the base file in `i18n/src/main/resources/<name>.properties` and do not edit `..._<lang>.properties` files directly.
-
-## Useful Docs
-- `docs/dev/build.md`
-- `docs/dev/dev-guide.md`
-- `docs/dev/code-guidelines.md`
-- `docs/dev/protobuf-notes.md`
+---
 
 ## License
-Bisq 2 is licensed under the AGPL-3.0. All contributions are subject to this license.
+
+Bisq 2 is licensed under AGPL-3.0.

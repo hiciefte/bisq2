@@ -22,6 +22,7 @@ import bisq.chat.ChatChannelSelectionService;
 import bisq.chat.ChatMessage;
 import bisq.chat.bisq_easy.open_trades.BisqEasyOpenTradeChannel;
 import bisq.chat.bisq_easy.open_trades.BisqEasyOpenTradeChannelService;
+import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannel;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannelService;
 import bisq.chat.notifications.ChatNotificationService;
 import bisq.chat.two_party.TwoPartyPrivateChatChannelService;
@@ -64,10 +65,11 @@ public class LeavePrivateChatManager {
             log.warn("selectionService.selectedChannel is null at leaveChatChannel. chatChannel={}", chatChannel);
         }
 
-        // We do not select first channel if it is a BisqEasyOpenTradeChannel as it might be that there is no matching
-        // trade for that. We leave selection to higher level domains.
+        // We do not select first channel if it is a BisqEasyOpenTradeChannel or a MuSigOpenTradeChannel
+        // as it might be that there is no matching trade for that. We leave selection to higher level domains.
         selectionService.selectChannel(channelService.getChannels().stream()
-                .filter(channel -> !(channel instanceof BisqEasyOpenTradeChannel))
+                .filter(channel -> !(channel instanceof BisqEasyOpenTradeChannel) &&
+                        !(channel instanceof MuSigOpenTradeChannel))
                 .findFirst()
                 .orElse(null));
 

@@ -23,6 +23,7 @@ import bisq.common.util.StringUtils;
 import bisq.desktop.common.utils.GridPaneUtil;
 import bisq.desktop.components.controls.BisqTooltip;
 import bisq.i18n.Res;
+import bisq.mu_sig.MuSigTradeAmountLimits;
 import javafx.geometry.Insets;
 import javafx.scene.control.Label;
 import javafx.scene.layout.GridPane;
@@ -58,7 +59,8 @@ public abstract class AccountDetailsGridPane<A extends AccountPayload<?>, R exte
     protected abstract void addDetails(A accountPayload);
 
     protected void addRestrictions(R fiatPaymentRail) {
-        String restrictions = Res.get("paymentAccounts.summary.tradeLimit", fiatPaymentRail.getTradeLimit()) + " / " +
+        String maxTradeLimit = MuSigTradeAmountLimits.getFormattedMaxTradeLimitInUsd(fiatPaymentRail);
+        String restrictions = Res.get("paymentAccounts.summary.tradeLimit", maxTradeLimit) + " / " +
                 Res.get("paymentAccounts.summary.tradeDuration", fiatPaymentRail.getTradeDuration().getDisplayString());
         addDescriptionAndValue(Res.get("paymentAccounts.restrictions"), restrictions);
     }

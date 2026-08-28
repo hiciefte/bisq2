@@ -27,6 +27,6 @@ import lombok.extern.slf4j.Slf4j;
 public class TradeLimitsModel extends TabModel {
     @Override
     public NavigationTarget getDefaultNavigationTarget() {
-        return NavigationTarget.MU_SIG_TRADE_LIMITS_TAB_2;
+        return NavigationTarget.MU_SIG_TRADE_LIMITS_OVERVIEW;
     }
 }

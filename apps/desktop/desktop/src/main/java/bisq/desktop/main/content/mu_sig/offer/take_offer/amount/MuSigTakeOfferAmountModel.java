@@ -17,6 +17,7 @@
 
 package bisq.desktop.main.content.mu_sig.offer.take_offer.amount;
 
+import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.common.monetary.Monetary;
 import bisq.desktop.common.view.Model;
 import bisq.offer.mu_sig.MuSigOffer;
@@ -43,6 +44,8 @@ public class MuSigTakeOfferAmountModel implements Model {
     private String linkToWikiText;
     @Setter
     private String headline;
+    @Setter
+    private PaymentMethodSpec<?> takersPaymentMethodSpec;
     private final ObjectProperty<Monetary> takersQuoteSideAmount = new SimpleObjectProperty<>();
     private final ObjectProperty<Monetary> takersBaseSideAmount = new SimpleObjectProperty<>();
     private final StringProperty amountLimitInfo = new SimpleStringProperty();

@@ -23,6 +23,8 @@ import bisq.desktop.common.utils.KeyHandlerUtil;
 import bisq.desktop.common.view.Controller;
 import bisq.desktop.common.view.NavigationController;
 import bisq.desktop.components.table.ShowTableInfo;
+import bisq.desktop.main.content.authorized_role.arbitrator.mu_sig.close.MuSigArbitrationCaseCloseController;
+import bisq.desktop.main.content.authorized_role.arbitrator.mu_sig.details.MuSigArbitrationCaseDetailsController;
 import bisq.desktop.main.content.authorized_role.mediator.bisq_easy.details.BisqEasyMediationCaseDetailsController;
 import bisq.desktop.main.content.authorized_role.mediator.mu_sig.close.MuSigMediationCaseCloseController;
 import bisq.desktop.main.content.authorized_role.mediator.mu_sig.details.MuSigMediationCaseDetailsController;
@@ -36,8 +38,9 @@ import bisq.desktop.main.content.bisq_easy.wallet_guide.WalletGuideController;
 import bisq.desktop.main.content.components.AddToContactsListWindow;
 import bisq.desktop.main.content.components.ReportToModeratorWindow;
 import bisq.desktop.main.content.mu_sig.offer.create_offer.MuSigCreateOfferController;
-import bisq.desktop.main.content.mu_sig.trade.pending.trade_details.MuSigTradeDetailsController;
+import bisq.desktop.main.content.mu_sig.offer.offer_details.MuSigOfferDetailsController;
 import bisq.desktop.main.content.mu_sig.offer.take_offer.MuSigTakeOfferController;
+import bisq.desktop.main.content.mu_sig.trade.pending.trade_details.MuSigTradeDetailsController;
 import bisq.desktop.main.content.mu_sig.trade.trade_guide.MuSigGuideController;
 import bisq.desktop.main.content.mu_sig.trade.trade_limits.TradeLimitsController;
 import bisq.desktop.main.content.reputation.build_reputation.accountAge.AccountAgeController;
@@ -49,6 +52,8 @@ import bisq.desktop.main.content.user.accounts.fiat_accounts.create.CreatePaymen
 import bisq.desktop.main.content.user.accounts.fiat_accounts.create.legacy.LegacyCreatePaymentAccountController;
 import bisq.desktop.main.content.user.profile_card.ProfileCardController;
 import bisq.desktop.main.content.user.user_profile.create.CreateUserProfileController;
+import bisq.desktop.main.content.wallet.receive.WalletReceiveWizardController;
+import bisq.desktop.main.content.wallet.send.WalletSendController;
 import bisq.desktop.main.content.wallet.setup_wallet_wizard.SetupWalletWizardController;
 import bisq.desktop.navigation.NavigationTarget;
 import bisq.desktop.overlay.chat_rules.ChatRulesController;
@@ -157,12 +162,15 @@ public class OverlayController extends NavigationController {
             case BISQ_EASY_OFFER_DETAILS -> Optional.of(new BisqEasyOfferDetailsController(serviceProvider));
 
             case SETUP_WALLET -> Optional.of(new SetupWalletWizardController(serviceProvider));
+            case WALLET_SEND -> Optional.of(new WalletSendController(serviceProvider));
+            case WALLET_RECEIVE -> Optional.of(new WalletReceiveWizardController(serviceProvider));
 
             case MU_SIG_CREATE_OFFER -> Optional.of(new MuSigCreateOfferController(serviceProvider));
             case MU_SIG_TAKE_OFFER -> Optional.of(new MuSigTakeOfferController(serviceProvider));
             case MU_SIG_TRADE_DETAILS -> Optional.of(new MuSigTradeDetailsController(serviceProvider));
             case MU_SIG_GUIDE -> Optional.of(new MuSigGuideController(serviceProvider));
             case MU_SIG_TRADE_LIMITS -> Optional.of(new TradeLimitsController(serviceProvider));
+            case MU_SIG_OFFER_DETAILS -> Optional.of(new MuSigOfferDetailsController(serviceProvider));
 
             case WALLET_GUIDE -> Optional.of(new WalletGuideController(serviceProvider));
             case CHAT_RULES -> Optional.of(new ChatRulesController(serviceProvider));
@@ -185,6 +193,8 @@ public class OverlayController extends NavigationController {
                     Optional.of(new BisqEasyMediationCaseDetailsController(serviceProvider));
             case MU_SIG_MEDIATION_CASE_DETAILS -> Optional.of(new MuSigMediationCaseDetailsController(serviceProvider));
             case MU_SIG_MEDIATION_CASE_CLOSE -> Optional.of(new MuSigMediationCaseCloseController(serviceProvider));
+            case MU_SIG_ARBITRATION_CASE_DETAILS -> Optional.of(new MuSigArbitrationCaseDetailsController(serviceProvider));
+            case MU_SIG_ARBITRATION_CASE_CLOSE -> Optional.of(new MuSigArbitrationCaseCloseController(serviceProvider));
             case SHOW_TABLE_INFO -> Optional.of(new ShowTableInfo(serviceProvider).getController());
             default -> Optional.empty();
         };

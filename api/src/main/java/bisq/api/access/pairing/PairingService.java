@@ -20,6 +20,7 @@ package bisq.api.access.pairing;
 import bisq.api.ApiConfig;
 import bisq.api.access.identity.ClientProfile;
 import bisq.api.access.pairing.qr.PairingQrCodeGenerator;
+import bisq.api.access.pairing.qr.TextQrCodeRenderer;
 import bisq.api.access.permissions.Permission;
 import bisq.api.access.permissions.PermissionMapping;
 import bisq.api.access.permissions.PermissionService;
@@ -33,7 +34,10 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
@@ -89,18 +93,20 @@ public class PairingService {
         if (version != VERSION) {
             throw new InvalidPairingRequestException("Unsupported pairing protocol version: " + version);
         }
-        PairingCode pairingCode = pairingCodeByIdMap.get(pairingCodeId);
+
+        // Atomic remove to prevent race conditions - ensures only one request can use the code
+        PairingCode pairingCode = pairingCodeByIdMap.remove(pairingCodeId);
         if (pairingCode == null) {
             throw new InvalidPairingRequestException("Pairing code not found or already used");
         }
 
         if (isExpired(pairingCode)) {
-            pairingCodeByIdMap.remove(pairingCodeId, pairingCode);
             throw new InvalidPairingRequestException("Pairing code is expired");
         }
 
-        // Mark used by removing it
-        pairingCodeByIdMap.remove(pairingCodeId, pairingCode);
+        // Signal that the active code was consumed so observers can regenerate
+        log.info("Pairing code {} consumed, signalling observers for regeneration", pairingCodeId);
+        this.pairingCode.set(null);
 
         String clientId = UUID.randomUUID().toString();
         byte[] secret = ByteArrayUtils.getRandomBytes(32);
@@ -123,8 +129,35 @@ public class PairingService {
         return Optional.ofNullable(apiAccessStoreService.getClientProfileByIdMap().get(id));
     }
 
+    /**
+     * Removes the client profile and associated permissions for the given client ID.
+     *
+     * @param clientId The client ID to revoke
+     * @return {@code true} if the profile was found and removed; {@code false} if not found
+     */
+    public boolean revokeClientProfile(String clientId) {
+        return apiAccessStoreService.removeClientProfile(clientId);
+    }
+
     private boolean isExpired(PairingCode pairingCode) {
         return Instant.now().isAfter(pairingCode.getExpiresAt());
+    }
+
+    /**
+     * Removes all expired pairing codes from the map.
+     * Should be called periodically or when creating new pairing codes.
+     */
+    public void cleanupExpiredPairingCodes() {
+        int removed = 0;
+        for (Map.Entry<String, PairingCode> entry : pairingCodeByIdMap.entrySet()) {
+            if (isExpired(entry.getValue())) {
+                pairingCodeByIdMap.remove(entry.getKey());
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            log.debug("Cleaned up {} expired pairing codes", removed);
+        }
     }
 
     public void createPairingQrCode(PairingCode pairingCode,
@@ -146,12 +179,34 @@ public class PairingService {
         }
     }
 
-    private void writePairingQrCodeToDataDir(String pairingQrCode) {
+    // Package-private for testing
+    void writePairingQrCodeToDataDir(String pairingQrCode) {
+        Path path = appDataDirPath.resolve("pairing_qr_code.txt");
         try {
-            Path path = appDataDirPath.resolve("pairing_qr_code.txt");
-            FileMutatorUtils.writeToPath(pairingQrCode, path);
+            StringBuilder content = new StringBuilder(pairingQrCode);
+            try {
+                content.append("\n\n\n").append(TextQrCodeRenderer.render(pairingQrCode));
+            } catch (Exception e) {
+                log.warn("Failed to render text QR code", e);
+            }
+            // The file is rewritten on every code regeneration. Write to a temp file and move
+            // atomically so a concurrent reader never observes a truncated payload.
+            Path tempPath = appDataDirPath.resolve("pairing_qr_code.txt.tmp");
+            FileMutatorUtils.writeToPath(content.toString(), tempPath);
+            try {
+                Files.move(tempPath, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tempPath, path, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                // ATOMIC_MOVE with an existing target is implementation specific and can fail
+                // with a plain IOException (e.g. a concurrent reader holding the file on
+                // Windows). Losing atomicity for one rotation is better than not updating.
+                log.warn("Atomic move of pairing QR code failed, falling back to non-atomic replace", e);
+                Files.move(tempPath, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            log.info("Pairing QR code written to {}", path);
         } catch (IOException e) {
-            log.error("Error at write pairing QR code to disk", e);
+            log.error("Error at write pairing QR code to disk at {}", path, e);
         }
     }
 }

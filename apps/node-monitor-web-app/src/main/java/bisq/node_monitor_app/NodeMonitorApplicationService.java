@@ -132,7 +132,8 @@ public class NodeMonitorApplicationService extends JavaSeApplicationService {
                 securityService,
                 identityService,
                 networkService,
-                bondedRolesService);
+                bondedRolesService,
+                UserService.Config.from(getConfig("user")));
 
         accountService = new AccountService(persistenceService, networkService, userService, bondedRolesService);
 

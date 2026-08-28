@@ -75,7 +75,6 @@ public class MuSigCreateOfferController extends NavigationController implements 
     private final EventHandler<KeyEvent> onKeyPressedHandler = this::onKeyPressed;
     private Subscription displayDirectionPin, marketPin, priceSpecPin;
     private Pin selectedAccountByPaymentMethodPin;
-    private boolean isPaymentStepSkipped = false;
 
     public MuSigCreateOfferController(ServiceProvider serviceProvider) {
         super(NavigationTarget.MU_SIG_CREATE_OFFER);
@@ -127,7 +126,6 @@ public class MuSigCreateOfferController extends NavigationController implements 
             muSigCreateOfferPaymentController.setDisplayDirection(displayDirection);
         });
         marketPin = EasyBind.subscribe(muSigCreateOfferDirectionAndMarketController.getMarket(), market -> {
-            isPaymentStepSkipped = false;
             muSigCreateOfferPaymentController.reset();
             muSigCreateOfferPaymentController.setMarket(market);
             muSigCreateOfferAmountAndPriceController.setMarket(market);
@@ -163,22 +161,15 @@ public class MuSigCreateOfferController extends NavigationController implements 
         if (eligibleAccounts.size() == 1) {
             Account<?, ?> account = eligibleAccounts.getFirst();
             muSigCreateOfferPaymentController.selectAccount(account, account.getPaymentMethod());
-            isPaymentStepSkipped = true;
             handlePaymentMethodsUpdate();
-        } else {
-            isPaymentStepSkipped = false;
         }
         updateChildTargets();
     }
 
     private void updateChildTargets() {
-        List<NavigationTarget> targets = new ArrayList<>(List.of(
-                NavigationTarget.MU_SIG_CREATE_OFFER_DIRECTION_AND_MARKET,
-                NavigationTarget.MU_SIG_CREATE_OFFER_AMOUNT_AND_PRICE
-        ));
-        if (!isPaymentStepSkipped) {
-            targets.add(NavigationTarget.MU_SIG_CREATE_OFFER_PAYMENT_METHODS);
-        }
+        List<NavigationTarget> targets = new ArrayList<>(List.of(NavigationTarget.MU_SIG_CREATE_OFFER_DIRECTION_AND_MARKET));
+        targets.add(NavigationTarget.MU_SIG_CREATE_OFFER_PAYMENT_METHODS);
+        targets.add(NavigationTarget.MU_SIG_CREATE_OFFER_AMOUNT_AND_PRICE);
         targets.add(NavigationTarget.MU_SIG_CREATE_OFFER_REVIEW_OFFER);
         model.getChildTargets().setAll(targets);
     }
@@ -238,7 +229,7 @@ public class MuSigCreateOfferController extends NavigationController implements 
 
     void onKeyPressed(KeyEvent keyEvent) {
         KeyHandlerUtil.handleEscapeKeyEvent(keyEvent, this::onClose);
-        KeyHandlerUtil.handleEnterKeyEventWithTextInputFocusCheck(keyEvent,getView().getRoot(),this::onNext);
+        KeyHandlerUtil.handleEnterKeyEventWithTextInputFocusCheck(keyEvent, getView().getRoot(), this::onNext);
     }
 
     void onBack() {
@@ -289,8 +280,6 @@ public class MuSigCreateOfferController extends NavigationController implements 
         muSigCreateOfferReviewController.reset();
 
         model.reset();
-
-        isPaymentStepSkipped = false;
     }
 
     private void updateNextButtonDisabledState() {

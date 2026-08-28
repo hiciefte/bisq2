@@ -17,8 +17,8 @@
 
 package bisq.common.monetary;
 
-import bisq.common.asset.FiatCurrencyRepository;
 import bisq.common.asset.Asset;
+import bisq.common.asset.FiatCurrencyRepository;
 import bisq.common.util.MathUtils;
 import com.google.common.math.LongMath;
 import lombok.EqualsAndHashCode;
@@ -117,6 +117,11 @@ public final class Fiat extends Monetary {
     public Fiat subtract(Fiat value) {
         checkArgument(value.code.equals(this.code));
         return new Fiat(LongMath.checkedSubtract(this.value, value.value), this.code, this.precision);
+    }
+
+    public Fiat multiply(double factor) {
+        long result = MathUtils.roundDoubleToLong(value * factor);
+        return new Fiat(result, this.code, this.precision);
     }
 
     public Fiat multiply(long factor) {

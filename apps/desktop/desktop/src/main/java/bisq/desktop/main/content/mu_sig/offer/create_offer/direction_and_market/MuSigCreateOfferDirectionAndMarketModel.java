@@ -17,7 +17,6 @@
 
 package bisq.desktop.main.content.mu_sig.offer.create_offer.direction_and_market;
 
-import bisq.common.asset.CryptoAsset;
 import bisq.common.market.Market;
 import bisq.desktop.common.view.Model;
 import bisq.offer.Direction;
@@ -35,32 +34,35 @@ import javafx.scene.layout.StackPane;
 import lombok.Getter;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Getter
 public class MuSigCreateOfferDirectionAndMarketModel implements Model {
     static final Map<String, StackPane> MARKET_ICON_CACHE = new HashMap<>();
-
     private final ObjectProperty<Direction> displayDirection = new SimpleObjectProperty<>(Direction.BUY);
     private final BooleanProperty buyButtonDisabled = new SimpleBooleanProperty();
     private final StringProperty headlineText = new SimpleStringProperty();
     private final StringProperty buyButtonText = new SimpleStringProperty();
     private final StringProperty sellButtonText = new SimpleStringProperty();
 
-    private final ObjectProperty<MuSigCreateOfferDirectionAndMarketView.MarketListItem> selectedMarketListItem = new SimpleObjectProperty<>();
+    private final ObjectProperty<MarketTypeListItem> selectedMarketTypeListItem = new SimpleObjectProperty<>();
+    private final ObjectProperty<MarketListItem> selectedMarketListItem = new SimpleObjectProperty<>();
     private final StringProperty paymentCurrencySearchText = new SimpleStringProperty();
     private final ObjectProperty<Market> selectedMarket = new SimpleObjectProperty<>();
     private final ObjectProperty<StackPane> tradePairImage = new SimpleObjectProperty<>();
-    private final ObservableList<MuSigCreateOfferDirectionAndMarketView.MarketListItem> marketListItems = FXCollections.observableArrayList();
-    private final FilteredList<MuSigCreateOfferDirectionAndMarketView.MarketListItem> filteredMarketListItems = new FilteredList<>(marketListItems);
-    private final SortedList<MuSigCreateOfferDirectionAndMarketView.MarketListItem> sortedMarketListItems = new SortedList<>(filteredMarketListItems);
+    private final ObservableList<MarketListItem> marketListItems = FXCollections.observableArrayList();
+    private final FilteredList<MarketListItem> filteredMarketListItems = new FilteredList<>(marketListItems);
+    private final SortedList<MarketListItem> sortedMarketListItems = new SortedList<>(filteredMarketListItems);
 
-    private final ObjectProperty<MuSigCreateOfferDirectionAndMarketView.BaseCryptoAssetListItem> selectedBaseCryptoAssetListItem = new SimpleObjectProperty<>();
-    private final StringProperty cryptoCurrencySearchText = new SimpleStringProperty();
-    private final ObjectProperty<CryptoAsset> selectedBaseCryptoAsset = new SimpleObjectProperty<>();
-    private final ObservableList<MuSigCreateOfferDirectionAndMarketView.BaseCryptoAssetListItem> baseCryptoAssetListItems = FXCollections.observableArrayList();
-    private final FilteredList<MuSigCreateOfferDirectionAndMarketView.BaseCryptoAssetListItem> filteredBaseCryptoAssetListItems = new FilteredList<>(baseCryptoAssetListItems);
-    private final SortedList<MuSigCreateOfferDirectionAndMarketView.BaseCryptoAssetListItem> sortedBaseCryptoAssetListItems = new SortedList<>(filteredBaseCryptoAssetListItems);
+    private final ObservableList<MarketTypeListItem> marketTypeListItems = FXCollections.observableArrayList();
+    private final FilteredList<MarketTypeListItem> filteredMarketTypeListItems = new FilteredList<>(marketTypeListItems);
+    private final SortedList<MarketTypeListItem> sortedMarketTypeListItems = new SortedList<>(filteredMarketTypeListItems);
+
+
+    public MuSigCreateOfferDirectionAndMarketModel(List<MarketTypeListItem> marketTypeListItems) {
+        this.marketTypeListItems.addAll(marketTypeListItems);
+    }
 
     void reset() {
         displayDirection.set(Direction.BUY);
@@ -71,9 +73,5 @@ public class MuSigCreateOfferDirectionAndMarketModel implements Model {
         selectedMarket.set(null);
         tradePairImage.set(null);
         marketListItems.clear();
-        selectedBaseCryptoAssetListItem.set(null);
-        cryptoCurrencySearchText.set(null);
-        selectedBaseCryptoAsset.set(null);
-        baseCryptoAssetListItems.clear();
     }
 }

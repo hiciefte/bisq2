@@ -159,7 +159,9 @@ public class MuSigCreateOfferPriceController implements Controller {
         String marketCodes = model.getMarket().getMarketCodes();
         priceInput.setDescription(Res.get("muSig.offer.create.price.tradePrice.inputBoxText", marketCodes));
 
-        model.getShouldShowFeedback().set(model.getDisplayDirection().isBuy());
+        // We keep the feedback and overlay code for now as we might have usage later for it.
+        // If not, we can remove all related code. Currently, it's just a copy of Bisq Easy...
+        model.getShouldShowFeedback().set(false);
 
         applyPriceSpec();
     }

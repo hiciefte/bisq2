@@ -52,7 +52,7 @@ import java.text.DecimalFormat;
 
 @Slf4j
 public class TradeWizardPriceView extends View<VBox, TradeWizardPriceModel, TradeWizardPriceController> {
-    private static final String SELECTED_PRICE_MODEL_STYLE_CLASS = "selected-model";
+    private static final String SELECTED_MODEL_STYLE_CLASS = "selected-model";
     private static final String PRICE_SLIDER_BUYER_STYLE_CLASS = "price-slider-buyer";
     private static final String PRICE_SLIDER_SELLER_STYLE_CLASS = "price-slider-seller";
     private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("00");
@@ -164,7 +164,7 @@ public class TradeWizardPriceView extends View<VBox, TradeWizardPriceModel, Trad
         closeOverlayButton = new Button(Res.get("bisqEasy.price.feedback.learnWhySection.closeButton"));
         overlay = new WizardOverlay(root)
                 .info()
-                .headline("bisqEasy.price.feedback.learnWhySection.title")
+                .headlineFromI18nKey("bisqEasy.price.feedback.learnWhySection.title")
                 .description(new VBox(40, learnWhyIntroLabel, learnWhyExpositionList))
                 .buttons(closeOverlayButton)
                 .build();
@@ -280,14 +280,14 @@ public class TradeWizardPriceView extends View<VBox, TradeWizardPriceModel, Trad
     }
 
     private void updatePriceSpecButtonsStyle() {
-        fixedPriceButton.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
-        percentagePriceButton.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
+        fixedPriceButton.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
+        percentagePriceButton.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
         if (model.getUseFixPrice().get()) {
-            fixedPriceButton.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+            fixedPriceButton.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             fixedPriceButton.setGraphic(fixedPriceIconGreen);
             percentagePriceButton.setGraphic(percentagePriceIconGrey);
         } else {
-            percentagePriceButton.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+            percentagePriceButton.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             percentagePriceButton.setGraphic(percentagePriceIconGreen);
             fixedPriceButton.setGraphic(fixedPriceIconGrey);
         }

@@ -18,10 +18,12 @@
 package bisq.desktop.main.content.mu_sig.offer.create_offer.amount_and_price.amount;
 
 import bisq.account.payment_method.PaymentMethod;
+import bisq.bonded_roles.market_price.MarketBasedAmountConversion;
 import bisq.bonded_roles.market_price.MarketPriceService;
 import bisq.common.market.Market;
 import bisq.common.monetary.Fiat;
 import bisq.common.monetary.Monetary;
+import bisq.common.monetary.MonetaryRange;
 import bisq.common.monetary.PriceQuote;
 import bisq.desktop.ServiceProvider;
 import bisq.desktop.common.Browser;
@@ -44,6 +46,7 @@ import bisq.settings.CookieKey;
 import bisq.settings.SettingsService;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.reputation.ReputationService;
+import com.google.common.annotations.VisibleForTesting;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.scene.input.KeyEvent;
@@ -53,17 +56,21 @@ import lombok.extern.slf4j.Slf4j;
 import org.fxmisc.easybind.EasyBind;
 import org.fxmisc.easybind.Subscription;
 
+import javax.annotation.Nullable;
+
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 
-import static bisq.mu_sig.MuSigTradeAmountLimits.DEFAULT_MIN_USD_TRADE_AMOUNT;
 import static bisq.mu_sig.MuSigTradeAmountLimits.MAX_USD_TRADE_AMOUNT;
 import static bisq.mu_sig.MuSigTradeAmountLimits.MAX_USD_TRADE_AMOUNT_WITHOUT_REPUTATION;
+import static bisq.mu_sig.MuSigTradeAmountLimits.MIN_USD_TRADE_AMOUNT;
 import static bisq.mu_sig.MuSigTradeAmountLimits.withTolerance;
 import static bisq.presentation.formatters.AmountFormatter.formatQuoteAmountWithCode;
-import static com.google.common.base.Preconditions.checkNotNull;
 
 @Slf4j
 public class MuSigCreateOfferAmountController implements Controller {
@@ -80,9 +87,7 @@ public class MuSigCreateOfferAmountController implements Controller {
     private final UserIdentityService userIdentityService;
     private final Consumer<Boolean> navigationButtonsVisibleHandler;
     private final Consumer<NavigationTarget> closeAndNavigateToHandler;
-    private Subscription isRangeAmountEnabledPin, maxOrFixAmountCompBaseSideAmountPin, minAmountCompBaseSideAmountPin,
-            maxAmountCompQuoteSideAmountPin, minAmountCompQuoteSideAmountPin, priceTooltipPin,
-            areBaseAndQuoteCurrenciesInvertedPin;
+    private final Set<Subscription> subscriptions = new HashSet<>();
 
     public MuSigCreateOfferAmountController(ServiceProvider serviceProvider,
                                             Region owner,
@@ -101,6 +106,101 @@ public class MuSigCreateOfferAmountController implements Controller {
         view = new MuSigCreateOfferAmountView(model, this, amountSelectionController.getView().getRoot());
     }
 
+
+    /* --------------------------------------------------------------------- */
+    // Lifecycle
+    /* --------------------------------------------------------------------- */
+
+    @Override
+    public void onActivate() {
+        model.getShouldShowWarningIcon().set(false);
+        applyQuoteSideMinMaxRange();
+
+        if (model.getPriceQuote().get() == null && amountSelectionController.getQuote().get() != null) {
+            model.getPriceQuote().set(amountSelectionController.getQuote().get());
+        }
+
+        Boolean cookieValue = settingsService.getCookie().asBoolean(CookieKey.CREATE_MU_SIG_OFFER_IS_MIN_AMOUNT_ENABLED).orElse(false);
+        model.getIsRangeAmountEnabled().set(cookieValue);
+        model.getShouldShowHowToBuildReputationButton().set(model.getDisplayDirection().isSell());
+
+        subscriptions.add(EasyBind.subscribe(amountSelectionController.getMinBaseSideAmount(),
+                value -> {
+                    if (model.getIsRangeAmountEnabled().get()) {
+                        if (value != null && amountSelectionController.getMaxOrFixedBaseSideAmount().get() != null &&
+                                value.getValue() > amountSelectionController.getMaxOrFixedBaseSideAmount().get().getValue()) {
+                            amountSelectionController.setMaxOrFixedBaseSideAmount(value);
+                        }
+                    }
+                }));
+        subscriptions.add(EasyBind.subscribe(amountSelectionController.getMaxOrFixedBaseSideAmount(),
+                value -> {
+                    if (value != null &&
+                            model.getIsRangeAmountEnabled().get() &&
+                            amountSelectionController.getMinBaseSideAmount().get() != null &&
+                            value.getValue() < amountSelectionController.getMinBaseSideAmount().get().getValue()) {
+                        amountSelectionController.setMinBaseSideAmount(value);
+                    }
+                }));
+
+        subscriptions.add(EasyBind.subscribe(amountSelectionController.getMinQuoteSideAmount(),
+                value -> {
+                    if (value != null) {
+                        if (model.getIsRangeAmountEnabled().get() &&
+                                amountSelectionController.getMaxOrFixedQuoteSideAmount().get() != null &&
+                                value.getValue() > amountSelectionController.getMaxOrFixedQuoteSideAmount().get().getValue()) {
+                            amountSelectionController.setMaxOrFixedQuoteSideAmount(value);
+                        }
+                        applyAmountSpec();
+                        quoteSideAmountsChanged(false);
+                    }
+                }));
+        subscriptions.add(EasyBind.subscribe(amountSelectionController.getMaxOrFixedQuoteSideAmount(),
+                value -> {
+                    if (value != null) {
+                        if (model.getIsRangeAmountEnabled().get() &&
+                                amountSelectionController.getMinQuoteSideAmount().get() != null &&
+                                value.getValue() < amountSelectionController.getMinQuoteSideAmount().get().getValue()) {
+                            amountSelectionController.setMinQuoteSideAmount(value);
+                        }
+                        applyAmountSpec();
+                        quoteSideAmountsChanged(true);
+                    }
+                }));
+
+        subscriptions.add(EasyBind.subscribe(model.getIsRangeAmountEnabled(), isRangeAmountEnabled -> {
+            applyAmountSpec();
+            amountSelectionController.setUseRangeAmount(isRangeAmountEnabled);
+        }));
+        applyAmountSpec();
+
+        subscriptions.add(EasyBind.subscribe(amountSelectionController.getIsDefaultAmountInputBtc(), isDefaultAmountInputBtc -> {
+            String quoteCode = model.getPriceQuote().get().getMarket().getQuoteCurrencyCode();
+            model.getPriceTooltip().set(amountSelectionController.isDefaultAmountInputBtc()
+                    ? Res.get("muSig.offer.wizard.amount.quoteSide.tooltip.fiatAmount.selectedPrice", quoteCode)
+                    : Res.get("muSig.offer.wizard.amount.baseSide.tooltip.btcAmount.selectedPrice"));
+        }));
+
+        subscriptions.add(EasyBind.subscribe(model.getPriceTooltip(), priceTooltip -> {
+            if (priceTooltip != null) {
+                amountSelectionController.setTooltip(priceTooltip);
+            }
+        }));
+    }
+
+    @Override
+    public void onDeactivate() {
+        subscriptions.forEach(Subscription::unsubscribe);
+        subscriptions.clear();
+        navigationButtonsVisibleHandler.accept(true);
+        model.getIsOverlayVisible().set(false);
+    }
+
+
+    /* --------------------------------------------------------------------- */
+    // Public API
+    /* --------------------------------------------------------------------- */
+
     public void setDisplayDirection(Direction displayDirection) {
         if (displayDirection == null) {
             return;
@@ -116,6 +216,7 @@ public class MuSigCreateOfferAmountController implements Controller {
         amountSelectionController.setMarket(market);
         model.setMarket(market);
         applyQuoteSideMinMaxRange();
+        applyTradeAmountLimitsInUsd();
     }
 
     public void setPaymentMethods(List<PaymentMethod<?>> paymentMethods) {
@@ -124,6 +225,8 @@ public class MuSigCreateOfferAmountController implements Controller {
         }
         model.getPaymentMethods().clear();
         model.getPaymentMethods().addAll(paymentMethods);
+
+        applyTradeAmountLimitsInUsd();
     }
 
     public boolean validate() {
@@ -177,97 +280,10 @@ public class MuSigCreateOfferAmountController implements Controller {
         return model.getIsOverlayVisible();
     }
 
-    @Override
-    public void onActivate() {
-        amountSelectionController.setAllowInvertingBaseAndQuoteCurrencies(true);
-        amountSelectionController.setBaseAsInputCurrency(true);
-        model.getShouldShowWarningIcon().set(false);
-        applyQuoteSideMinMaxRange();
 
-        if (model.getPriceQuote().get() == null && amountSelectionController.getQuote().get() != null) {
-            model.getPriceQuote().set(amountSelectionController.getQuote().get());
-        }
-
-        Boolean cookieValue = settingsService.getCookie().asBoolean(CookieKey.CREATE_MU_SIG_OFFER_IS_MIN_AMOUNT_ENABLED).orElse(false);
-        model.getIsRangeAmountEnabled().set(cookieValue);
-        model.getShouldShowHowToBuildReputationButton().set(model.getDisplayDirection().isSell());
-
-        minAmountCompBaseSideAmountPin = EasyBind.subscribe(amountSelectionController.getMinBaseSideAmount(),
-                value -> {
-                    if (model.getIsRangeAmountEnabled().get()) {
-                        if (value != null && amountSelectionController.getMaxOrFixedBaseSideAmount().get() != null &&
-                                value.getValue() > amountSelectionController.getMaxOrFixedBaseSideAmount().get().getValue()) {
-                            amountSelectionController.setMaxOrFixedBaseSideAmount(value);
-                        }
-                    }
-                });
-        maxOrFixAmountCompBaseSideAmountPin = EasyBind.subscribe(amountSelectionController.getMaxOrFixedBaseSideAmount(),
-                value -> {
-                    if (value != null &&
-                            model.getIsRangeAmountEnabled().get() &&
-                            amountSelectionController.getMinBaseSideAmount().get() != null &&
-                            value.getValue() < amountSelectionController.getMinBaseSideAmount().get().getValue()) {
-                        amountSelectionController.setMinBaseSideAmount(value);
-                    }
-                });
-
-        minAmountCompQuoteSideAmountPin = EasyBind.subscribe(amountSelectionController.getMinQuoteSideAmount(),
-                value -> {
-                    if (value != null) {
-                        if (model.getIsRangeAmountEnabled().get() &&
-                                amountSelectionController.getMaxOrFixedQuoteSideAmount().get() != null &&
-                                value.getValue() > amountSelectionController.getMaxOrFixedQuoteSideAmount().get().getValue()) {
-                            amountSelectionController.setMaxOrFixedQuoteSideAmount(value);
-                        }
-                        applyAmountSpec();
-                        quoteSideAmountsChanged(false);
-                    }
-                });
-        maxAmountCompQuoteSideAmountPin = EasyBind.subscribe(amountSelectionController.getMaxOrFixedQuoteSideAmount(),
-                value -> {
-                    if (value != null) {
-                        if (model.getIsRangeAmountEnabled().get() &&
-                                amountSelectionController.getMinQuoteSideAmount().get() != null &&
-                                value.getValue() < amountSelectionController.getMinQuoteSideAmount().get().getValue()) {
-                            amountSelectionController.setMinQuoteSideAmount(value);
-                        }
-                        applyAmountSpec();
-                        quoteSideAmountsChanged(true);
-                    }
-                });
-
-        isRangeAmountEnabledPin = EasyBind.subscribe(model.getIsRangeAmountEnabled(), isRangeAmountEnabled -> {
-            applyAmountSpec();
-            amountSelectionController.setIsRangeAmountEnabled(isRangeAmountEnabled);
-        });
-        applyAmountSpec();
-
-        areBaseAndQuoteCurrenciesInvertedPin = EasyBind.subscribe(amountSelectionController.getAreBaseAndQuoteCurrenciesInverted(), areInverted -> {
-            String quoteCode = model.getPriceQuote().get().getMarket().getQuoteCurrencyCode();
-            model.getPriceTooltip().set(amountSelectionController.isUsingInvertedBaseAndQuoteCurrencies()
-                    ? Res.get("muSig.offer.wizard.amount.quoteSide.tooltip.fiatAmount.selectedPrice", quoteCode)
-                    : Res.get("muSig.offer.wizard.amount.baseSide.tooltip.btcAmount.selectedPrice"));
-        });
-
-        priceTooltipPin = EasyBind.subscribe(model.getPriceTooltip(), priceTooltip -> {
-            if (priceTooltip != null) {
-                amountSelectionController.setTooltip(priceTooltip);
-            }
-        });
-    }
-
-    @Override
-    public void onDeactivate() {
-        isRangeAmountEnabledPin.unsubscribe();
-        maxOrFixAmountCompBaseSideAmountPin.unsubscribe();
-        maxAmountCompQuoteSideAmountPin.unsubscribe();
-        minAmountCompBaseSideAmountPin.unsubscribe();
-        minAmountCompQuoteSideAmountPin.unsubscribe();
-        areBaseAndQuoteCurrenciesInvertedPin.unsubscribe();
-        priceTooltipPin.unsubscribe();
-        navigationButtonsVisibleHandler.accept(true);
-        model.getIsOverlayVisible().set(false);
-    }
+    /* --------------------------------------------------------------------- */
+    // UI handlers
+    /* --------------------------------------------------------------------- */
 
     void onKeyPressedWhileShowingOverlay(KeyEvent keyEvent) {
         KeyHandlerUtil.handleEnterKeyEvent(keyEvent, () -> {
@@ -305,6 +321,23 @@ public class MuSigCreateOfferAmountController implements Controller {
         updateIsRangeAmountEnabled(true);
     }
 
+
+    /* --------------------------------------------------------------------- */
+    // Private
+    /* --------------------------------------------------------------------- */
+
+    private void applyTradeAmountLimitsInUsd() {
+        List<PaymentMethod<?>> paymentMethods = model.getPaymentMethods();
+        Fiat maxTradeLimitInUsd = paymentMethods.stream()
+                .map(PaymentMethod::getPaymentRail)
+                .map(MuSigTradeAmountLimits::getMaxTradeLimitInUsd)
+                .min(Comparator.naturalOrder())
+                .orElse(MAX_USD_TRADE_AMOUNT);
+        MonetaryRange tradeAmountLimitsInUsd = new MonetaryRange(MuSigTradeAmountLimits.MIN_USD_TRADE_AMOUNT, maxTradeLimitInUsd);
+        amountSelectionController.setTradeAmountLimitsInUsd(tradeAmountLimitsInUsd);
+    }
+
+
     private void updateIsRangeAmountEnabled(boolean useRangeAmount) {
         model.getIsRangeAmountEnabled().set(useRangeAmount);
         quoteSideAmountsChanged(!useRangeAmount);
@@ -319,7 +352,9 @@ public class MuSigCreateOfferAmountController implements Controller {
 
         if (model.getIsRangeAmountEnabled().get()) {
             Long minAmount = getAmountValue(amountSelectionController.getMinBaseSideAmount());
-            checkNotNull(minAmount);
+            if (minAmount == null) {
+                return;
+            }
             if (maxOrFixAmount.compareTo(minAmount) < 0) {
                 amountSelectionController.setMinBaseSideAmount(amountSelectionController.getMaxOrFixedBaseSideAmount().get());
                 minAmount = getAmountValue(amountSelectionController.getMinBaseSideAmount());
@@ -339,12 +374,35 @@ public class MuSigCreateOfferAmountController implements Controller {
 
     private void applyRangeOrFixedAmountSpec(Long minAmount, long maxOrFixAmount) {
         if (minAmount != null) {
-            if (minAmount.equals(maxOrFixAmount)) {
+            Market market = model.getMarket();
+            boolean isBtcFiatMarket = market != null && market.isBtcFiatMarket();
+            Monetary minQuote = amountSelectionController.getMinQuoteSideAmount().get();
+            Monetary maxQuote = amountSelectionController.getMaxOrFixedQuoteSideAmount().get();
+            if (isFixedAmount(isBtcFiatMarket, minQuote, maxQuote, minAmount, maxOrFixAmount)) {
                 applyFixedAmountSpec(maxOrFixAmount);
             } else {
                 applyRangeAmountSpec(minAmount, maxOrFixAmount);
             }
         }
+    }
+
+    // On a fiat market the base side (sats) of two quote side amounts that are equal
+    // once rounded to the fiat display precision can still differ by a few units due
+    // to price conversion rounding, which would create a spurious range offer.
+    // Decide on the rounded quote side value so a range only remains when the fiat
+    // amounts actually differ. Non-fiat markets, or missing quote amounts, keep the
+    // exact base side comparison. Package-private static so
+    // MuSigCreateOfferAmountControllerTest can exercise the decision directly.
+    @VisibleForTesting
+    static boolean isFixedAmount(boolean isBtcFiatMarket,
+                                 @Nullable Monetary minQuoteSideAmount,
+                                 @Nullable Monetary maxOrFixedQuoteSideAmount,
+                                 long minBaseAmount,
+                                 long maxOrFixedBaseAmount) {
+        if (isBtcFiatMarket && minQuoteSideAmount != null && maxOrFixedQuoteSideAmount != null) {
+            return minQuoteSideAmount.isEqual(maxOrFixedQuoteSideAmount, minQuoteSideAmount.getLowPrecision());
+        }
+        return minBaseAmount == maxOrFixedBaseAmount;
     }
 
     private void applyFixedAmountSpec(long maxOrFixAmount) {
@@ -430,38 +488,45 @@ public class MuSigCreateOfferAmountController implements Controller {
     private void applyQuoteSideMinMaxRange() {
         Market market = model.getMarket();
 
-        Monetary maxRangeValue = market.isCrypto()
-                ? MuSigTradeAmountLimits.usdToBtc(marketPriceService, MAX_USD_TRADE_AMOUNT).orElseThrow()
-                : MuSigTradeAmountLimits.usdToFiat(marketPriceService, market, MAX_USD_TRADE_AMOUNT)
-                .orElseThrow().round(0);
         Monetary minRangeValue = market.isCrypto()
-                ? MuSigTradeAmountLimits.usdToBtc(marketPriceService, DEFAULT_MIN_USD_TRADE_AMOUNT).orElseThrow()
-                : MuSigTradeAmountLimits.usdToFiat(marketPriceService, market, DEFAULT_MIN_USD_TRADE_AMOUNT)
+                ? MarketBasedAmountConversion.usdToBtc(marketPriceService, MIN_USD_TRADE_AMOUNT).orElseThrow()
+                : MarketBasedAmountConversion.usdToFiat(marketPriceService, market, MIN_USD_TRADE_AMOUNT)
                 .orElseThrow().round(0);
+
+        Monetary maxRangeValue = market.isCrypto()
+                ? MarketBasedAmountConversion.usdToBtc(marketPriceService, MAX_USD_TRADE_AMOUNT).orElseThrow()
+                : MarketBasedAmountConversion.usdToFiat(marketPriceService, market, MAX_USD_TRADE_AMOUNT)
+                .orElseThrow().round(0);
+
         applyMaxAmountBasedOnReputation();
 
         Fiat defaultUsdAmount = MAX_USD_TRADE_AMOUNT_WITHOUT_REPUTATION.multiply(2);
         Monetary defaultAmount = market.isCrypto()
-                ? MuSigTradeAmountLimits.usdToBtc(marketPriceService, defaultUsdAmount).orElseThrow()
-                : MuSigTradeAmountLimits.usdToFiat(marketPriceService, market, defaultUsdAmount)
+                ? MarketBasedAmountConversion.usdToBtc(marketPriceService, defaultUsdAmount).orElseThrow()
+                : MarketBasedAmountConversion.usdToFiat(marketPriceService, market, defaultUsdAmount)
                 .orElseThrow().round(0);
         boolean isBuyer = model.getDisplayDirection().isBuy();
         Monetary reputationBasedMaxAmount = model.getReputationBasedMaxAmount().round(0);
         amountSelectionController.setMaxAllowedLimitation(maxRangeValue);
         model.getLearnMoreVisible().set(true);
+
+        // We keep the feedback and overlay code for now as we might have usage later for it.
+        // If not, we can remove all related code. Currently, it's just a copy of Bisq Easy...
+        model.getShouldShowAmountLimitInfo().set(false);
+
         if (isBuyer) {
-            model.getShouldShowAmountLimitInfo().set(true);
-            amountSelectionController.setMinMaxRange(minRangeValue, maxRangeValue);
+            //model.getShouldShowAmountLimitInfo().set(true);
+            amountSelectionController.setQuoteSideTradeAmountLimits(new MonetaryRange(minRangeValue, maxRangeValue));
         } else {
             boolean hasNotReachedAmountLimit = reputationBasedMaxAmount.getValue() < maxRangeValue.getValue();
-            model.getShouldShowAmountLimitInfo().set(hasNotReachedAmountLimit);
+            //model.getShouldShowAmountLimitInfo().set(hasNotReachedAmountLimit);
             if (reputationBasedMaxAmount.getValue() < minRangeValue.getValue()) {
                 minRangeValue = reputationBasedMaxAmount;
             }
             if (reputationBasedMaxAmount.getValue() < maxRangeValue.getValue()) {
                 maxRangeValue = reputationBasedMaxAmount;
             }
-            amountSelectionController.setMinMaxRange(minRangeValue, maxRangeValue);
+            amountSelectionController.setQuoteSideTradeAmountLimits(new MonetaryRange(minRangeValue, maxRangeValue));
         }
 
         if (isBuyer) {

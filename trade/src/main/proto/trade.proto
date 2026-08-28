@@ -26,6 +26,7 @@ import "account.proto";
 import "network_identity.proto";
 import "offer.proto";
 import "rpc.proto";
+import "support.proto";
 import "user.proto";
 
 option java_package = "bisq.trade.protobuf";
@@ -40,7 +41,7 @@ message TradeParty {
   }
 }
 
-enum TradeRole{
+enum TradeRole {
   TRADEROLE_UNSPECIFIED = 0;
   TRADEROLE_BUYER_AS_TAKER = 1;
   TRADEROLE_BUYER_AS_MAKER = 2;
@@ -61,6 +62,7 @@ enum TradeProtocolFailure {
   TRADEPROTOCOLFAILURE_PRICE_DEVIATION = 2;
   TRADEPROTOCOLFAILURE_NO_MATCHING_OFFER_FOUND = 3;
   TRADEPROTOCOLFAILURE_MEDIATORS_NOT_MATCHING = 4;
+  TRADEPROTOCOLFAILURE_OFFER_NOT_AVAILABLE = 5;
 }
 
 message Trade {
@@ -173,6 +175,7 @@ message BisqEasyReportErrorMessage {
 message PubKeyShares {
   bytes buyerOutputPubKeyShare = 1;
   bytes sellerOutputPubKeyShare = 2;
+  bytes multisigScriptKey = 3;
 }
 
 message NonceShares {
@@ -220,11 +223,33 @@ message MuSigTradeParty {
   optional musigrpc.CloseTradeResponse myCloseTradeResponse = 11;
   optional common.ByteArray peersOutputPrvKeyShare = 12;
   optional account.AccountPayload accountPayload = 13;
+  optional bool mediationResultAccepted = 14;
+}
+
+enum MuSigDisputeState {
+  MUSIGDISPUTESTATE_UNSPECIFIED = 0;
+  MUSIGDISPUTESTATE_NO_DISPUTE = 1;
+  MUSIGDISPUTESTATE_MEDIATION_REQUESTED = 2;
+  MUSIGDISPUTESTATE_MEDIATION_OPEN = 3;
+  MUSIGDISPUTESTATE_MEDIATION_CLOSED = 4;
+  MUSIGDISPUTESTATE_MEDIATION_RE_OPENED = 5;
+  MUSIGDISPUTESTATE_ARBITRATION_REQUESTED = 6;
+  MUSIGDISPUTESTATE_ARBITRATION_OPEN = 7;
+  MUSIGDISPUTESTATE_ARBITRATION_CLOSED = 8;
+}
+
+message MuSigTradeDispute {
+  MuSigDisputeState disputeState = 1;
+  optional support.MuSigMediationResult muSigMediationResult = 2;
+  optional bytes mediationResultSignature = 3;
+  optional support.MuSigArbitrationResult muSigArbitrationResult = 4;
+  optional bytes arbitrationResultSignature = 5;
 }
 
 message MuSigTrade {
   optional string depositTxId = 1;
   optional sint64 tradeCompletedDate = 2;
+  MuSigTradeDispute tradeDispute = 3;
 }
 
 message MuSigTradeStore {
@@ -273,6 +298,7 @@ message SetupTradeMessage_C {
 
 message SetupTradeMessage_D {
   PartialSignatures partialSignatures = 1;
+  bytes depositPsbt = 2;
 }
 
 message SendAccountPayloadAndDepositTxMessage {

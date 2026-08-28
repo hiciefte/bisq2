@@ -18,14 +18,16 @@
 package bisq.desktop.components.controls;
 
 import bisq.common.locale.LocaleRepository;
+import bisq.common.util.StringUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BitcoinAmountDisplayTest {
 
@@ -35,7 +37,7 @@ class BitcoinAmountDisplayTest {
     @BeforeEach
     void setUp() {
         Locale.setDefault(Locale.US);
-        decimalSeparator = DecimalFormatSymbols.getInstance(Locale.getDefault()).getDecimalSeparator();
+        decimalSeparator = StringUtils.getDecimalSeparator(Locale.getDefault());
         bitcoinAmountDisplay = new BitcoinAmountDisplay("0.12345678");
     }
 
@@ -314,7 +316,7 @@ class BitcoinAmountDisplayTest {
         try {
             LocaleRepository.setDefaultLocale(Locale.GERMANY);
             BitcoinAmountDisplay germanDisplay = new BitcoinAmountDisplay("1,234");
-            char germanSeparator = DecimalFormatSymbols.getInstance(LocaleRepository.getDefaultLocale()).getDecimalSeparator();
+            char germanSeparator = StringUtils.getDecimalSeparator();
 
             assertEquals(',', germanSeparator);
             assertEquals("1" + germanSeparator, germanDisplay.getIntegerPart().getText());
@@ -335,7 +337,7 @@ class BitcoinAmountDisplayTest {
             BitcoinAmountDisplay frenchDisplaySmall = new BitcoinAmountDisplay("0,00123");
             BitcoinAmountDisplay frenchDisplayLarge = new BitcoinAmountDisplay("123,456");
 
-            char frenchSeparator = DecimalFormatSymbols.getInstance(LocaleRepository.getDefaultLocale()).getDecimalSeparator();
+            char frenchSeparator = StringUtils.getDecimalSeparator();
 
             assertEquals("0" + frenchSeparator, frenchDisplayZero.getIntegerPart().getText());
             assertEquals("0" + frenchSeparator, frenchDisplaySmall.getIntegerPart().getText());

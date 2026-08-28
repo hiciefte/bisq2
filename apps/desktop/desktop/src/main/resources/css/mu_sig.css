@@ -45,10 +45,8 @@
 
 .dropdown-menu.base-currency-dropdown-menu:hover,
 .dropdown-menu-active.base-currency-dropdown-menu {
+    -fx-background-color: -bisq-dark-grey-25;
     -fx-background-radius: 6 6 0 0;
-    -fx-border-color: -bisq-dark-grey-50;
-    -fx-border-width: 1;
-    -fx-border-radius: 6 6 0 0;
 }
 
 .dropdown-menu.base-currency-dropdown-menu .label {

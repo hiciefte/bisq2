@@ -17,7 +17,7 @@ application {
 }
 
 javafx {
-    version = "21.0.6"
+    version = "21.0.11"
     modules = listOf("javafx.controls", "javafx.media")
 }
 
@@ -58,6 +58,8 @@ tasks {
         val version = VersionUtil.getVersionFromFile(project)
         archiveClassifier.set("$version-all")
         mergeServiceFiles()
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
     }
 
     distZip {

@@ -23,6 +23,7 @@ import bisq.common.monetary.Coin;
 import bisq.desktop.common.utils.GridPaneUtil;
 import bisq.desktop.components.controls.BisqTooltip;
 import bisq.i18n.Res;
+import bisq.mu_sig.MuSigTradeAmountLimits;
 import bisq.presentation.formatters.AmountFormatter;
 import bisq.presentation.formatters.BooleanFormatter;
 import javafx.geometry.Insets;
@@ -78,7 +79,9 @@ public class SummaryDetails<P extends CryptoAssetAccountPayload> extends GridPan
 
     protected void addRestrictions(P accountPayload) {
         CryptoPaymentRail paymentRail = accountPayload.getPaymentMethod().getPaymentRail();
-        String restrictions = Res.get("paymentAccounts.summary.tradeLimit", paymentRail.getTradeLimit()) + " / " +
+
+        String tradeLimit = MuSigTradeAmountLimits.getFormattedMaxTradeLimitInUsd(paymentRail);
+        String restrictions = Res.get("paymentAccounts.summary.tradeLimit", tradeLimit) + " / " +
                 Res.get("paymentAccounts.summary.tradeDuration", paymentRail.getTradeDuration().getDisplayString());
         addDescriptionAndValue(Res.get("paymentAccounts.restrictions"), restrictions);
     }

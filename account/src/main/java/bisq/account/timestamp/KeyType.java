@@ -1,0 +1,48 @@
+/*
+ * This file is part of Bisq.
+ *
+ * Bisq is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * Bisq is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Bisq. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package bisq.account.timestamp;
+
+import bisq.common.proto.ProtoEnum;
+import bisq.common.proto.ProtobufUtils;
+import bisq.security.SignatureUtil;
+import bisq.security.keys.KeyGeneration;
+import lombok.Getter;
+
+public enum KeyType implements ProtoEnum {
+    DSA(KeyGeneration.DSA, SignatureUtil.SHA256withDSA),
+    EC(KeyGeneration.EC, SignatureUtil.SHA256withECDSA);
+
+    @Getter
+    private final String keyAlgorithm;
+    @Getter
+    private final String signatureAlgorithm;
+
+    KeyType(String keyAlgorithm, String signatureAlgorithm) {
+        this.keyAlgorithm = keyAlgorithm;
+        this.signatureAlgorithm = signatureAlgorithm;
+    }
+
+    @Override
+    public bisq.account.protobuf.KeyType toProtoEnum() {
+        return bisq.account.protobuf.KeyType.valueOf(getProtobufEnumPrefix() + name());
+    }
+
+    public static KeyType fromProto(bisq.account.protobuf.KeyType proto) {
+        return ProtobufUtils.enumFromProto(KeyType.class, proto.name(), EC);
+    }
+}

@@ -3,12 +3,6 @@ plugins {
     id("bisq.protobuf")
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
-}
-
 dependencies {
     implementation("bisq:persistence")
     implementation("bisq:java-se")
@@ -22,6 +16,7 @@ dependencies {
     implementation("bisq:bonded-roles")
     implementation("bisq:settings")
     implementation("bisq:burningman")
+    implementation("bisq:mu-sig")
     implementation("bisq:user")
     implementation("bisq:chat")
     implementation("bisq:support")
@@ -42,4 +37,9 @@ dependencies {
     implementation(libs.bundles.websocket.libs)
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.pkix)
+    implementation(libs.zxing.core)
+
+    implementation(libs.bucket4j.core)
+    implementation(libs.prometheus.simpleclient)
+    implementation(libs.prometheus.simpleclient.httpserver)
 }

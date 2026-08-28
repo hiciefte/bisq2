@@ -128,7 +128,8 @@ public class ChatMessagesListController implements Controller {
     private final LeavePrivateChatManager leavePrivateChatManager;
     private final DontShowAgainService dontShowAgainService;
     private final BisqEasyOfferbookMessageService bisqEasyOfferbookMessageService;
-    private Pin selectedChannelPin, chatMessagesPin, bisqEasyOfferbookMessageTypeFilterPin, highlightedMessagePin;
+    private Pin selectedChannelPin, chatMessagesPin, bisqEasyOfferbookMessageTypeFilterPin, highlightedMessagePin,
+            ignoredUserProfileIdsPin;
     private Subscription selectedChannelSubscription, focusSubscription, scrollValuePin, scrollBarVisiblePin,
             layoutChildrenDonePin;
     private static final String DONT_SHOW_CHAT_RULES_WARNING_KEY = "privateChatRulesWarning";
@@ -171,6 +172,9 @@ public class ChatMessagesListController implements Controller {
         bisqEasyOfferbookMessageTypeFilterPin = settingsService.getBisqEasyOfferbookMessageTypeFilter()
                 .addObserver(filter -> UIThread.run(this::updatePredicate));
 
+        ignoredUserProfileIdsPin = userProfileService.getIgnoredUserProfileIds()
+                .addObserver(() -> UIThread.run(this::updatePredicate));
+
         if (selectedChannelPin != null) {
             selectedChannelPin.unbind();
         }
@@ -201,6 +205,10 @@ public class ChatMessagesListController implements Controller {
     public void onDeactivate() {
         if (bisqEasyOfferbookMessageTypeFilterPin != null) {
             bisqEasyOfferbookMessageTypeFilterPin.unbind();
+        }
+        if (ignoredUserProfileIdsPin != null) {
+            ignoredUserProfileIdsPin.unbind();
+            ignoredUserProfileIdsPin = null;
         }
         if (selectedChannelPin != null) {
             selectedChannelPin.unbind();
@@ -323,7 +331,7 @@ public class ChatMessagesListController implements Controller {
     public void editMyLastMessage() {
         Optional<ChatMessageListItem<? extends ChatMessage, ? extends ChatChannel<? extends ChatMessage>>> messageListItem = model.getChatMessages()
                 .stream()
-                .filter(ChatMessageListItem::isMyMessage)
+                .filter(ChatMessageListItem::canEditMessage)
                 .max(Comparator.comparing((ChatMessageListItem<? extends ChatMessage, ? extends ChatChannel<? extends ChatMessage>> item) -> item.getChatMessage().getDate()));
         messageListItem.ifPresent(item -> item.getSetAsEditing().set(true));
     }
@@ -923,6 +931,7 @@ public class ChatMessagesListController implements Controller {
                 0L,
                 false,
                 channel.getMediator(),
+                channel.getArbitrator(),
                 ChatMessageType.CHAT_RULES_WARNING,
                 Optional.empty(),
                 new HashSet<>());

@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
+import java.security.PublicKey;
 import java.util.Arrays;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -52,7 +53,15 @@ public class ContractService implements Service {
         return SignatureUtil.verify(contractHash, signatureData.getSignature(), signatureData.getPublicKey());
     }
 
-    private <T extends Offer<?, ?>> byte[] getContractHash(Contract<T> contract) {
+    public boolean arePublicKeysMatching(ContractSignatureData signatureData, PublicKey expectedPublicKey) {
+        return arePublicKeysMatching(signatureData.getPublicKey(), expectedPublicKey);
+    }
+
+    public boolean arePublicKeysMatching(PublicKey publicKey, PublicKey expectedPublicKey) {
+        return Arrays.equals(publicKey.getEncoded(), expectedPublicKey.getEncoded());
+    }
+
+    public static <T extends Offer<?, ?>> byte[] getContractHash(Contract<T> contract) {
         return DigestUtil.hash(contract.serializeForHash());
     }
 }

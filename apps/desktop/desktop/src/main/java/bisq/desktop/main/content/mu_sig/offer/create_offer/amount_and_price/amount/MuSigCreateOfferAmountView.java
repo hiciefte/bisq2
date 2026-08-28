@@ -38,13 +38,13 @@ import org.fxmisc.easybind.Subscription;
 
 @Slf4j
 public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmountModel, MuSigCreateOfferAmountController> {
-    private static final String SELECTED_PRICE_MODEL_STYLE_CLASS = "selected-model";
+    private static final String SELECTED_MODEL_STYLE_CLASS = "selected-model";
 
     private final Label amountLimitInfo, amountLimitInfoOverlayInfo, linkToWikiText, warningIcon;
     private final Hyperlink learnMore, linkToWiki;
     @Getter
     private final VBox overlay;
-    private final Button learnHowToBuildReputation, closeOverlayButton, fixedAmount, rangeAmount;
+    private final Button learnHowToBuildReputation, closeOverlayButton, fixedAmountButton, rangeAmountButton;
     private final HBox amountLimitInfoHBox, learnHowToBuildReputationBox;
     private Subscription isRangeAmountEnabledPin, isOverlayVisible;
 
@@ -53,11 +53,33 @@ public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmoun
                                       VBox amountSelectionBox) {
         super(new VBox(10), model, controller);
 
+        // Amount spec selection
+        fixedAmountButton = new Button(Res.get("muSig.offer.create.amount.amountModel.fixedAmount"));
+        fixedAmountButton.getStyleClass().add("model-selection-item");
+        HBox fixedAmountBox = new HBox(fixedAmountButton);
+        fixedAmountBox.getStyleClass().add("model-selection-item-box");
+        fixedAmountBox.setAlignment(Pos.CENTER_RIGHT);
+
+        Label separator = new Label("|");
+
+        rangeAmountButton = new Button(Res.get("muSig.offer.create.amount.amountModel.rangeAmount"));
+        rangeAmountButton.getStyleClass().add("model-selection-item");
+        HBox rangeAmountBox = new HBox(rangeAmountButton);
+        rangeAmountBox.getStyleClass().add("model-selection-item-box");
+        rangeAmountBox.setAlignment(Pos.CENTER_LEFT);
+
+        HBox amountSpecSelectionBox = new HBox(30, fixedAmountBox, separator, rangeAmountBox);
+        amountSpecSelectionBox.getStyleClass().addAll("selection-models", "bisq-text-3");
+
+
+        // Amount input
         amountSelectionBox.getStyleClass().add("min-amount");
         HBox amountBox = new HBox(0, amountSelectionBox);
         amountBox.setAlignment(Pos.BASELINE_LEFT);
         amountBox.getStyleClass().add("amount-box");
 
+
+        // Amount limit info
         warningIcon = new Label();
         warningIcon.getStyleClass().add("text-fill-grey-dimmed");
         warningIcon.setPadding(new Insets(0, 2.5, 0, 0));
@@ -74,38 +96,28 @@ public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmoun
         amountLimitInfoHBox = new HBox(2.5, warningIcon, amountLimitInfo, learnMore);
         amountLimitInfoHBox.setAlignment(Pos.CENTER);
 
-        // Amount model selection
-        fixedAmount = new Button(Res.get("muSig.offer.create.amount.amountModel.fixedAmount"));
-        fixedAmount.getStyleClass().add("model-selection-item");
-        rangeAmount = new Button(Res.get("muSig.offer.create.amount.amountModel.rangeAmount"));
-        rangeAmount.getStyleClass().add("model-selection-item");
-        Label separator = new Label("|");
 
-        HBox fixedAmountBox = new HBox(fixedAmount);
-        fixedAmountBox.getStyleClass().add("model-selection-item-box");
-        fixedAmountBox.setAlignment(Pos.CENTER_RIGHT);
-        HBox rangeAmountBox = new HBox(rangeAmount);
-        rangeAmountBox.getStyleClass().add("model-selection-item-box");
-        rangeAmountBox.setAlignment(Pos.CENTER_LEFT);
-
-        HBox amountModelsBox = new HBox(30, fixedAmountBox, separator, rangeAmountBox);
-        amountModelsBox.getStyleClass().addAll("selection-models", "bisq-text-3");
-
+        // Amount limit overlay
         amountLimitInfoOverlayInfo = new Label();
-        closeOverlayButton = new Button(Res.get("muSig.offer.wizard.amount.limitInfo.overlay.close"));
+
+        linkToWikiText = new Label();
+        linkToWiki = new Hyperlink("https://bisq.wiki/Reputation");
+
         learnHowToBuildReputation = new Button(Res.get("muSig.offer.create.amount.limitInfo.overlay.learnHowToBuildReputation"));
         learnHowToBuildReputation.getStyleClass().add("outlined-button");
         learnHowToBuildReputationBox = new HBox(learnHowToBuildReputation);
-        linkToWikiText = new Label();
-        linkToWiki = new Hyperlink("https://bisq.wiki/Reputation");
+
+        closeOverlayButton = new Button(Res.get("muSig.offer.wizard.amount.limitInfo.overlay.close"));
+
         overlay = new WizardOverlay(root)
                 .warning()
-                .headline("muSig.offer.wizard.amount.limitInfo.overlay.headline")
+                .headlineFromI18nKey("muSig.offer.wizard.amount.limitInfo.overlay.headline")
                 .description(createAndGetOverlayContent(amountLimitInfoOverlayInfo, linkToWikiText, linkToWiki, learnHowToBuildReputationBox))
                 .buttons(closeOverlayButton)
                 .build();
 
-        root.getChildren().addAll(amountModelsBox, amountBox, amountLimitInfoHBox);
+
+        root.getChildren().addAll(amountSpecSelectionBox, amountBox, amountLimitInfoHBox);
         root.setAlignment(Pos.TOP_CENTER);
         root.getStyleClass().add("bisq-easy-trade-wizard-amount-step");
     }
@@ -127,12 +139,12 @@ public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmoun
         warningIcon.managedProperty().bind(model.getShouldShowWarningIcon());
 
         isRangeAmountEnabledPin = EasyBind.subscribe(model.getIsRangeAmountEnabled(), isRangeAmountEnabled -> {
-            fixedAmount.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
-            rangeAmount.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
+            fixedAmountButton.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
+            rangeAmountButton.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
             if (isRangeAmountEnabled) {
-                rangeAmount.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+                rangeAmountButton.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             } else {
-                fixedAmount.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+                fixedAmountButton.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             }
         });
 
@@ -148,8 +160,8 @@ public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmoun
         linkToWiki.setOnAction(e -> controller.onOpenWiki(linkToWiki.getText()));
         learnHowToBuildReputation.setOnAction(e -> controller.onLearnHowToBuildReputation());
         closeOverlayButton.setOnAction(e -> controller.onCloseOverlay());
-        fixedAmount.setOnAction(e -> controller.onSelectFixedAmount());
-        rangeAmount.setOnAction(e -> controller.onSelectRangeAmount());
+        fixedAmountButton.setOnAction(e -> controller.onSelectFixedAmount());
+        rangeAmountButton.setOnAction(e -> controller.onSelectRangeAmount());
     }
 
     @Override
@@ -172,8 +184,8 @@ public class MuSigCreateOfferAmountView extends View<VBox, MuSigCreateOfferAmoun
         linkToWiki.setOnAction(null);
         closeOverlayButton.setOnAction(null);
         learnHowToBuildReputation.setOnAction(null);
-        fixedAmount.setOnAction(null);
-        rangeAmount.setOnAction(null);
+        fixedAmountButton.setOnAction(null);
+        rangeAmountButton.setOnAction(null);
 
         root.setOnKeyPressed(null);
     }

@@ -34,7 +34,7 @@ import bisq.network.NetworkService;
 import bisq.network.identity.NetworkId;
 import bisq.network.p2p.message.EnvelopePayloadMessage;
 import bisq.network.p2p.services.confidential.ConfidentialMessageService;
-import bisq.security.DigestUtil;
+import bisq.support.dispute.ChatMessagePruning;
 import bisq.user.UserService;
 import bisq.user.banned.BannedUserService;
 import bisq.user.identity.UserIdentity;
@@ -43,10 +43,7 @@ import bisq.user.profile.UserProfileService;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Nullable;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
@@ -54,6 +51,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 
+import static bisq.support.dispute.DisputeAgentSelection.selectDeterministicProfileId;
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
@@ -135,12 +133,15 @@ public class BisqEasyMediationRequestService implements Service, ConfidentialMes
         UserProfile peer = channel.getPeer();
         UserProfile mediator = channel.getMediator().orElseThrow();
         NetworkId mediatorNetworkId = mediator.getNetworkId();
-        BisqEasyMediationRequest bisqEasyMediationRequest = new BisqEasyMediationRequest(channel.getTradeId(),
-                contract,
-                myUserIdentity.getUserProfile(),
-                peer,
+        BisqEasyMediationRequest bisqEasyMediationRequest = ChatMessagePruning.createWithMaybePrunedMessages(
                 new ArrayList<>(channel.getChatMessages()),
-                Optional.of(mediatorNetworkId));
+                channel.getTradeId(),
+                chatMessages -> new BisqEasyMediationRequest(channel.getTradeId(),
+                        contract,
+                        myUserIdentity.getUserProfile(),
+                        peer,
+                        chatMessages,
+                        mediatorNetworkId));
         networkService.confidentialSend(bisqEasyMediationRequest,
                 mediatorNetworkId,
                 myUserIdentity.getNetworkIdWithKeyPair());
@@ -163,35 +164,8 @@ public class BisqEasyMediationRequestService implements Service, ConfidentialMes
                                                 String makersProfileId,
                                                 String takersProfileId,
                                                 String offerId) {
-        if (mediators.isEmpty()) {
-            return Optional.empty();
-        }
-
-        if (mediators.size() == 1) {
-            return userProfileService.findUserProfile(mediators.iterator().next().getProfileId());
-        }
-
-        int index = getDeterministicIndex(mediators, makersProfileId, takersProfileId, offerId);
-
-        ArrayList<AuthorizedBondedRole> list = new ArrayList<>(mediators);
-        list.sort(Comparator.comparing(AuthorizedBondedRole::getProfileId));
-        return userProfileService.findUserProfile(list.get(index).getProfileId());
-    }
-
-    private int getDeterministicIndex(Set<AuthorizedBondedRole> mediators,
-                                      String makersProfileId,
-                                      String takersProfileId,
-                                      String offerId) {
-        String input = makersProfileId + takersProfileId + offerId;
-        byte[] hash = DigestUtil.hash(input.getBytes(StandardCharsets.UTF_8)); // returns 20 bytes
-        // XOR multiple 4-byte chunks to use more of the hash
-        ByteBuffer buffer = ByteBuffer.wrap(hash);
-        int space = buffer.getInt(); // First 4 bytes
-        space ^= buffer.getInt();    // XOR with next 4 bytes
-        space ^= buffer.getInt();    // XOR with next 4 bytes
-        space ^= buffer.getInt();    // XOR with next 4 bytes
-        space ^= buffer.getInt();    // XOR with last 4 bytes (20 bytes total)
-        return Math.floorMod(space, mediators.size());
+        return selectDeterministicProfileId(mediators, makersProfileId, takersProfileId, offerId)
+                .flatMap(userProfileService::findUserProfile);
     }
 
     /* --------------------------------------------------------------------- */
@@ -201,6 +175,11 @@ public class BisqEasyMediationRequestService implements Service, ConfidentialMes
     private void processMediationResponse(BisqEasyMediatorsResponse bisqEasyMediatorsResponse) {
         bisqEasyOpenTradeChannelService.findChannelByTradeId(bisqEasyMediatorsResponse.getTradeId())
                 .ifPresentOrElse(channel -> {
+                            if (!isMediationResponseValid(bisqEasyMediatorsResponse, channel)) {
+                                pendingBisqEasyMediatorsResponseMessages.remove(bisqEasyMediatorsResponse);
+                                return;
+                            }
+
                             // Requester had it activated at request time
                             if (channel.isInMediation()) {
                                 bisqEasyOpenTradeChannelService.addMediatorsResponseMessage(channel, Res.encode("authorizedRole.mediator.message.toRequester"));
@@ -246,8 +225,47 @@ public class BisqEasyMediationRequestService implements Service, ConfidentialMes
                         });
     }
 
+    private boolean isMediationResponseValid(BisqEasyMediatorsResponse bisqEasyMediatorsResponse,
+                                             BisqEasyOpenTradeChannel channel) {
+        String tradeId = bisqEasyMediatorsResponse.getTradeId();
+        Optional<UserProfile> expectedMediator = channel.getMediator();
+        if (expectedMediator.isEmpty()) {
+            log.warn("Ignoring BisqEasyMediatorsResponse for trade {} because the channel has no selected mediator.", tradeId);
+            return false;
+        }
+
+        UserProfile mediator = expectedMediator.orElseThrow();
+        Optional<NetworkId> senderNetworkId = bisqEasyMediatorsResponse.getSenderNetworkId();
+        if (senderNetworkId.isEmpty()) {
+            if (bisqEasyMediatorsResponse.isSenderPublicKeyRequired()) {
+                log.warn("Ignoring BisqEasyMediatorsResponse for trade {} because senderNetworkId is missing.", tradeId);
+                return false;
+            }
+
+            if (bannedUserService.isUserProfileBanned(mediator)) {
+                log.warn("Ignoring BisqEasyMediatorsResponse for trade {} from banned mediator {}.", tradeId, mediator.getId());
+                return false;
+            }
+
+            return true;
+        }
+
+        NetworkId sender = senderNetworkId.orElseThrow();
+        if (!mediator.getId().equals(sender.getId())) {
+            log.warn("Ignoring BisqEasyMediatorsResponse for trade {} from unexpected mediator {}. Expected mediator {}.",
+                    tradeId, sender.getId(), mediator.getId());
+            return false;
+        }
+
+        if (bannedUserService.isUserProfileBanned(sender)) {
+            log.warn("Ignoring BisqEasyMediatorsResponse for trade {} from banned mediator {}.", tradeId, sender.getId());
+            return false;
+        }
+
+        return true;
+    }
+
     private void maybeProcessPendingMediatorsResponseMessages() {
         new HashSet<>(pendingBisqEasyMediatorsResponseMessages).forEach(this::processMediationResponse);
     }
 }
-

@@ -45,14 +45,14 @@ public class TradeLimitsView extends TabView<TradeLimitsModel, TradeLimitsContro
         lineAndMarker.setPadding(new Insets(0, 0, 0, 0));
 
         Styles styles = new Styles("bisq-text-grey-9", "bisq-text-white", "bisq-text-green", "bisq-text-grey-9");
-        addTab(Res.get("muSig.trade.limits.tab1"),
-                NavigationTarget.MU_SIG_TRADE_LIMITS_TAB_1,
+        addTab(Res.get("muSig.trade.limits.overview"),
+                NavigationTarget.MU_SIG_TRADE_LIMITS_OVERVIEW,
                 styles);
-        addTab(Res.get("muSig.trade.limits.tab2"),
-                NavigationTarget.MU_SIG_TRADE_LIMITS_TAB_2,
+        addTab(Res.get("muSig.trade.limits.algorithm"),
+                NavigationTarget.MU_SIG_TRADE_LIMITS_ALGORITHM,
                 styles);
-        addTab(Res.get("muSig.trade.limits.tab3"),
-                NavigationTarget.MU_SIG_TRADE_LIMITS_TAB_3,
+        addTab(Res.get("muSig.trade.limits.simulation"),
+                NavigationTarget.MU_SIG_TRADE_LIMITS_SIMULATION,
                 styles);
     }
 

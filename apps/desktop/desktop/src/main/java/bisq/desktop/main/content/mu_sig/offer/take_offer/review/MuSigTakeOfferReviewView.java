@@ -58,6 +58,7 @@ class MuSigTakeOfferReviewView extends View<StackPane, MuSigTakeOfferReviewModel
     private final MuSigProtocolWaitingAnimation takeOfferSendMessageWaitingAnimation;
     private Subscription takeOfferStatusPin;
     private boolean minWaitingTimePassed = false;
+    private UIScheduler minWaitingTimeScheduler;
 
     MuSigTakeOfferReviewView(MuSigTakeOfferReviewModel model,
                              MuSigTakeOfferReviewController controller,
@@ -169,8 +170,8 @@ class MuSigTakeOfferReviewView extends View<StackPane, MuSigTakeOfferReviewModel
         takeOfferSendMessageWaitingAnimation = new MuSigProtocolWaitingAnimation(MuSigProtocolWaitingState.TAKE_OFFER);
         sendTakeOfferMessageOverlay = new WizardOverlay(root)
                 .headlineIcon(takeOfferSendMessageWaitingAnimation)
-                .headline("muSig.offer.taker.review.sendTakeOfferMessageFeedback.headline")
-                .description("muSig.offer.taker.review.sendTakeOfferMessageFeedback.subTitle",
+                .headlineFromI18nKey("muSig.offer.taker.review.sendTakeOfferMessageFeedback.headline")
+                .descriptionFromI18nKeys("muSig.offer.taker.review.sendTakeOfferMessageFeedback.subTitle",
                         "muSig.offer.taker.review.sendTakeOfferMessageFeedback.info")
                 .build();
 
@@ -178,8 +179,8 @@ class MuSigTakeOfferReviewView extends View<StackPane, MuSigTakeOfferReviewModel
         takeOfferSuccessButton.setDefaultButton(true);
         takeOfferSuccessOverlay = new WizardOverlay(root)
                 .info()
-                .headline("muSig.offer.taker.review.takeOfferSuccess.headline")
-                .description("muSig.offer.taker.review.takeOfferSuccess.subTitle")
+                .headlineFromI18nKey("muSig.offer.taker.review.takeOfferSuccess.headline")
+                .descriptionFromI18nKey("muSig.offer.taker.review.takeOfferSuccess.subTitle")
                 .buttons(takeOfferSuccessButton)
                 .build();
 
@@ -218,18 +219,21 @@ class MuSigTakeOfferReviewView extends View<StackPane, MuSigTakeOfferReviewModel
         takeOfferSuccessButton.setOnAction(null);
         takeOfferStatusPin.unsubscribe();
         takeOfferSendMessageWaitingAnimation.stop();
+        stopMinWaitingTimeScheduler();
         securityDepositInfoIcon.setTooltip(null);
     }
 
     private void showTakeOfferStatusFeedback(MuSigTakeOfferReviewModel.TakeOfferStatus status) {
         if (status == MuSigTakeOfferReviewModel.TakeOfferStatus.SENT) {
+            minWaitingTimePassed = false;
             sendTakeOfferMessageOverlay.setVisible(true);
 
             Transitions.blurStrong(gridPane, 0);
             Transitions.slideInTop(sendTakeOfferMessageOverlay, 450);
             takeOfferSendMessageWaitingAnimation.playIndefinitely();
 
-            UIScheduler.run(() -> {
+            stopMinWaitingTimeScheduler();
+            minWaitingTimeScheduler = UIScheduler.run(() -> {
                 minWaitingTimePassed = true;
                 if (model.getTakeOfferStatus().get() == MuSigTakeOfferReviewModel.TakeOfferStatus.SUCCESS) {
                     sendTakeOfferMessageOverlay.setVisible(false);
@@ -243,7 +247,17 @@ class MuSigTakeOfferReviewView extends View<StackPane, MuSigTakeOfferReviewModel
             takeOfferSendMessageWaitingAnimation.stop();
         } else if (status == MuSigTakeOfferReviewModel.TakeOfferStatus.NOT_STARTED) {
             sendTakeOfferMessageOverlay.setVisible(false);
+            takeOfferSuccessOverlay.setVisible(false);
+            takeOfferSendMessageWaitingAnimation.stop();
+            stopMinWaitingTimeScheduler();
             Transitions.removeEffect(gridPane);
+        }
+    }
+
+    private void stopMinWaitingTimeScheduler() {
+        if (minWaitingTimeScheduler != null) {
+            minWaitingTimeScheduler.stop();
+            minWaitingTimeScheduler = null;
         }
     }
 

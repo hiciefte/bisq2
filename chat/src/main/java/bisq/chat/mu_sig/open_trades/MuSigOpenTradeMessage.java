@@ -56,6 +56,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
 
     private final String tradeId;
     private final Optional<UserProfile> mediator;
+    private final Optional<UserProfile> arbitrator;
     private final Optional<MuSigOffer> muSigOffer;
 
     public MuSigOpenTradeMessage(String tradeId,
@@ -69,6 +70,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                                  long date,
                                  boolean wasEdited,
                                  Optional<UserProfile> mediator,
+                                 Optional<UserProfile> arbitrator,
                                  ChatMessageType chatMessageType,
                                  Optional<MuSigOffer> muSigOffer,
                                  Set<MuSigOpenTradeMessageReaction> chatMessageReactions) {
@@ -84,6 +86,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                 date,
                 wasEdited,
                 mediator,
+                arbitrator,
                 chatMessageType,
                 muSigOffer,
                 chatMessageReactions);
@@ -101,6 +104,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                                  long date,
                                  boolean wasEdited,
                                  Optional<UserProfile> mediator,
+                                 Optional<UserProfile> arbitrator,
                                  ChatMessageType chatMessageType,
                                  Optional<MuSigOffer> muSigOffer,
                                  Set<MuSigOpenTradeMessageReaction> chatMessageReactions) {
@@ -108,6 +112,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                 receiverNetworkId, text, citation, date, wasEdited, chatMessageType, chatMessageReactions);
         this.tradeId = tradeId;
         this.mediator = mediator;
+        this.arbitrator = arbitrator;
         this.muSigOffer = muSigOffer;
     }
 
@@ -117,6 +122,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                                   String receiverUserProfileId,
                                   NetworkId receiverNetworkId,
                                   Optional<UserProfile> mediator,
+                                  Optional<UserProfile> arbitrator,
                                   ChatMessageType chatMessageType,
                                   MuSigOffer muSigOffer) {
         super(StringUtils.createUid(),
@@ -133,6 +139,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                 new HashSet<>());
         this.tradeId = tradeId;
         this.mediator = mediator;
+        this.arbitrator = arbitrator;
         this.muSigOffer = Optional.of(muSigOffer);
     }
 
@@ -156,6 +163,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                         .map(reaction -> reaction.getValueBuilder(serializeForHash).build())
                         .collect(Collectors.toList()));
         mediator.ifPresent(mediator -> builder.setMediator(mediator.toProto(serializeForHash)));
+        arbitrator.ifPresent(arbitrator -> builder.setArbitrator(arbitrator.toProto(serializeForHash)));
         muSigOffer.ifPresent(offer -> builder.setMuSigOffer(offer.toProto(serializeForHash)));
         return builder;
     }
@@ -167,6 +175,9 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
         bisq.chat.protobuf.MuSigOpenTradeMessage protoMessage = baseProto.getMuSigOpenTradeMessage();
         Optional<UserProfile> mediator = protoMessage.hasMediator() ?
                 Optional.of(UserProfile.fromProto(protoMessage.getMediator())) :
+                Optional.empty();
+        Optional<UserProfile> arbitrator = protoMessage.hasArbitrator() ?
+                Optional.of(UserProfile.fromProto(protoMessage.getArbitrator())) :
                 Optional.empty();
         Optional<MuSigOffer> muSigOffer = protoMessage.hasMuSigOffer() ?
                 Optional.of(MuSigOffer.fromProto(protoMessage.getMuSigOffer())) :
@@ -184,6 +195,7 @@ public final class MuSigOpenTradeMessage extends PrivateChatMessage<MuSigOpenTra
                 baseProto.getDate(),
                 baseProto.getWasEdited(),
                 mediator,
+                arbitrator,
                 ChatMessageType.fromProto(baseProto.getChatMessageType()),
                 muSigOffer,
                 protoMessage.getChatMessageReactionsList().stream()

@@ -43,11 +43,13 @@ import bisq.desktop.navigation.NavigationTarget;
 import bisq.i18n.Res;
 import bisq.settings.ChatMessageType;
 import bisq.settings.SettingsService;
+import bisq.user.banned.BannedUserService;
 import bisq.user.identity.UserIdentity;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Comparator;
 import java.util.List;
@@ -58,6 +60,7 @@ import java.util.stream.Collectors;
 
 import static bisq.settings.DontShowAgainKey.SEND_MSG_OFFER_ONLY_WARN;
 
+@Slf4j
 public class ChatMessageContainerController implements bisq.desktop.common.view.Controller {
     private final ChatMessageContainerModel model;
     @Getter
@@ -69,6 +72,7 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
     private final UserProfileService userProfileService;
     private final SettingsService settingsService;
     private final ChatService chatService;
+    private final BannedUserService bannedUserService;
     private Pin selectedChannelPin, chatMessagesPin, getUserIdentitiesPin;
 
     public ChatMessageContainerController(ServiceProvider serviceProvider,
@@ -80,6 +84,7 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
         settingsService = serviceProvider.getSettingsService();
         userIdentityService = serviceProvider.getUserService().getUserIdentityService();
         userProfileService = serviceProvider.getUserService().getUserProfileService();
+        bannedUserService = serviceProvider.getUserService().getBannedUserService();
 
         citationBlock = new CitationBlock(serviceProvider);
 
@@ -191,26 +196,7 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
     /* --------------------------------------------------------------------- */
 
     void onSendMessage(String text) {
-        if (text == null || text.isEmpty()) {
-            return;
-        }
-
-        if (model.getSelectedChannel().get() instanceof PublicChatChannel) {
-            List<UserIdentity> myUserProfilesInChannel = getMyUserProfilesInChannel();
-            if (!myUserProfilesInChannel.isEmpty()) {
-                UserIdentity lastUsedUserProfile = myUserProfilesInChannel.get(0);
-                if (!lastUsedUserProfile.equals(userIdentityService.getSelectedUserIdentity())) {
-                    new Popup().warning(Res.get("chat.message.send.differentUserProfile.warn"))
-                            .closeButtonText(Res.get("confirmation.no"))
-                            .actionButtonText(Res.get("confirmation.yes"))
-                            .onAction(() -> doSendMessage(text))
-                            .show();
-                    return;
-                }
-            }
-        }
-
-        doSendMessage(text);
+        sendMessage(text);
     }
 
     void onArrowUpKeyPressed() {
@@ -266,9 +252,42 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
 
     protected void selectedChannelChanged(ChatChannel<? extends ChatMessage> chatChannel) {
         UIThread.run(() -> {
+            ChatChannel<? extends ChatMessage> previousChannel = model.getSelectedChannel().get();
+            if (previousChannel != null && !previousChannel.equals(chatChannel)) {
+                clearChatInput();
+            }
             model.getSelectedChannel().set(chatChannel);
             applyUserProfileOrChannelChange();
         });
+    }
+
+    private void clearChatInput() {
+        model.getTextInput().set("");
+        citationBlock.close();
+    }
+
+    private void sendMessage(String text) {
+        String normalizedText = text == null ? "" : text.trim();
+        if (normalizedText.isEmpty()) {
+            return;
+        }
+
+        if (model.getSelectedChannel().get() instanceof PublicChatChannel) {
+            List<UserIdentity> myUserProfilesInChannel = getMyUserProfilesInChannel();
+            if (!myUserProfilesInChannel.isEmpty()) {
+                UserIdentity lastUsedUserProfile = myUserProfilesInChannel.get(0);
+                if (!lastUsedUserProfile.equals(userIdentityService.getSelectedUserIdentity())) {
+                    new Popup().warning(Res.get("chat.message.send.differentUserProfile.warn"))
+                            .closeButtonText(Res.get("confirmation.no"))
+                            .actionButtonText(Res.get("confirmation.yes"))
+                            .onAction(() -> doSendMessage(normalizedText))
+                            .show();
+                    return;
+                }
+            }
+        }
+
+        doSendMessage(normalizedText);
     }
 
     private void doSendMessage(String text) {
@@ -283,6 +302,11 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
 
         if (citation.isPresent() && citation.get().getText().length() > Citation.MAX_TEXT_LENGTH) {
             new Popup().warning(Res.get("validation.tooLong", Citation.MAX_TEXT_LENGTH)).show();
+            return;
+        }
+
+        if (bannedUserService.isUserProfileBanned(userIdentity.getUserProfile())) {
+            // If I am banned, we silently skip sending the message
             return;
         }
 
@@ -317,8 +341,8 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
             }
         } else {
             ChatChannelDomain chatChannelDomain = model.getChatChannelDomain();
-            if (chatChannel instanceof CommonPublicChatChannel) {
-                chatService.getCommonPublicChatChannelServices().get(chatChannelDomain).publishChatMessage(text, citation, (CommonPublicChatChannel) chatChannel, userIdentity);
+            if (chatChannel instanceof CommonPublicChatChannel channel) {
+                publishCommonPublicChatMessage(chatChannelDomain, text, citation, channel, userIdentity);
             } else if (chatChannel instanceof TwoPartyPrivateChatChannel) {
                 chatService.findTwoPartyPrivateChatChannelService(chatChannelDomain).ifPresent(service ->
                         service.sendTextMessage(text, citation, (TwoPartyPrivateChatChannel) chatChannel));
@@ -326,6 +350,16 @@ public class ChatMessageContainerController implements bisq.desktop.common.view.
         }
 
         citationBlock.close();
+    }
+
+    void publishCommonPublicChatMessage(ChatChannelDomain chatChannelDomain,
+                                        String text,
+                                        Optional<Citation> citation,
+                                        CommonPublicChatChannel channel,
+                                        UserIdentity userIdentity) {
+        chatService.getCommonPublicChatChannelServices()
+                .get(chatChannelDomain)
+                .publishChatMessage(text, citation, channel, userIdentity);
     }
 
     private void maybeSwitchUserProfile() {

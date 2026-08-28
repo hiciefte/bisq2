@@ -128,7 +128,7 @@ public class TradeWizardDirectionAndMarketView extends View<StackPane, TradeWiza
         gainReputationButton.setDefaultButton(true);
         reputationInfoOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("bisqEasy.tradeWizard.directionAndMarket.feedback.headline")
+                .headlineFromI18nKey("bisqEasy.tradeWizard.directionAndMarket.feedback.headline")
                 .description(Res.get("bisqEasy.tradeWizard.directionAndMarket.feedback.subTitle1",
                                 model.getMyReputationScore(),
                                 BisqEasyTradeAmountLimits.MIN_REPUTATION_SCORE_TO_CREATE_SELL_OFFER),

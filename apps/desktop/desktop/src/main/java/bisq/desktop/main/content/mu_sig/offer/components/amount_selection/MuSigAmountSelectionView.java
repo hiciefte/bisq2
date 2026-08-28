@@ -47,6 +47,7 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
     @SuppressWarnings("UnnecessaryUnicodeEscape")
     private static final String EN_DASH_SYMBOL = "\u2013"; // Unicode for "–"
     private static final Map<Integer, String> CHAR_COUNT_FONT_STYLE_MAP = new HashMap<>();
+
     static {
         CHAR_COUNT_FONT_STYLE_MAP.put(9, "input-text-9");
         CHAR_COUNT_FONT_STYLE_MAP.put(10, "input-text-10");
@@ -66,16 +67,18 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
     }
 
     private final Slider fixedAmountSlider;
-    private final Label minRangeValue, maxRangeValue, minRangeCode, maxRangeCode, description, quoteAmountSeparator,
+    private final Label minTradeAmountLimitValue, maxTradeAmountLimitValue, minTradeAmountLimitCode, maxTradeAmountLimitCode,
+            minTradeAmountLimitInUsdValue, maxTradeAmountLimitInUsdValue,
+            description, quoteAmountSeparator,
             baseAmountSeparator;
     private final Region selectionLine;
     private final Pane minQuoteAmountRoot, minBaseAmountRoot, invertedMinQuoteAmountRoot, invertedMinBaseAmountRoot,
             maxOrFixedBaseAmountRoot, maxOrFixedQuoteAmountRoot, invertedMaxOrFixedQuoteAmountRoot, invertedMaxOrFixedBaseAmountRoot;
-    private final HBox quoteAmountSelectionHBox, baseAmountSelectionHBox, sliderIndicators;
+    private final HBox quoteAmountSelectionHBox, tradeAmountLimitsBox, tradeAmountLimitsInUsdBox;
     private final ChangeListener<Number> maxOrFixedAmountSliderValueListener, minAmountSliderValueListener;
     private final BisqMenuItem flipCurrenciesButton;
     private final RangeSlider rangeAmountSlider;
-    private Subscription shouldFocusInputTextFieldPin, sliderTrackStylePin, isRangeAmountEnabledPin,
+    private Subscription shouldFocusInputTextFieldPin, sliderTrackStylePin, useRangeAmountPin,
             shouldApplyNewInputTextFontStylePin;
 
     MuSigAmountSelectionView(MuSigAmountSelectionModel model,
@@ -128,9 +131,12 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         invertedMinQuoteAmountRoot.getStyleClass().add("min-base-amount");
         maxOrFixedBaseAmountRoot.getStyleClass().add("max-or-fixed-base-amount");
         invertedMaxOrFixedQuoteAmountRoot.getStyleClass().add("max-or-fixed-base-amount");
-        baseAmountSelectionHBox = new HBox(minBaseAmountRoot, invertedMinQuoteAmountRoot, baseAmountSeparator,
+        HBox baseAmountSelectionHBox = new HBox(minBaseAmountRoot, invertedMinQuoteAmountRoot, baseAmountSeparator,
                 maxOrFixedBaseAmountRoot, invertedMaxOrFixedQuoteAmountRoot);
         baseAmountSelectionHBox.getStyleClass().add("base-amount");
+        baseAmountSelectionHBox.setMinWidth(model.getAmountBoxWidth() - 10);
+        baseAmountSelectionHBox.setMaxWidth(model.getAmountBoxWidth() - 10);
+
 
         flipCurrenciesButton = new BisqMenuItem("flip-fields-arrows-green", "flip-fields-arrows-white");
         flipCurrenciesButton.setTooltip(Res.get("muSig.offer.create.amount.selection.flipCurrenciesButton.tooltip"));
@@ -181,22 +187,40 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         rangeAmountSlider.setMax(model.getSliderMax());
         rangeAmountSlider.getStyleClass().add("amount-range-slider");
 
-        minRangeValue = new Label();
-        minRangeValue.getStyleClass().add("range-value");
-        minRangeCode = new Label();
-        minRangeCode.getStyleClass().add("range-code");
-        HBox minRangeValueAndCodeHBox = new HBox(2, minRangeValue, minRangeCode);
-        minRangeValueAndCodeHBox.setAlignment(Pos.BASELINE_LEFT);
+        minTradeAmountLimitValue = new Label();
+        minTradeAmountLimitValue.getStyleClass().add("range-value");
+        minTradeAmountLimitCode = new Label();
+        minTradeAmountLimitCode.getStyleClass().add("range-code");
+        HBox minTradeAmountLimitBox = new HBox(2, minTradeAmountLimitValue, minTradeAmountLimitCode);
+        minTradeAmountLimitBox.setAlignment(Pos.BASELINE_LEFT);
 
-        maxRangeValue = new Label();
-        maxRangeValue.getStyleClass().add("range-value");
-        maxRangeCode = new Label();
-        maxRangeCode.getStyleClass().add("range-code");
-        HBox maxRangeValueAndCodeHBox = new HBox(2, maxRangeValue, maxRangeCode);
-        maxRangeValueAndCodeHBox.setAlignment(Pos.BASELINE_RIGHT);
+        maxTradeAmountLimitValue = new Label();
+        maxTradeAmountLimitValue.getStyleClass().add("range-value");
+        maxTradeAmountLimitCode = new Label();
+        maxTradeAmountLimitCode.getStyleClass().add("range-code");
+        HBox maxTradeAmountLimitBox = new HBox(2, maxTradeAmountLimitValue, maxTradeAmountLimitCode);
+        maxTradeAmountLimitBox.setAlignment(Pos.BASELINE_RIGHT);
 
-        sliderIndicators = new HBox(minRangeValueAndCodeHBox, Spacer.fillHBox(), maxRangeValueAndCodeHBox);
-        VBox sliderBox = new VBox(2, fixedAmountSlider, rangeAmountSlider, sliderIndicators);
+        // limits in USD
+        minTradeAmountLimitInUsdValue = new Label();
+        minTradeAmountLimitInUsdValue.getStyleClass().add("range-value-secondary");
+        Label minTradeAmountLimitInUsdCode = new Label("USD");
+        minTradeAmountLimitInUsdCode.getStyleClass().add("range-code-secondary");
+        HBox minTradeAmountLimitInUsdBox = new HBox(2, minTradeAmountLimitInUsdValue, minTradeAmountLimitInUsdCode);
+        minTradeAmountLimitInUsdBox.setAlignment(Pos.BASELINE_LEFT);
+
+        maxTradeAmountLimitInUsdValue = new Label();
+        maxTradeAmountLimitInUsdValue.getStyleClass().add("range-value-secondary");
+        Label maxTradeAmountLimitInUsdCode = new Label("USD");
+        maxTradeAmountLimitInUsdCode.getStyleClass().add("range-code-secondary");
+        HBox maxTradeAmountLimitInUsdBox = new HBox(2, maxTradeAmountLimitInUsdValue, maxTradeAmountLimitInUsdCode);
+        maxTradeAmountLimitInUsdBox.setAlignment(Pos.BASELINE_RIGHT);
+
+        tradeAmountLimitsBox = new HBox(minTradeAmountLimitBox, Spacer.fillHBox(), maxTradeAmountLimitBox);
+        tradeAmountLimitsInUsdBox = new HBox(minTradeAmountLimitInUsdBox, Spacer.fillHBox(), maxTradeAmountLimitInUsdBox);
+        tradeAmountLimitsInUsdBox.setOpacity(0.5);
+
+        VBox sliderBox = new VBox(2, fixedAmountSlider, rangeAmountSlider, tradeAmountLimitsBox, tradeAmountLimitsInUsdBox);
         sliderBox.setMaxWidth(model.getAmountBoxWidth() + 40);
 
         VBox.setMargin(sliderBox, new Insets(30, 0, 0, 0));
@@ -216,11 +240,11 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
 
     @Override
     protected void onViewAttached() {
-        isRangeAmountEnabledPin = EasyBind.subscribe(model.getIsRangeAmountEnabled(), isRangeAmountEnabled -> {
+        useRangeAmountPin = EasyBind.subscribe(model.getUseRangeAmount(), useRangeAmount -> {
             root.getStyleClass().clear();
             root.getStyleClass().add("amount-selection");
-            root.getStyleClass().add(isRangeAmountEnabled ? "range-amount" : "fixed-amount");
-            VBox.setMargin(sliderIndicators, isRangeAmountEnabled ? SLIDER_INDICATORS_RANGE_MARGIN : SLIDER_INDICATORS_FIXED_MARGIN);
+            root.getStyleClass().add(useRangeAmount ? "range-amount" : "fixed-amount");
+            VBox.setMargin(tradeAmountLimitsBox, useRangeAmount ? SLIDER_INDICATORS_RANGE_MARGIN : SLIDER_INDICATORS_FIXED_MARGIN);
             applyTextInputFontStyle(true);
         });
         sliderTrackStylePin = EasyBind.subscribe(model.getSliderTrackStyle(), trackStyle -> {
@@ -240,14 +264,22 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         fixedAmountSlider.valueProperty().addListener(maxOrFixedAmountSliderValueListener);
         model.getMaxOrFixedAmountSliderFocus().bind(fixedAmountSlider.focusedProperty());
         description.textProperty().bind(model.getDescription());
-        minRangeValue.textProperty().bind(model.getMinRangeValueAsString());
-        minRangeCode.textProperty().bind(model.getMinRangeCodeAsString());
-        maxRangeValue.textProperty().bind(model.getMaxRangeValueLimitationAsString());
-        maxRangeCode.textProperty().bind(model.getMaxRangeCodeAsString());
-        quoteAmountSeparator.visibleProperty().bind(model.getIsRangeAmountEnabled());
-        quoteAmountSeparator.managedProperty().bind(model.getIsRangeAmountEnabled());
-        baseAmountSeparator.visibleProperty().bind(model.getIsRangeAmountEnabled());
-        baseAmountSeparator.managedProperty().bind(model.getIsRangeAmountEnabled());
+
+        minTradeAmountLimitValue.textProperty().bind(model.getFormattedMinTradeAmountLimit());
+        minTradeAmountLimitCode.textProperty().bind(model.getTradeAmountLimitCode());
+        maxTradeAmountLimitValue.textProperty().bind(model.getFormattedMaxTradeAmountLimit());
+        maxTradeAmountLimitCode.textProperty().bind(model.getTradeAmountLimitCode());
+
+        minTradeAmountLimitInUsdValue.textProperty().bind(model.getFormattedMinTradeAmountLimitInUsd());
+        maxTradeAmountLimitInUsdValue.textProperty().bind(model.getFormattedMaxTradeAmountLimitInUsd());
+
+        tradeAmountLimitsInUsdBox.visibleProperty().bind(model.getShowTradeAmountLimitInUsd());
+        tradeAmountLimitsInUsdBox.managedProperty().bind(model.getShowTradeAmountLimitInUsd());
+
+        quoteAmountSeparator.visibleProperty().bind(model.getUseRangeAmount());
+        quoteAmountSeparator.managedProperty().bind(model.getUseRangeAmount());
+        baseAmountSeparator.visibleProperty().bind(model.getUseRangeAmount());
+        baseAmountSeparator.managedProperty().bind(model.getUseRangeAmount());
         minQuoteAmountRoot.visibleProperty().bind(model.getShouldShowMinAmounts());
         minQuoteAmountRoot.managedProperty().bind(model.getShouldShowMinAmounts());
         minBaseAmountRoot.visibleProperty().bind(model.getShouldShowMinAmounts());
@@ -256,14 +288,10 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         invertedMinQuoteAmountRoot.managedProperty().bind(model.getShouldShowInvertedMinAmounts());
         invertedMinBaseAmountRoot.visibleProperty().bind(model.getShouldShowInvertedMinAmounts());
         invertedMinBaseAmountRoot.managedProperty().bind(model.getShouldShowInvertedMinAmounts());
-        rangeAmountSlider.visibleProperty().bind(model.getIsRangeAmountEnabled());
-        rangeAmountSlider.managedProperty().bind(model.getIsRangeAmountEnabled());
-        fixedAmountSlider.visibleProperty().bind(model.getIsRangeAmountEnabled().not());
-        fixedAmountSlider.managedProperty().bind(model.getIsRangeAmountEnabled().not());
-        flipCurrenciesButton.visibleProperty().bind(model.getAllowInvertingBaseAndQuoteCurrencies());
-        flipCurrenciesButton.managedProperty().bind(model.getAllowInvertingBaseAndQuoteCurrencies());
-        baseAmountSelectionHBox.minWidthProperty().bind(model.getBaseAmountSelectionHBoxWidth());
-        baseAmountSelectionHBox.maxWidthProperty().bind(model.getBaseAmountSelectionHBoxWidth());
+        rangeAmountSlider.visibleProperty().bind(model.getUseRangeAmount());
+        rangeAmountSlider.managedProperty().bind(model.getUseRangeAmount());
+        fixedAmountSlider.visibleProperty().bind(model.getUseRangeAmount().not());
+        fixedAmountSlider.managedProperty().bind(model.getUseRangeAmount().not());
         maxOrFixedBaseAmountRoot.visibleProperty().bind(model.getShouldShowMaxOrFixedAmounts());
         maxOrFixedBaseAmountRoot.managedProperty().bind(model.getShouldShowMaxOrFixedAmounts());
         maxOrFixedQuoteAmountRoot.visibleProperty().bind(model.getShouldShowMaxOrFixedAmounts());
@@ -286,7 +314,7 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
 
     @Override
     protected void onViewDetached() {
-        isRangeAmountEnabledPin.unsubscribe();
+        useRangeAmountPin.unsubscribe();
         sliderTrackStylePin.unsubscribe();
         shouldFocusInputTextFieldPin.unsubscribe();
         shouldApplyNewInputTextFontStylePin.unsubscribe();
@@ -301,10 +329,18 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         fixedAmountSlider.valueProperty().removeListener(maxOrFixedAmountSliderValueListener);
         model.getMaxOrFixedAmountSliderFocus().unbind();
         description.textProperty().unbind();
-        minRangeValue.textProperty().unbind();
-        minRangeCode.textProperty().unbind();
-        maxRangeValue.textProperty().unbind();
-        maxRangeCode.textProperty().unbind();
+
+        minTradeAmountLimitValue.textProperty().unbind();
+        minTradeAmountLimitCode.textProperty().unbind();
+        maxTradeAmountLimitValue.textProperty().unbind();
+        maxTradeAmountLimitCode.textProperty().unbind();
+
+        minTradeAmountLimitInUsdValue.textProperty().unbind();
+        maxTradeAmountLimitInUsdValue.textProperty().unbind();
+
+        tradeAmountLimitsInUsdBox.visibleProperty().unbind();
+        tradeAmountLimitsInUsdBox.managedProperty().unbind();
+
         quoteAmountSeparator.visibleProperty().unbind();
         quoteAmountSeparator.managedProperty().unbind();
         baseAmountSeparator.visibleProperty().unbind();
@@ -321,10 +357,6 @@ public class MuSigAmountSelectionView extends View<VBox, MuSigAmountSelectionMod
         rangeAmountSlider.managedProperty().unbind();
         fixedAmountSlider.visibleProperty().unbind();
         fixedAmountSlider.managedProperty().unbind();
-        flipCurrenciesButton.visibleProperty().unbind();
-        flipCurrenciesButton.managedProperty().unbind();
-        baseAmountSelectionHBox.minWidthProperty().unbind();
-        baseAmountSelectionHBox.maxWidthProperty().unbind();
         maxOrFixedBaseAmountRoot.visibleProperty().unbind();
         maxOrFixedBaseAmountRoot.managedProperty().unbind();
         maxOrFixedQuoteAmountRoot.visibleProperty().unbind();

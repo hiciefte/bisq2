@@ -65,6 +65,7 @@ public class MuSigCreateOfferPaymentModel implements Model {
 
     private final BooleanProperty shouldShowNoPaymentMethodSelectedOverlay = new SimpleBooleanProperty();
     private final StringProperty noPaymentMethodSelectedOverlayText = new SimpleStringProperty("");
+    private final StringProperty tradeLimitInfo = new SimpleStringProperty();
 
     public MuSigCreateOfferPaymentModel() {
     }
