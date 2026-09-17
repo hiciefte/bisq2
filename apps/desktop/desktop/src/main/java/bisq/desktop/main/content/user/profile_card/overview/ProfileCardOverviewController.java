@@ -33,11 +33,16 @@ import bisq.offer.bisq_easy.BisqEasyOffer;
 import bisq.presentation.formatters.AmountFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import bisq.user.profile.UserProfile;
+import bisq.user.profile.UserProfileService;
 import bisq.user.reputation.ReputationService;
+import com.google.common.annotations.VisibleForTesting;
 import lombok.Getter;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class ProfileCardOverviewController implements Controller {
@@ -47,6 +52,7 @@ public class ProfileCardOverviewController implements Controller {
     private final BisqEasyOfferbookChannelService bisqEasyOfferbookChannelService;
     private final MarketPriceService marketPriceService;
     private final ReputationService reputationService;
+    private final UserProfileService userProfileService;
 
     private UIScheduler livenessUpdateScheduler;
 
@@ -55,6 +61,7 @@ public class ProfileCardOverviewController implements Controller {
         bisqEasyOfferbookChannelService = chatService.getBisqEasyOfferbookChannelService();
         marketPriceService = serviceProvider.getBondedRolesService().getMarketPriceService();
         reputationService = serviceProvider.getUserService().getReputationService();
+        userProfileService = serviceProvider.getUserService().getUserProfileService();
 
         model = new ProfileCardOverviewModel();
         view = new ProfileCardOverviewView(model, this);
@@ -68,14 +75,12 @@ public class ProfileCardOverviewController implements Controller {
 
         String userProfileId = userProfile.getId();
         // TODO Need to add support for swapping base and quote currency when crypto market is used
-        long totalBaseOfferAmountToBuy = getTotalBaseOfferAmount(userProfileId, offer -> offer.getDisplayDirection().isBuy());
-        String formattedTotalBaseOfferAmountToBuy = AmountFormatter.formatBaseAmount(Coin.asBtcFromValue(totalBaseOfferAmountToBuy));
-        model.setTotalBaseOfferAmountToBuy(formattedTotalBaseOfferAmountToBuy);
+        model.setTotalBaseOfferAmountToBuy(formatTotalBaseOfferAmount(
+                getTotalBaseOfferAmount(userProfileId, offer -> offer.getDisplayDirection().isBuy())));
 
         // TODO Need to add support for swapping base and quote currency when crypto market is used
-        long totalBaseOfferAmountToSell = getTotalBaseOfferAmount(userProfileId, offer -> offer.getDisplayDirection().isSell());
-        String formattedTotalBaseOfferAmountToSell = AmountFormatter.formatBaseAmount(Coin.asBtcFromValue(totalBaseOfferAmountToSell));
-        model.setTotalBaseOfferAmountToSell(formattedTotalBaseOfferAmountToSell);
+        model.setTotalBaseOfferAmountToSell(formatTotalBaseOfferAmount(
+                getTotalBaseOfferAmount(userProfileId, offer -> offer.getDisplayDirection().isSell())));
 
         model.setSellingLimit(String.valueOf(AmountFormatter.formatQuoteAmount(getSellingAmountLimitInUsd(userProfileId))));
 
@@ -92,13 +97,19 @@ public class ProfileCardOverviewController implements Controller {
             livenessUpdateScheduler.stop();
         }
         livenessUpdateScheduler = UIScheduler.run(() -> {
-                    long publishDate = userProfile.getPublishDate();
-                    if (publishDate == 0) {
-                        model.getLastUserActivity().set(Res.get("data.na"));
-                    } else {
-                        long age = Math.max(0, System.currentTimeMillis() - publishDate);
-                        model.getLastUserActivity().set(TimeFormatter.formatAgeCompact(age));
-                    }
+                    // We need to use the userprofile from our userProfileService as only
+                    // that will have a publishDate (set by the p2p network storage layer).
+                    // For userProfiles we have persisted in the contact list and which are
+                    // expired (have not been online in the past 15 days), we set it
+                    // to 0 and display "N/A".
+                    long now = System.currentTimeMillis();
+                    String lastUserActivity = userProfileService.findUserProfile(userProfile.getId())
+                            .map(UserProfile::getPublishDate)
+                            .filter(publishDate -> publishDate > 0)
+                            .map(publishDate -> Math.max(0L, now - publishDate))
+                            .map(TimeFormatter::formatAgeCompact)
+                            .orElse(Res.get("data.na"));
+                    model.getLastUserActivity().set(lastUserActivity);
                 })
                 .periodically(0, 1, TimeUnit.MINUTES);
     }
@@ -111,13 +122,48 @@ public class ProfileCardOverviewController implements Controller {
         }
     }
 
-    private long getTotalBaseOfferAmount(String userProfileId, Predicate<BisqEasyOffer> predicate) {
-        return getOffers(userProfileId)
+    private Optional<Long> getTotalBaseOfferAmount(String userProfileId, Predicate<BisqEasyOffer> predicate) {
+        List<Monetary> baseAmounts = getOffers(userProfileId)
                 .map(message -> message.getBisqEasyOffer().orElseThrow())
                 .filter(predicate)
-                .flatMap(offer -> OfferAmountUtil.findBaseSideMaxOrFixedAmount(marketPriceService, offer).stream())
-                .mapToLong(Monetary::getValue)
-                .sum();
+                .flatMap(offer -> {
+                    try {
+                        return OfferAmountUtil.findBaseSideMaxOrFixedAmount(marketPriceService, offer).stream();
+                    } catch (ArithmeticException e) {
+                        // An offer whose amounts overflow at the current price cannot contribute
+                        // to the total; it is hidden from the offer lists as invalid.
+                        return Stream.<Monetary>empty();
+                    }
+                })
+                .collect(Collectors.toList());
+        return checkedBaseAmountSum(baseAmounts);
+    }
+
+    // Individually valid base amounts can still overflow a long in aggregate. Sum with
+    // Math.addExact and treat an overflow as a value that cannot be represented.
+    @VisibleForTesting
+    static Optional<Long> checkedBaseAmountSum(List<Monetary> baseAmounts) {
+        try {
+            long total = 0L;
+            for (Monetary baseAmount : baseAmounts) {
+                long value = baseAmount.getValue();
+                // Drop malformed non-positive per-offer amounts (e.g. a negative from a wrapped
+                // conversion) so they cannot corrupt the total.
+                if (value <= 0) {
+                    continue;
+                }
+                total = Math.addExact(total, value);
+            }
+            return Optional.of(total);
+        } catch (ArithmeticException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static String formatTotalBaseOfferAmount(Optional<Long> totalBaseOfferAmount) {
+        return totalBaseOfferAmount
+                .map(value -> AmountFormatter.formatBaseAmount(Coin.asBtcFromValue(value)))
+                .orElseGet(() -> Res.get("data.na"));
     }
 
     private Stream<BisqEasyOfferbookMessage> getOffers(String userProfileId) {

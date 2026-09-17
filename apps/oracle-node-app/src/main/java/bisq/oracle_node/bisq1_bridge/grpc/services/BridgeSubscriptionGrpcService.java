@@ -21,6 +21,7 @@ import bisq.common.application.DevMode;
 import bisq.common.application.Service;
 import bisq.common.timer.Delay;
 import bisq.oracle_node.bisq1_bridge.grpc.GrpcClient;
+import com.google.common.annotations.VisibleForTesting;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static bisq.common.threading.ExecutorFactory.commonForkJoinPool;
 
@@ -42,6 +45,8 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
     protected final AtomicLong subscribeRetryInterval = new AtomicLong(1);
     protected final AtomicLong retryRequestInterval = new AtomicLong(1);
     protected final AtomicLong retryRequestAttempts = new AtomicLong(0);
+    private final AtomicReference<RequestState> requestState = new AtomicReference<>(RequestState.initial());
+    private final AtomicBoolean streamRecoveryScheduled = new AtomicBoolean();
     protected volatile boolean shutdownCalled;
 
     public BridgeSubscriptionGrpcService(boolean staticPublicKeysProvided, GrpcClient grpcClient) {
@@ -57,8 +62,8 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
     @Override
     public CompletableFuture<Boolean> initialize() {
         log.info("initialize");
-        request();
         subscribe();
+        request();
         return CompletableFuture.completedFuture(true);
     }
 
@@ -78,14 +83,52 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
         if (shutdownCalled) {
             return;
         }
+        requestState.updateAndGet(RequestState::queueRequest);
+        executePendingRequest();
+    }
+
+    private void executePendingRequest() {
+        if (shutdownCalled) {
+            return;
+        }
+        RequestState currentState;
+        do {
+            currentState = requestState.get();
+            if (currentState.requestInProgress() || !currentState.hasPendingRequest()) {
+                return;
+            }
+        } while (!requestState.compareAndSet(currentState, currentState.startRequest()));
+
+        boolean historicalRequestPrepared = false;
+        boolean historicalRequestSuccessful = false;
         try {
-            doRequest(getStartBlockHeight()).forEach(this::handleResponse);
+            onRequestExecutionAcquired();
+            int startBlockHeight = prepareHistoricalRequest();
+            historicalRequestPrepared = true;
+            doRequest(startBlockHeight).forEach(this::handleResponse);
+            onHistoricalRequestComplete();
+            historicalRequestSuccessful = true;
 
             retryRequestAttempts.set(0);
             retryRequestInterval.set(1);
         } catch (Exception e) {
             handleRequestException(e);
+        } finally {
+            try {
+                if (historicalRequestPrepared) {
+                    onHistoricalRequestFinished(historicalRequestSuccessful);
+                }
+            } finally {
+                RequestState completedState = requestState.updateAndGet(RequestState::completeRequest);
+                if (completedState.hasPendingRequest() && !shutdownCalled) {
+                    CompletableFuture.runAsync(this::executePendingRequest, commonForkJoinPool());
+                }
+            }
         }
+    }
+
+    protected void requestAsync() {
+        CompletableFuture.runAsync(this::request, commonForkJoinPool());
     }
 
     protected int getStartBlockHeight() {
@@ -93,9 +136,23 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
         return DevMode.isDevMode() ? 0 : LAUNCH_BLOCK_HEIGHT;
     }
 
+    protected int prepareHistoricalRequest() {
+        return getStartBlockHeight();
+    }
+
     protected abstract List<T> doRequest(int startBlockHeight);
 
     protected abstract void handleResponse(T data);
+
+    protected void onHistoricalRequestComplete() {
+    }
+
+    protected void onHistoricalRequestFinished(boolean successful) {
+    }
+
+    @VisibleForTesting
+    void onRequestExecutionAcquired() {
+    }
 
     protected abstract void subscribe();
 
@@ -113,6 +170,12 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
                 Delay.run(this::request)
                         .withExecutor(commonForkJoinPool())
                         .after(10, TimeUnit.SECONDS);
+            } else if (status.getCode() == Status.Code.UNIMPLEMENTED) {
+                log.warn("Request rejected because the grpc server does not implement the method. " +
+                                "Check that the Bisq1 grpc service is running on the configured port and is up to date. " +
+                                "Status: {}{}",
+                        status.getCode(),
+                        status.getDescription() == null ? "" : " (" + status.getDescription() + ")");
             } else if (status.getCode() == Status.Code.INTERNAL) {
                 log.warn("Request rejected because of grpc server error.", exception);
                 retryRequest();
@@ -140,18 +203,65 @@ public abstract class BridgeSubscriptionGrpcService<T> implements Service {
     }
 
     protected void handleStreamObserverError(Throwable throwable) {
+        recoverStream(throwable);
+    }
+
+    protected void handleStreamObserverCompleted() {
+        recoverStream(new IllegalStateException("Bridge block subscription completed unexpectedly"));
+    }
+
+    private void recoverStream(Throwable throwable) {
         if (shutdownCalled) {
             return;
         }
+        Status status = Status.fromThrowable(throwable);
+        if (status.getCode() == Status.Code.UNIMPLEMENTED) {
+            log.warn("Bridge version mismatch: the configured Bisq 1 bridge does not implement the " +
+                            "continuity-aware block subscription. Upgrade the bridge before starting the oracle. " +
+                            "Status: {}{}",
+                    status.getCode(),
+                    status.getDescription() == null ? "" : " (" + status.getDescription() + ")");
+            return;
+        }
+        if (!streamRecoveryScheduled.compareAndSet(false, true)) {
+            return;
+        }
 
-        log.error("Error at StreamObserver. We call subscribe again after {} sec. Error message: {}", subscribeRetryInterval.get(), throwable.getMessage());
+        log.error("Bridge stream ended. We resubscribe and catch up after {} sec. Error message: {}",
+                subscribeRetryInterval.get(), throwable.getMessage());
         Delay.run(() -> {
+                    streamRecoveryScheduled.set(false);
                     if (!shutdownCalled) {
                         subscribe();
+                        request();
                     }
                 })
                 .withExecutor(commonForkJoinPool())
                 .after(subscribeRetryInterval.get(), TimeUnit.SECONDS);
         subscribeRetryInterval.set(Math.min(10, subscribeRetryInterval.incrementAndGet()));
+    }
+
+    private record RequestState(boolean requestInProgress,
+                                long requestedGeneration,
+                                long startedGeneration) {
+        private static RequestState initial() {
+            return new RequestState(false, 0, 0);
+        }
+
+        private RequestState queueRequest() {
+            return new RequestState(requestInProgress, requestedGeneration + 1, startedGeneration);
+        }
+
+        private boolean hasPendingRequest() {
+            return requestedGeneration != startedGeneration;
+        }
+
+        private RequestState startRequest() {
+            return new RequestState(true, requestedGeneration, requestedGeneration);
+        }
+
+        private RequestState completeRequest() {
+            return new RequestState(false, requestedGeneration, startedGeneration);
+        }
     }
 }

@@ -17,16 +17,24 @@
 
 package bisq.account.payment_method;
 
+import bisq.i18n.Res;
+
 /**
  * PaymentRail represents the way how an asset is transferred. E.g. Using SEPA for transferring EUR.
  */
 public interface PaymentRail {
     String name();
 
-    //todo will not stay here
-    default String getTradeLimit() {
-        return "10000 USD";
+    TradeDuration getTradeDuration();
+
+    default String getDisplayString() {
+        String paymentRailName = name();
+        return Res.has(paymentRailName) ? Res.get(paymentRailName) : paymentRailName;
     }
 
-    TradeDuration getTradeDuration();
+    default String getShortDisplayString() {
+        String paymentRailName = name();
+        String shortName = paymentRailName + "_SHORT";
+        return Res.has(shortName) ? Res.get(shortName) : getDisplayString();
+    }
 }

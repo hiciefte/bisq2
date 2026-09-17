@@ -9,9 +9,14 @@ repositories {
     }
 }
 
+val pinnedJavaLanguageVersion = providers.gradleProperty("releaseBuild.javaVersion")
+    .map { it.substringBefore('.').toInt() }
+    .orElse(21)
+
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(pinnedJavaLanguageVersion.map { JavaLanguageVersion.of(it) })
+        vendor.set(JvmVendorSpec.AZUL)
     }
 }
 
@@ -19,12 +24,26 @@ tasks {
     test {
         useJUnitPlatform()
     }
+
+    withType<Jar> {
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+        // Pinned so the entry modes don't follow the umask of the machine that compiled the classes
+        // and checked out the resources.
+        dirPermissions { unix("0755") }
+        filePermissions { unix("0644") }
+    }
 }
 
 val versionCatalog = extensions.getByType<VersionCatalogsExtension>().named("libs")
 dependencies {
     versionCatalog.findLibrary("google-guava").ifPresent {
         implementation(it)
+    }
+
+    versionCatalog.findLibrary("findbugs-jsr305").ifPresent {
+        compileOnly(it)
+        testCompileOnly(it)
     }
 
     versionCatalog.findLibrary("lombok").ifPresent {
@@ -47,6 +66,9 @@ dependencies {
 
     versionCatalog.findLibrary("junit-jupiter").ifPresent {
         testImplementation(it)
+    }
+    versionCatalog.findLibrary("junit-platform-launcher").ifPresent {
+        testRuntimeOnly(it)
     }
 
     versionCatalog.findLibrary("assertj-core").ifPresent {

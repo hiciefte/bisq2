@@ -19,20 +19,20 @@ package bisq.api.dto.presentation.offerbook;
 
 
 import bisq.account.payment_method.PaymentMethod;
-import bisq.bonded_roles.market_price.MarketPriceService;
-import bisq.chat.bisq_easy.offerbook.BisqEasyOfferbookMessage;
-import bisq.common.market.Market;
+import bisq.account.payment_method.PaymentMethodSpecUtil;
 import bisq.api.dto.DtoMappings;
 import bisq.api.dto.offer.bisq_easy.BisqEasyOfferDto;
 import bisq.api.dto.user.profile.UserProfileDto;
 import bisq.api.dto.user.reputation.ReputationScoreDto;
+import bisq.api.util.LoggingUtils;
+import bisq.bonded_roles.market_price.MarketPriceService;
+import bisq.chat.bisq_easy.offerbook.BisqEasyOfferbookMessage;
+import bisq.common.market.Market;
 import bisq.i18n.Res;
-import bisq.offer.Direction;
 import bisq.offer.amount.OfferAmountFormatter;
 import bisq.offer.amount.spec.AmountSpec;
 import bisq.offer.amount.spec.RangeAmountSpec;
 import bisq.offer.bisq_easy.BisqEasyOffer;
-import bisq.account.payment_method.PaymentMethodSpecUtil;
 import bisq.offer.price.PriceUtil;
 import bisq.offer.price.spec.PriceSpec;
 import bisq.offer.price.spec.PriceSpecFormatter;
@@ -43,28 +43,113 @@ import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
 import bisq.user.reputation.ReputationScore;
 import bisq.user.reputation.ReputationService;
+import lombok.extern.slf4j.Slf4j;
 
 import java.text.DateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class OfferItemPresentationDtoFactory {
     public static OfferItemPresentationDto create(UserProfileService userProfileService,
                                                   UserIdentityService userIdentityService,
                                                   ReputationService reputationService,
                                                   MarketPriceService marketPriceService,
                                                   BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
-        BisqEasyOffer bisqEasyOffer = bisqEasyOfferbookMessage.getBisqEasyOffer().orElseThrow();
-        boolean isMyOffer = bisqEasyOfferbookMessage.isMyMessage(userIdentityService);
-        Direction direction = bisqEasyOffer.getDirection();
-        String messageId = bisqEasyOfferbookMessage.getId();
-        String offerId = bisqEasyOffer.getId();
-        BisqEasyOfferDto bisqEasyOfferDto = DtoMappings.BisqEasyOfferMapping.fromBisq2Model(bisqEasyOffer);
-        String authorUserProfileId = bisqEasyOfferbookMessage.getAuthorUserProfileId();
+        return createSafe(
+                userProfileService,
+                userIdentityService,
+                reputationService,
+                marketPriceService,
+                bisqEasyOfferbookMessage
+        ).orElseThrow(NoSuchElementException::new);
+    }
 
-        // For now, we send also the formatted values as we have not the complex formatters in mobile impl. yet.
-        // We might need to replicate the formatters anyway later and then those fields could be removed
+    private static OfferItemPresentationDto createFromValidated(ReputationService reputationService,
+                                                                BisqEasyOfferDto bisqEasyOfferDto,
+                                                                UserProfile userProfile,
+                                                                boolean isMyOffer,
+                                                                String formattedDate,
+                                                                String formattedQuoteAmount,
+                                                                String formattedBaseAmount,
+                                                                String formattedPrice,
+                                                                String formattedPriceSpec,
+                                                                List<String> quoteSidePaymentMethods,
+                                                                List<String> baseSidePaymentMethods) {
+        UserProfileDto userProfileDto = DtoMappings.UserProfileMapping.fromBisq2Model(userProfile);
+        ReputationScore reputationScore = reputationService.getReputationScore(userProfile.getId());
+        ReputationScoreDto reputationScoreDto = DtoMappings.ReputationScoreMapping.fromBisq2Model(reputationScore);
+        return new OfferItemPresentationDto(bisqEasyOfferDto,
+                isMyOffer,
+                userProfileDto,
+                formattedDate,
+                formattedQuoteAmount,
+                formattedBaseAmount,
+                formattedPrice,
+                formattedPriceSpec,
+                quoteSidePaymentMethods,
+                baseSidePaymentMethods,
+                reputationScoreDto);
+    }
+
+    /**
+     * Creates an OfferItemPresentationDto safely, returning Optional.empty() if
+     * required data (user profile, market price) is not available.
+     * <p>
+     * This method provides graceful degradation when P2P network synchronization
+     * is incomplete, allowing callers to receive partial results instead of
+     * failing the entire request.
+     * <p>
+     * <b>Thread Safety:</b> This method is thread-safe as it only reads from
+     * the provided services and creates immutable DTOs.
+     * <p>
+     * <b>Performance:</b> Pre-validates required data to minimize exception
+     * overhead on the hot path.
+     *
+     * @param userProfileService service for user profile lookup (must not be null)
+     * @param userIdentityService service for user identity lookup (must not be null)
+     * @param reputationService service for reputation score lookup (must not be null)
+     * @param marketPriceService service for market price lookup (must not be null)
+     * @param bisqEasyOfferbookMessage the offerbook message to process (must not be null)
+     * @return Optional containing the DTO if successful, empty if data unavailable
+     * @throws NullPointerException if bisqEasyOfferbookMessage is null
+     */
+    public static Optional<OfferItemPresentationDto> createSafe(
+            UserProfileService userProfileService,
+            UserIdentityService userIdentityService,
+            ReputationService reputationService,
+            MarketPriceService marketPriceService,
+            BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+
+        // Null input validation (fail-fast for programming errors)
+        Objects.requireNonNull(bisqEasyOfferbookMessage, "bisqEasyOfferbookMessage must not be null");
+
+        // Pre-check 1: Verify offer exists
+        if (bisqEasyOfferbookMessage.getBisqEasyOffer().isEmpty()) {
+            return Optional.empty();
+        }
+
+        // Pre-check 2: Verify author profile ID exists
+        String authorUserProfileId = bisqEasyOfferbookMessage.getAuthorUserProfileId();
+        if (authorUserProfileId == null || authorUserProfileId.isBlank()) {
+            return Optional.empty();
+        }
+
+        // Pre-check 3: Verify user profile is available in local store
+        Optional<UserProfile> optionalUserProfile = userProfileService.findUserProfile(authorUserProfileId);
+        if (optionalUserProfile.isEmpty()) {
+            return Optional.empty();
+        }
+
+        BisqEasyOffer bisqEasyOffer = bisqEasyOfferbookMessage.getBisqEasyOffer().orElseThrow();
+        UserProfile userProfile = optionalUserProfile.get();
+        boolean isMyOffer = bisqEasyOfferbookMessage.isMyMessage(userIdentityService);
+        BisqEasyOfferDto bisqEasyOfferDto = DtoMappings.BisqEasyOfferMapping.fromBisq2Model(bisqEasyOffer);
+
         long date = bisqEasyOfferbookMessage.getDate();
         String formattedDate = DateFormatter.formatDateTime(new Date(date), DateFormat.MEDIUM, DateFormat.SHORT,
                 true, " " + Res.get("temporal.at") + " ");
@@ -102,20 +187,45 @@ public class OfferItemPresentationDtoFactory {
                 .map(PaymentMethod::getPaymentRailName)
                 .collect(Collectors.toList());
 
-        UserProfile userProfile = userProfileService.findUserProfile(authorUserProfileId).orElseThrow();
-        UserProfileDto userProfileDto = DtoMappings.UserProfileMapping.fromBisq2Model(userProfile);
-        ReputationScore reputationScore = reputationService.getReputationScore(authorUserProfileId);
-        ReputationScoreDto reputationScoreDto = DtoMappings.ReputationScoreMapping.fromBisq2Model(reputationScore);
-        return new OfferItemPresentationDto(bisqEasyOfferDto,
-                isMyOffer,
-                userProfileDto,
-                formattedDate,
-                formattedQuoteAmount,
-                formattedBaseAmount,
-                formattedPrice,
-                formattedPriceSpec,
-                quoteSidePaymentMethods,
-                baseSidePaymentMethods,
-                reputationScoreDto);
+        try {
+            return Optional.of(createFromValidated(
+                    reputationService,
+                    bisqEasyOfferDto,
+                    userProfile,
+                    isMyOffer,
+                    formattedDate,
+                    formattedQuoteAmount,
+                    formattedBaseAmount,
+                    formattedPrice,
+                    formattedPriceSpec,
+                    quoteSidePaymentMethods,
+                    baseSidePaymentMethods));
+        } catch (NoSuchElementException e) {
+            // Defensive catch for any remaining edge cases (shouldn't occur after pre-checks)
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<OfferItemPresentationDto> createSafe(String logContext,
+                                                                 UserProfileService userProfileService,
+                                                                 UserIdentityService userIdentityService,
+                                                                 ReputationService reputationService,
+                                                                 MarketPriceService marketPriceService,
+                                                                 BisqEasyOfferbookMessage bisqEasyOfferbookMessage) {
+        Optional<OfferItemPresentationDto> result = createSafe(
+                userProfileService,
+                userIdentityService,
+                reputationService,
+                marketPriceService,
+                bisqEasyOfferbookMessage);
+
+        if (result.isEmpty() && log.isDebugEnabled()) {
+            String offerId = bisqEasyOfferbookMessage.getBisqEasyOffer()
+                    .map(offer -> LoggingUtils.truncateId(offer.getId()))
+                    .orElse("unknown");
+            String profileId = LoggingUtils.truncateId(bisqEasyOfferbookMessage.getAuthorUserProfileId());
+            log.debug("{}: skipping offer {} - user profile {} not available", logContext, offerId, profileId);
+        }
+        return result;
     }
 }

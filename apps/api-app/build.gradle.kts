@@ -3,12 +3,6 @@ plugins {
     application
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
-}
-
 application {
     mainClass.set("bisq.api_app.ApiApp")
 }
@@ -26,6 +20,7 @@ dependencies {
     implementation("bisq:bonded-roles")
     implementation("bisq:settings")
     implementation("bisq:burningman")
+    implementation("bisq:mu-sig")
     implementation("bisq:user")
     implementation("bisq:chat")
     implementation("bisq:support")

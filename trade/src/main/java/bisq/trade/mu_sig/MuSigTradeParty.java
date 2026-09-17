@@ -19,9 +19,13 @@ package bisq.trade.mu_sig;
 
 import bisq.account.accounts.AccountPayload;
 import bisq.common.data.ByteArray;
+import bisq.common.observable.Observable;
+import bisq.common.observable.ReadOnlyObservable;
 import bisq.network.identity.NetworkId;
 import bisq.trade.TradeParty;
 import bisq.trade.mu_sig.messages.grpc.CloseTradeResponse;
+import bisq.trade.mu_sig.messages.grpc.CustomCloseTradeResponse;
+import bisq.trade.mu_sig.messages.grpc.CustomPayoutPsbt;
 import bisq.trade.mu_sig.messages.grpc.DepositPsbt;
 import bisq.trade.mu_sig.messages.grpc.NonceSharesMessage;
 import bisq.trade.mu_sig.messages.grpc.PartialSignaturesMessage;
@@ -31,11 +35,14 @@ import bisq.trade.mu_sig.messages.network.mu_sig_data.NonceShares;
 import bisq.trade.mu_sig.messages.network.mu_sig_data.PartialSignatures;
 import bisq.trade.mu_sig.messages.network.mu_sig_data.PubKeyShares;
 import bisq.trade.mu_sig.messages.network.mu_sig_data.SwapTxSignature;
+import lombok.AccessLevel;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 
 import java.util.Optional;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 @ToString(callSuper = true)
 @EqualsAndHashCode(callSuper = true)
@@ -54,9 +61,14 @@ public final class MuSigTradeParty extends TradeParty {
     private Optional<CloseTradeResponse> myCloseTradeResponse = Optional.empty();
     private Optional<ByteArray> peersOutputPrvKeyShare = Optional.empty();
     private Optional<AccountPayload<?>> accountPayload = Optional.empty();
+    private Optional<MuSigCustomPayoutPartyData> customPayoutData = Optional.empty();
+    @Getter(AccessLevel.NONE)
+    private final Observable<Boolean> mediationResultRejectedObservable = new Observable<>(false);
 
     public MuSigTradeParty(NetworkId networkId) {
         super(networkId);
+
+        verify();
     }
 
     public MuSigTradeParty(NetworkId networkId,
@@ -72,7 +84,9 @@ public final class MuSigTradeParty extends TradeParty {
                            Optional<SwapTxSignature> peersSwapTxSignature,
                            Optional<CloseTradeResponse> myCloseTradeResponse,
                            Optional<ByteArray> peersOutputPrvKeyShare,
-                           Optional<AccountPayload<?>> accountPayload) {
+                           Optional<AccountPayload<?>> accountPayload,
+                           Optional<MuSigCustomPayoutPartyData> customPayoutData,
+                           boolean mediationResultRejected) {
         super(networkId);
 
         this.myPubKeySharesResponse = myPubKeySharesResponse;
@@ -88,6 +102,15 @@ public final class MuSigTradeParty extends TradeParty {
         this.myCloseTradeResponse = myCloseTradeResponse;
         this.peersOutputPrvKeyShare = peersOutputPrvKeyShare;
         this.accountPayload = accountPayload;
+        this.customPayoutData = customPayoutData;
+        mediationResultRejectedObservable.set(mediationResultRejected);
+
+        verify();
+    }
+
+    private void verify() {
+        checkArgument(!isMediationResultRejected() || customPayoutData.isEmpty(),
+                "Mediation rejection and custom payout data are mutually exclusive");
     }
 
     @Override
@@ -106,6 +129,8 @@ public final class MuSigTradeParty extends TradeParty {
         myCloseTradeResponse.ifPresent(e -> builder.setMyCloseTradeResponse(e.toProto(serializeForHash)));
         peersOutputPrvKeyShare.ifPresent(e -> builder.setPeersOutputPrvKeyShare(e.toProto(serializeForHash)));
         accountPayload.ifPresent(e -> builder.setAccountPayload(e.toProto(serializeForHash)));
+        customPayoutData.ifPresent(e -> builder.setCustomPayoutData(e.toProto(serializeForHash)));
+        builder.setMediationResultRejected(isMediationResultRejected());
         return getTradePartyBuilder(serializeForHash).setMuSigTradeParty(builder);
     }
 
@@ -151,7 +176,11 @@ public final class MuSigTradeParty extends TradeParty {
                         : Optional.empty(),
                 muSigTradePartyProto.hasAccountPayload()
                         ? Optional.of(AccountPayload.fromProto(muSigTradePartyProto.getAccountPayload()))
-                        : Optional.empty()
+                        : Optional.empty(),
+                muSigTradePartyProto.hasCustomPayoutData()
+                        ? Optional.of(MuSigCustomPayoutPartyData.fromProto(muSigTradePartyProto.getCustomPayoutData()))
+                        : Optional.empty(),
+                muSigTradePartyProto.getMediationResultRejected()
         );
     }
 
@@ -206,4 +235,32 @@ public final class MuSigTradeParty extends TradeParty {
     public void setAccountPayload(AccountPayload<?> accountPayload) {
         this.accountPayload = Optional.of(accountPayload);
     }
+
+    public void setMyCustomPayoutPsbt(CustomPayoutPsbt myCustomPayoutPsbt) {
+        this.customPayoutData = Optional.of(MuSigCustomPayoutPartyData.forLocalParty(myCustomPayoutPsbt));
+    }
+
+    public void setPeersCustomPayoutPsbt(PeerCustomPayoutPsbt peersCustomPayoutPsbt) {
+        this.customPayoutData = Optional.of(MuSigCustomPayoutPartyData.forPeerParty(peersCustomPayoutPsbt));
+    }
+
+    public void setMyCustomCloseTradeResponse(CustomCloseTradeResponse myCustomCloseTradeResponse) {
+        customPayoutData
+                .orElseThrow(() -> new IllegalStateException(
+                        "Cannot store a custom close response without local custom payout data"))
+                .setMyCustomCloseTradeResponse(myCustomCloseTradeResponse);
+    }
+
+    public void setMediationResultRejected() {
+        mediationResultRejectedObservable.set(true);
+    }
+
+    public boolean isMediationResultRejected() {
+        return mediationResultRejectedObservable.get();
+    }
+
+    public ReadOnlyObservable<Boolean> mediationResultRejectedObservable() {
+        return mediationResultRejectedObservable;
+    }
+
 }

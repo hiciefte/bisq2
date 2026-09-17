@@ -29,7 +29,12 @@ import java.util.List;
 
 @Slf4j
 public abstract class TextList extends VBox {
-    public TextList(String text, @Nullable String style, double gap, double vSpacing, String regex, @Nullable String mark) {
+    public TextList(String text,
+                    @Nullable String style,
+                    double gap,
+                    double vSpacing,
+                    String regex,
+                    @Nullable String mark) {
         setFillWidth(true);
         setSpacing(vSpacing);
         List<String> list = List.of(text.split(regex));
@@ -43,29 +48,89 @@ public abstract class TextList extends VBox {
             return;
         }
 
-        int i = 0;
-        for (String item : list) {
-            String textContent = item.stripLeading();
-            if (textContent.isEmpty()) {
+        int listStartIndex = 1;
+        if (!list.get(0).isBlank()) {
+            addParagraph(list.get(0), style);
+        }
+
+        int lastNonBlankIndex = -1;
+        for (int i = list.size() - 1; i >= listStartIndex; i--) {
+            if (!list.get(i).isBlank()) {
+                lastNonBlankIndex = i;
+                break;
+            }
+        }
+
+        int listIndex = 0;
+        for (int i = listStartIndex; i <= lastNonBlankIndex; i++) {
+            String item = list.get(i);
+            if (item.isBlank()) {
                 continue;
             }
-            i++;
-            textContent = textContent.stripTrailing();
-            Text contentText = new Text(textContent);
-            String markString = mark == null ? getMark(i) : mark;
-            Text markText = new Text(markString);
-            if (style != null) {
-                markText.getStyleClass().add(style);
-                contentText.getStyleClass().add(style);
+            if (i == lastNonBlankIndex) {
+                String[] itemAndTail = item.split("\\R\\R+", 2);
+                if (addListItem(itemAndTail[0], style, gap, mark, listIndex + 1)) {
+                    listIndex++;
+                }
+                if (itemAndTail.length > 1 && !itemAndTail[1].isBlank()) {
+                    addParagraph(itemAndTail[1], style, true);
+                }
+            } else {
+                if (addListItem(item, style, gap, mark, listIndex + 1)) {
+                    listIndex++;
+                }
             }
-            HBox.setHgrow(markText, Priority.ALWAYS);
-            HBox.setHgrow(contentText, Priority.ALWAYS);
-            TextFlow content = new TextFlow(contentText);
-            getChildren().add(new HBox(gap, markText, content));
         }
     }
 
     protected String getMark(int index) {
         return index + ". ";
+    }
+
+    private boolean addListItem(String item, @Nullable String style, double gap, @Nullable String mark, int index) {
+        String textContent = normalizeText(item, false);
+        if (textContent.isEmpty()) {
+            return false;
+        }
+        Text contentText = new Text(textContent);
+        String markString = mark == null ? getMark(index) : mark;
+        Text markText = new Text(markString);
+        if (style != null) {
+            markText.getStyleClass().add(style);
+            contentText.getStyleClass().add(style);
+        }
+        TextFlow content = new TextFlow(contentText);
+        HBox.setHgrow(content, Priority.ALWAYS);
+        getChildren().add(new HBox(gap, markText, content));
+        return true;
+    }
+
+    private void addParagraph(String text, @Nullable String style) {
+        addParagraph(text, style, false);
+    }
+
+    private void addParagraph(String text, @Nullable String style, boolean addLeadingBlankLine) {
+        String content = normalizeText(text, addLeadingBlankLine);
+        if (content.isEmpty()) {
+            return;
+        }
+        Text contentText = new Text(content);
+        if (style != null) {
+            contentText.getStyleClass().add(style);
+        }
+        TextFlow contentFlow = new TextFlow(contentText);
+        getChildren().add(contentFlow);
+    }
+
+    private String normalizeText(String text, boolean addLeadingBlankLine) {
+        String[] lines = text.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            lines[i] = lines[i].strip();
+        }
+        String content = String.join("\n", lines).strip();
+        if (addLeadingBlankLine && !content.isEmpty()) {
+            return "\n" + content;
+        }
+        return content;
     }
 }

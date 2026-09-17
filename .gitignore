@@ -59,3 +59,10 @@ seed2-i2p-destination
 docker/data_dirs
 /tx
 /.java-version
+
+# sym link to bisq2-* repos
+bisq2-umbrel
+bisq2-startos
+
+# Directory for temp files
+/temp

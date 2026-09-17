@@ -3,7 +3,6 @@ package bisq.node_monitor_app;
 import bisq.api.ApiConfig;
 import bisq.api.access.filter.authn.SessionAuthenticationService;
 import bisq.api.access.permissions.PermissionService;
-import bisq.api.access.permissions.RestPermissionMapping;
 import bisq.api.rest_api.RestApiBaseResourceConfig;
 import bisq.api.rest_api.endpoints.access.AccessApi;
 import bisq.network.NetworkService;
@@ -11,14 +10,14 @@ import bisq.node_monitor.NodeMonitorRestApi;
 import bisq.node_monitor.NodeMonitorService;
 import jakarta.ws.rs.ApplicationPath;
 import lombok.extern.slf4j.Slf4j;
-import org.glassfish.jersey.internal.inject.AbstractBinder;
+import org.glassfish.jersey.inject.hk2.AbstractBinder;
 
 @Slf4j
 @ApplicationPath("/api/v1")
 public class NodeMonitorRestApiResourceConfig extends RestApiBaseResourceConfig {
     public NodeMonitorRestApiResourceConfig(ApiConfig apiConfig,
                                             AccessApi accessApi,
-                                            PermissionService<RestPermissionMapping> permissionService,
+                                            PermissionService permissionService,
                                             SessionAuthenticationService sessionAuthenticationService,
                                             NetworkService networkService,
                                             NodeMonitorService nodeMonitorService

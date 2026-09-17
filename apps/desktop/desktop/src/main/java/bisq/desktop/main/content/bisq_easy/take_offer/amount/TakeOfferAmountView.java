@@ -87,7 +87,7 @@ public class TakeOfferAmountView extends View<StackPane, TakeOfferAmountModel, T
         linkToWiki = new Hyperlink("https://bisq.wiki/Reputation");
         amountLimitInfoOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("bisqEasy.tradeWizard.amount.limitInfo.overlay.headline")
+                .headlineFromI18nKey("bisqEasy.tradeWizard.amount.limitInfo.overlay.headline")
                 .description(createAndGetOverlayContent(amountLimitInfoOverlayInfo, linkToWikiText, linkToWiki))
                 .buttons(closeOverlayButton)
                 .build();

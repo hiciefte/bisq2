@@ -38,7 +38,33 @@ public class SessionService {
         return token;
     }
 
-    public Optional<SessionToken> find(String sessionId) {
-        return Optional.ofNullable(sessionTokenBySessionIdMap.get(sessionId));
+    public Optional<SessionToken> findNotExpiredToken(String sessionId) {
+        // Use computeIfPresent for atomic check-and-evict of expired tokens (prevents TOCTOU race)
+        SessionToken result = sessionTokenBySessionIdMap.computeIfPresent(sessionId, (key, token) -> {
+            if (token.isExpired()) {
+                return null; // Evict expired token
+            }
+            return token; // Keep valid token
+        });
+        return Optional.ofNullable(result);
+    }
+
+    /**
+     * Explicitly removes a session (e.g., for logout functionality).
+     *
+     * @param sessionId The session ID to remove
+     */
+    public void remove(String sessionId) {
+        sessionTokenBySessionIdMap.remove(sessionId);
+    }
+
+    /**
+     * Removes all active sessions belonging to the given client.
+     * Called during client revocation to immediately invalidate any live session.
+     *
+     * @param clientId The client ID whose sessions should be invalidated
+     */
+    public void removeSessionByClientId(String clientId) {
+        sessionTokenBySessionIdMap.values().removeIf(token -> clientId.equals(token.getClientId()));
     }
 }

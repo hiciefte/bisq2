@@ -62,7 +62,7 @@
    ./gradlew :apps:desktop:desktop-app:clean :apps:desktop:desktop-app:installDist
    ```
 
-   **For Windows environments**: replace ./gradlew with gradle.bat as the previous example shows
+   **For Windows environments**: replace `./gradlew` with `gradlew.bat`.
 
 
 6. **Generate Installers**
@@ -78,6 +78,28 @@ For a quick full cleanup/rebuild you can use
    ```sh
    ./gradlew cleanAll buildAll
    ```
+
+8. **Dependency verification**
+
+   Bisq 2 commits Gradle dependency verification metadata and an armored PGP keyring in `gradle/`.
+   To verify the current dependency graph:
+
+   ```sh
+   ./gradlew resolveAndVerifyDependencies
+   ./gradlew verifyDependencySignaturePolicy
+   ```
+
+   To refresh metadata after dependency declaration changes, first refresh the keyring, then rewrite the metadata and
+   regenerate the report:
+
+   ```sh
+   ./gradlew refreshDependencyVerificationKeyring
+   ./gradlew resolveAndVerifyDependencies --write-verification-metadata pgp,sha256
+   ./gradlew verifyDependencySignaturePolicy
+   ./gradlew dependencySignatureReport
+   ```
+
+   See `gradle/README.md` for the checksum fallback allowlist and report workflow.
 
 
 ### Important notes
@@ -251,5 +273,3 @@ JAVA_OPTS="-Dapplication.appName=bisq2_Alice_clear \
     -Dapplication.devModeReputationScore=50000" \
     apps/desktop/desktop-app/build/install/desktop-app/bin/desktop-app
 ```
-
-

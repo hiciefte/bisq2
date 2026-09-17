@@ -23,8 +23,6 @@ import bisq.account.accounts.AccountPayload;
 import bisq.account.payment_method.PaymentMethod;
 import bisq.account.payment_method.PaymentMethodSpec;
 import bisq.bonded_roles.BondedRolesService;
-import bisq.bonded_roles.market_price.MarketPriceService;
-import bisq.bonded_roles.market_price.NoMarketPriceAvailableException;
 import bisq.bonded_roles.security_manager.alert.AlertService;
 import bisq.chat.ChatService;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannel;
@@ -56,11 +54,13 @@ import bisq.persistence.PersistenceService;
 import bisq.security.SecurityService;
 import bisq.settings.SettingsService;
 import bisq.support.SupportService;
-import bisq.support.mediation.mu_sig.MuSigMediationRequestService;
+import bisq.support.arbitration.mu_sig.NoMuSigArbitratorAvailableException;
 import bisq.support.mediation.mu_sig.NoMuSigMediatorAvailableException;
 import bisq.trade.TradeService;
 import bisq.trade.mu_sig.MuSigTrade;
 import bisq.trade.mu_sig.MuSigTradeService;
+import bisq.trade.mu_sig.arbitration.MuSigTraderArbitrationService;
+import bisq.trade.mu_sig.mediation.MuSigTraderMediationService;
 import bisq.trade.mu_sig.protocol.MuSigProtocol;
 import bisq.user.UserService;
 import bisq.user.banned.BannedUserService;
@@ -69,6 +69,7 @@ import bisq.user.banned.UserProfileBannedException;
 import bisq.user.identity.UserIdentity;
 import bisq.user.identity.UserIdentityService;
 import bisq.user.profile.UserProfile;
+import bisq.user.profile.UserProfileIgnoredException;
 import bisq.user.profile.UserProfileService;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -99,7 +100,6 @@ public class MuSigService extends LifecycleService {
     private final NotificationService notificationService;
     private final TradeService tradeService;
     private final UserIdentityService userIdentityService;
-    private final MarketPriceService marketPriceService;
     private final AlertService alertService;
     private final MuSigOfferService muSigOfferService;
     private final BannedUserService bannedUserService;
@@ -108,8 +108,9 @@ public class MuSigService extends LifecycleService {
     private final Observable<Boolean> muSigActivated = new Observable<>(false);
     @Getter
     private final Observable<MuSigOffer> selectedMuSigOffer = new Observable<>();
-    private final MuSigMediationRequestService muSigMediationRequestService;
     private final MuSigTradeService muSigTradeService;
+    private final MuSigTraderMediationService muSigTraderMediationService;
+    private final MuSigTraderArbitrationService muSigTraderArbitrationService;
     private final MuSigOpenTradeChannelService muSigOpenTradeChannelService;
     private final UserProfileService userProfileService;
     private Pin muSigActivatedPin;
@@ -133,7 +134,6 @@ public class MuSigService extends LifecycleService {
         this.networkService = networkService;
         this.identityService = identityService;
         this.bondedRolesService = bondedRolesService;
-        marketPriceService = bondedRolesService.getMarketPriceService();
         this.accountService = accountService;
         this.offerService = offerService;
         muSigOfferService = offerService.getMuSigOfferService();
@@ -147,10 +147,11 @@ public class MuSigService extends LifecycleService {
         this.tradeService = tradeService;
         userProfileService = userService.getUserProfileService();
         userIdentityService = userService.getUserIdentityService();
-        muSigMediationRequestService = supportService.getMuSigMediationRequestService();
         alertService = bondedRolesService.getAlertService();
         bannedUserService = userService.getBannedUserService();
         muSigTradeService = tradeService.getMuSigTradeService();
+        muSigTraderMediationService = muSigTradeService.getMuSigTraderMediationService();
+        muSigTraderArbitrationService = muSigTradeService.getMuSigTraderArbitrationService();
         muSigOpenTradeChannelService = chatService.getMuSigOpenTradeChannelService();
     }
 
@@ -255,61 +256,58 @@ public class MuSigService extends LifecycleService {
     // Trade API
     /* --------------------------------------------------------------------- */
 
+    public boolean wasOfferAlreadyTaken(MuSigOffer muSigOffer, NetworkId takerNetworkId) {
+        return muSigTradeService.wasOfferAlreadyTaken(muSigOffer, takerNetworkId);
+    }
+
+    // The market price is passed in by the caller: it must be the same snapshot the take-offer
+    // amounts were validated against, so the contract stores a price consistent with its own
+    // amounts. Fetching a fresh price here could store a divergent one (see the take-offer
+    // specification, "Handoff to the trade protocol").
     public MuSigProtocol takerCreatesProtocol(UserIdentity takerIdentity,
                                               MuSigOffer muSigOffer,
                                               Monetary takersBaseSideAmount,
                                               Monetary takersQuoteSideAmount,
                                               PaymentMethodSpec<?> takersPaymentMethodSpec,
-                                              Account<?, ?> takersAccount)
+                                              Account<?, ?> takersAccount,
+                                              long marketPrice)
             throws UserProfileBannedException, NoMuSigMediatorAvailableException,
-            NoMarketPriceAvailableException, RateLimitExceededException {
+            NoMuSigArbitratorAvailableException, RateLimitExceededException, UserProfileIgnoredException {
 
         checkArgument(isActivated());
         String makersUserProfileId = muSigOffer.getMakersUserProfileId();
         validateUserProfile(makersUserProfileId);
         validateUserProfile(takerIdentity.getId());
+        if (userProfileService.isChatUserIgnored(makersUserProfileId)) {
+            throw new UserProfileIgnoredException(makersUserProfileId);
+        }
 
-        Optional<UserProfile> mediator = muSigMediationRequestService.selectMediator(makersUserProfileId,
+        Optional<UserProfile> mediator = muSigTraderMediationService.selectMediator(makersUserProfileId,
                 takerIdentity.getId(),
                 muSigOffer.getId());
         if (!DevMode.isDevMode() && mediator.isEmpty()) {
             throw new NoMuSigMediatorAvailableException();
         }
 
+        Optional<UserProfile> arbitrator = muSigTraderArbitrationService.selectArbitrator(makersUserProfileId,
+                takerIdentity.getId(),
+                muSigOffer.getId(),
+                mediator.map(UserProfile::getId));
+        if (!DevMode.isDevMode() && arbitrator.isEmpty()) {
+            throw new NoMuSigArbitratorAvailableException();
+        }
+
+        log.info("Selected mediator for trade {}: {}", muSigOffer.getShortId(), mediator.map(UserProfile::getUserName).orElse("N/A"));
+        log.info("Market price for trade {}: {}", muSigOffer.getShortId(), marketPrice);
         return takerCreatesProtocol(takerIdentity,
                 muSigOffer,
                 takersBaseSideAmount,
                 takersQuoteSideAmount,
                 takersPaymentMethodSpec,
                 takersAccount.getAccountPayload(),
-                mediator);
-    }
-
-    private MuSigProtocol takerCreatesProtocol(UserIdentity takerIdentity,
-                                               MuSigOffer muSigOffer,
-                                               Monetary takersBaseSideAmount,
-                                               Monetary takersQuoteSideAmount,
-                                               PaymentMethodSpec<?> takersPaymentMethodSpec,
-                                               AccountPayload<?> takersAccountPayload,
-                                               Optional<UserProfile> mediator
-                                         ) throws NoMarketPriceAvailableException {
-
-        log.info("Selected mediator for trade {}: {}", muSigOffer.getShortId(), mediator.map(UserProfile::getUserName).orElse("N/A"));
-        Optional<Long> marketPrice = marketPriceService.findMarketPrice(muSigOffer.getMarket())
-                .map(price -> price.getPriceQuote().getValue());
-        if (marketPrice.isEmpty()) {
-            throw new NoMarketPriceAvailableException(muSigOffer.getMarket());
-        }
-
-        log.info("Market price for trade {}: {}", muSigOffer.getShortId(), marketPrice.get());
-        return takerCreatesProtocol(takerIdentity,
-                muSigOffer,
-                takersBaseSideAmount,
-                takersQuoteSideAmount,
-                takersPaymentMethodSpec,
-                takersAccountPayload,
                 mediator,
-                marketPrice.get());
+                arbitrator,
+                marketPrice);
     }
 
     private MuSigProtocol takerCreatesProtocol(UserIdentity takerIdentity,
@@ -319,6 +317,7 @@ public class MuSigService extends LifecycleService {
                                                PaymentMethodSpec<?> takersPaymentMethodSpec,
                                                AccountPayload<?> takersAccountPayload,
                                                Optional<UserProfile> mediator,
+                                               Optional<UserProfile> arbitrator,
                                                long marketPrice) {
         return muSigTradeService.takerCreatesProtocol(takerIdentity.getIdentity(),
                 muSigOffer,
@@ -327,6 +326,7 @@ public class MuSigService extends LifecycleService {
                 takersPaymentMethodSpec,
                 takersAccountPayload,
                 mediator,
+                arbitrator,
                 muSigOffer.getPriceSpec(),
                 marketPrice);
     }
@@ -338,10 +338,11 @@ public class MuSigService extends LifecycleService {
         if (channel.isEmpty()) {
             Optional<UserProfile> makersUserProfile = userProfileService.findUserProfile(muSigTrade.getOffer().getMakersUserProfileId());
             checkArgument(makersUserProfile.isPresent(), "Makers user profile is not present");
-            muSigOpenTradeChannelService.traderCreatesChannel(tradeId,
+            muSigOpenTradeChannelService.traderFindOrCreatesChannel(tradeId,
                     takerIdentity,
                     makersUserProfile.get(),
-                    muSigTrade.getContract().getMediator());
+                    muSigTrade.getContract().getMediator(),
+                    muSigTrade.getContract().getArbitrator());
         } else {
             log.warn("When taking an offer it is expected that no MuSigOpenTradeChannel for that trade ID exist yet. " +
                     "In case of failed take offer attempts though it might be that there is a channel present.");
@@ -359,7 +360,6 @@ public class MuSigService extends LifecycleService {
         muSigTradeService.closeTrade(muSigTrade);
         leavePrivateChatManager.leaveChannel(channel);
     }
-
 
     /* --------------------------------------------------------------------- */
     // Markets API

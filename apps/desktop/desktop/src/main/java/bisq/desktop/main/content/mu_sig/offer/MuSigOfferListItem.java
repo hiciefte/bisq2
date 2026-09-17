@@ -34,13 +34,13 @@ import bisq.offer.amount.OfferAmountFormatter;
 import bisq.offer.amount.spec.AmountSpec;
 import bisq.offer.amount.spec.RangeAmountSpec;
 import bisq.offer.mu_sig.MuSigOffer;
-import bisq.offer.price.OfferPriceFormatter;
 import bisq.offer.price.PriceUtil;
 import bisq.offer.price.spec.FixPriceSpec;
 import bisq.offer.price.spec.PriceSpec;
 import bisq.offer.price.spec.PriceSpecFormatter;
 import bisq.presentation.formatters.DateFormatter;
 import bisq.presentation.formatters.PercentageFormatter;
+import bisq.presentation.formatters.PriceFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import bisq.user.profile.UserProfile;
 import bisq.user.profile.UserProfileService;
@@ -68,11 +68,12 @@ public class MuSigOfferListItem {
     @EqualsAndHashCode.Include
     private final MuSigOffer offer;
     private final MarketPriceService marketPriceService;
+    private final UserProfileService userProfileService;
 
     private final String quoteCurrencyCode, baseAmountAsString, quoteAmountAsString, paymentMethodsAsString,
             maker, takeOfferButtonText, baseAmountWithSymbol, quoteAmountWithSymbol, offerIntentText, offerId,
             offerDateString, deposit, paymentMethodCurrencyCode;
-    private final boolean isMyOffer, hasAnyMatchingAccount, canTakeOffer, hasFixPrice, isBaseAmountBtc, hasAmountRange;
+    private final boolean isMyOffer, hasAnyMatchingAccount, hasFixPrice, isBaseAmountBtc, hasAmountRange;
     private final Market market;
     private final Direction displayDirection;
     private final List<PaymentMethod<?>> paymentMethods;
@@ -83,13 +84,12 @@ public class MuSigOfferListItem {
     private final Pin marketPriceByCurrencyMapPin;
     private final Pair<String, String> minAndMaxBaseAmountPair;
 
-    private Optional<String> cannotTakeOfferReason = Optional.empty();
+    private final Optional<String> noAccountReason;
     private double priceSpecAsPercent = 0;
     private String formattedPercentagePrice = Res.get("data.na"),
-            price = Res.get("data.na"),
+            priceWithCodeString = Res.get("data.na"),
             priceTooltip = Res.get("data.na"),
             offerPriceWithSpec = Res.get("data.na");
-    private Pair<String, String> pricePair;
     private long priceAsLong = 0;
 
     public MuSigOfferListItem(MuSigOffer offer,
@@ -100,6 +100,7 @@ public class MuSigOfferListItem {
                               AccountService accountService) {
         this.offer = offer;
         this.marketPriceService = marketPriceService;
+        this.userProfileService = userProfileService;
 
         isMyOffer = identityService.findActiveIdentity(offer.getMakerNetworkId()).isPresent();
         quoteCurrencyCode = offer.getMarket().getQuoteCurrencyCode();
@@ -149,11 +150,10 @@ public class MuSigOfferListItem {
                                 account.getAccountPayload().getSelectedCurrencyCodes().contains(paymentMethodCurrencyCode))
                 );
 
-        if (!hasAnyMatchingAccount) {
-            cannotTakeOfferReason = Optional.of(Res.get("muSig.offer.listing.table.cell.takeOffer.cannotTakeOfferReason.noAccountForOfferPaymentMethods",
-                    paymentMethodCurrencyCode));
-        }
-        canTakeOffer = hasAnyMatchingAccount;
+        noAccountReason = hasAnyMatchingAccount
+                ? Optional.empty()
+                : Optional.of(Res.get("muSig.offer.listing.table.cell.takeOffer.cannotTakeOfferReason.noAccountForOfferPaymentMethods",
+                        paymentMethodCurrencyCode));
 
         makerUserProfile = userProfileService.findUserProfile(offer.getMakersUserProfileId())
                 .orElseThrow(() -> new RuntimeException("No maker user profile found for offer: " + offer.getId()));
@@ -192,18 +192,32 @@ public class MuSigOfferListItem {
         marketPriceByCurrencyMapPin.unbind();
     }
 
+    public boolean isMakerIgnored() {
+        return userProfileService.isChatUserIgnored(offer.getMakersUserProfileId());
+    }
+
+    public boolean isCanTakeOffer() {
+        return hasAnyMatchingAccount && !isMakerIgnored();
+    }
+
+    public Optional<String> getCannotTakeOfferReason() {
+        if (isMakerIgnored()) {
+            return Optional.of(Res.get("offer.takeOffer.makerIgnored.tooltip"));
+        }
+        return noAccountReason;
+    }
+
     private void updatePriceSpecAsPercent() {
         PriceUtil.findPercentFromMarketPrice(marketPriceService, offer)
                 .ifPresent(priceSpecAsPercent -> {
                     this.priceSpecAsPercent = priceSpecAsPercent;
                     formattedPercentagePrice = PercentageFormatter.formatToPercentWithSignAndSymbol(priceSpecAsPercent);
-                    String offerPrice = OfferPriceFormatter.formatQuote(marketPriceService, offer);
                     PriceSpec priceSpec = offer.getPriceSpec();
-                    priceTooltip = PriceSpecFormatter.getFormattedPriceSpecWithOfferPrice(priceSpec, offerPrice);
+                    priceTooltip = PriceSpecFormatter.getFormattedPriceSpecWithoutPrice(priceSpec);
                     offerPriceWithSpec = priceTooltip.replace("\n", ": ");
-                    price = PriceSpecFormatter.getFormattedPrice(priceSpec, marketPriceService, offer.getMarket());
-                    pricePair = PriceSpecFormatter.getFormattedPricePair(priceSpec, marketPriceService, offer.getMarket());
-                    priceAsLong = PriceUtil.findQuote(marketPriceService, priceSpec, offer.getMarket()).map(PriceQuote::getValue).orElse(0L);
+                    Optional<PriceQuote> priceQuote = PriceUtil.findQuote(marketPriceService, priceSpec, offer.getMarket());
+                    priceWithCodeString = priceQuote.map(PriceFormatter::formatWithCode).orElse("");
+                    priceAsLong = priceQuote.map(PriceQuote::getValue).orElse(0L);
                 });
     }
 

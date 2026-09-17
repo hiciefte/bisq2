@@ -74,7 +74,7 @@ public class SetupWalletWizardProtectView extends View<StackPane, SetupWalletWiz
         skipProtectStepOverlayNextButton.setDefaultButton(true);
         skipProtectStepOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("wallet.protectWallet.skipStepOverlay.headline")
+                .headlineFromI18nKey("wallet.protectWallet.skipStepOverlay.headline")
                 .descriptionFromI18nKey("wallet.protectWallet.skipStepOverlay.description")
                 .buttons(skipProtectStepOverlayBackButton, skipProtectStepOverlayNextButton)
                 .build();

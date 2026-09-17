@@ -38,7 +38,7 @@ import org.fxmisc.easybind.Subscription;
 
 @Slf4j
 public class TradeWizardAmountView extends View<VBox, TradeWizardAmountModel, TradeWizardAmountController> {
-    private static final String SELECTED_PRICE_MODEL_STYLE_CLASS = "selected-model";
+    private static final String SELECTED_MODEL_STYLE_CLASS = "selected-model";
 
     private final Label amountLimitInfo, amountLimitInfoOverlayInfo, linkToWikiText, warningIcon;
     private final Hyperlink learnMore, linkToWiki;
@@ -100,7 +100,7 @@ public class TradeWizardAmountView extends View<VBox, TradeWizardAmountModel, Tr
         linkToWiki = new Hyperlink("https://bisq.wiki/Reputation");
         overlay = new WizardOverlay(root)
                 .warning()
-                .headline("bisqEasy.tradeWizard.amount.limitInfo.overlay.headline")
+                .headlineFromI18nKey("bisqEasy.tradeWizard.amount.limitInfo.overlay.headline")
                 .description(createAndGetOverlayContent(amountLimitInfoOverlayInfo, linkToWikiText, linkToWiki, learnHowToBuildReputationBox))
                 .buttons(closeOverlayButton)
                 .build();
@@ -129,12 +129,12 @@ public class TradeWizardAmountView extends View<VBox, TradeWizardAmountModel, Tr
         warningIcon.managedProperty().bind(model.getShouldShowWarningIcon());
 
         isRangeAmountEnabledPin = EasyBind.subscribe(model.getIsRangeAmountEnabled(), isRangeAmountEnabled -> {
-            fixedAmount.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
-            rangeAmount.getStyleClass().remove(SELECTED_PRICE_MODEL_STYLE_CLASS);
+            fixedAmount.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
+            rangeAmount.getStyleClass().remove(SELECTED_MODEL_STYLE_CLASS);
             if (isRangeAmountEnabled) {
-                rangeAmount.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+                rangeAmount.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             } else {
-                fixedAmount.getStyleClass().add(SELECTED_PRICE_MODEL_STYLE_CLASS);
+                fixedAmount.getStyleClass().add(SELECTED_MODEL_STYLE_CLASS);
             }
         });
 

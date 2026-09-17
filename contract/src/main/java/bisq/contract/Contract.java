@@ -18,6 +18,8 @@
 package bisq.contract;
 
 import bisq.account.protocol_type.TradeProtocolType;
+import bisq.common.monetary.Monetary;
+import bisq.common.monetary.PriceQuote;
 import bisq.common.proto.NetworkProto;
 import bisq.common.proto.UnresolvableProtobufMessageException;
 import bisq.common.validation.NetworkDataValidation;
@@ -39,11 +41,11 @@ public abstract class Contract<T extends Offer<?, ?>> implements NetworkProto {
 
     protected transient final Party maker;
 
-    public Contract(long takeOfferDate, T offer, TradeProtocolType protocolType) {
+    public Contract(long takeOfferDate, T offer, TradeProtocolType protocolType, Party maker) {
         this.takeOfferDate = takeOfferDate;
         this.offer = offer;
         this.protocolType = protocolType;
-        this.maker = new Party(Role.MAKER, offer.getMakerNetworkId());
+        this.maker = maker;
     }
 
     @Override
@@ -70,4 +72,20 @@ public abstract class Contract<T extends Offer<?, ?>> implements NetworkProto {
     }
 
     public abstract Party getTaker();
+
+    public abstract long getBaseSideAmount();
+
+    public abstract long getQuoteSideAmount();
+
+    public Monetary getBaseSideMonetary() {
+        return Monetary.from(getBaseSideAmount(), offer.getMarket().getBaseCurrencyCode());
+    }
+
+    public Monetary getQuoteSideMonetary() {
+        return Monetary.from(getQuoteSideAmount(), offer.getMarket().getQuoteCurrencyCode());
+    }
+
+    public PriceQuote getPriceQuote() {
+        return PriceQuote.from(getBaseSideMonetary(), getQuoteSideMonetary());
+    }
 }

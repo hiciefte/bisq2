@@ -18,7 +18,8 @@
 package bisq.application;
 
 import bisq.account.timestamp.AccountTimestamp;
-import bisq.account.timestamp.AuthorizeAccountTimestampRequest;
+import bisq.account.timestamp.AuthorizeAccountTimestampV1Request;
+import bisq.account.timestamp.AuthorizeAccountTimestampV2Request;
 import bisq.account.timestamp.AuthorizedAccountTimestamp;
 import bisq.bonded_roles.bonded_role.AuthorizedBondedRole;
 import bisq.bonded_roles.market_price.AuthorizedMarketPriceData;
@@ -46,10 +47,15 @@ import bisq.network.p2p.message.NetworkMessageResolver;
 import bisq.network.p2p.services.confidential.ack.AckMessage;
 import bisq.network.p2p.services.data.storage.DistributedDataResolver;
 import bisq.offer.mu_sig.MuSigOfferMessage;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationRequest;
+import bisq.support.arbitration.mu_sig.MuSigArbitrationStateChangeMessage;
 import bisq.support.mediation.bisq_easy.BisqEasyMediationRequest;
 import bisq.support.mediation.bisq_easy.BisqEasyMediatorsResponse;
+import bisq.support.dispute.mu_sig.MuSigDisputeCaseDataMessage;
+import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsRequest;
+import bisq.support.dispute.mu_sig.MuSigDisputeCasePaymentDetailsResponse;
 import bisq.support.mediation.mu_sig.MuSigMediationRequest;
-import bisq.support.mediation.mu_sig.MuSigMediatorsResponse;
+import bisq.support.mediation.mu_sig.MuSigMediationStateChangeMessage;
 import bisq.support.moderator.ReportToModeratorMessage;
 import bisq.trade.bisq_easy.protocol.messages.BisqEasyAccountDataMessage;
 import bisq.trade.bisq_easy.protocol.messages.BisqEasyBtcAddressMessage;
@@ -87,49 +93,55 @@ public class ResolverConfig {
     public static void config() {
         // Register resolvers for distributedData
         // Abstract classes
-        DistributedDataResolver.addResolver("chat.ChatMessage", ChatMessage.getDistributedDataResolver());
-        DistributedDataResolver.addResolver("chat.ChatMessageReaction", ChatMessageReaction.getDistributedDataResolver());
+        DistributedDataResolver.addResolver("chat.ChatMessage", ChatMessage.class, ChatMessage.getDistributedDataResolver());
+        DistributedDataResolver.addResolver("chat.ChatMessageReaction", ChatMessageReaction.class, ChatMessageReaction.getDistributedDataResolver());
 
         // Final classes
-        DistributedDataResolver.addResolver("user.UserProfile", UserProfile.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedOracleNode", AuthorizedOracleNode.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedBondedRole", AuthorizedBondedRole.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedAlertData", AuthorizedAlertData.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedDifficultyAdjustmentData", AuthorizedDifficultyAdjustmentData.getResolver());
+        DistributedDataResolver.addResolver("user.UserProfile", UserProfile.class, UserProfile.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedOracleNode", AuthorizedOracleNode.class, AuthorizedOracleNode.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedBondedRole", AuthorizedBondedRole.class, AuthorizedBondedRole.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedAlertData", AuthorizedAlertData.class, AuthorizedAlertData.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedDifficultyAdjustmentData", AuthorizedDifficultyAdjustmentData.class, AuthorizedDifficultyAdjustmentData.getResolver());
         //noinspection deprecation
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedMinRequiredReputationScoreData", AuthorizedMinRequiredReputationScoreData.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.ReleaseNotification", ReleaseNotification.getResolver());
-        DistributedDataResolver.addResolver("bonded_roles.AuthorizedMarketPriceData", AuthorizedMarketPriceData.getResolver());
-        DistributedDataResolver.addResolver("user.AuthorizedProofOfBurnData", AuthorizedProofOfBurnData.getResolver());
-        DistributedDataResolver.addResolver("user.AuthorizedBondedReputationData", AuthorizedBondedReputationData.getResolver());
-        DistributedDataResolver.addResolver("user.AuthorizedAccountAgeData", AuthorizedAccountAgeData.getResolver());
-        DistributedDataResolver.addResolver("user.AuthorizedSignedWitnessData", AuthorizedSignedWitnessData.getResolver());
-        DistributedDataResolver.addResolver("user.AuthorizedTimestampData", AuthorizedTimestampData.getResolver());
-        DistributedDataResolver.addResolver("user.BannedUserProfileData", BannedUserProfileData.getResolver());
-        DistributedDataResolver.addResolver("offer.MuSigOfferMessage", MuSigOfferMessage.getResolver());
-        DistributedDataResolver.addResolver("burningman.AuthorizedBurningmanListByBlock", AuthorizedBurningmanListByBlock.getResolver());
-        DistributedDataResolver.addResolver("account.AccountTimestamp", AccountTimestamp.getResolver());
-        DistributedDataResolver.addResolver("account.AuthorizedAccountTimestamp", AuthorizedAccountTimestamp.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedMinRequiredReputationScoreData", AuthorizedMinRequiredReputationScoreData.class, AuthorizedMinRequiredReputationScoreData.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.ReleaseNotification", ReleaseNotification.class, ReleaseNotification.getResolver());
+        DistributedDataResolver.addResolver("bonded_roles.AuthorizedMarketPriceData", AuthorizedMarketPriceData.class, AuthorizedMarketPriceData.getResolver());
+        DistributedDataResolver.addResolver("user.AuthorizedProofOfBurnData", AuthorizedProofOfBurnData.class, AuthorizedProofOfBurnData.getResolver());
+        DistributedDataResolver.addResolver("user.AuthorizedBondedReputationData", AuthorizedBondedReputationData.class, AuthorizedBondedReputationData.getResolver());
+        DistributedDataResolver.addResolver("user.AuthorizedAccountAgeData", AuthorizedAccountAgeData.class, AuthorizedAccountAgeData.getResolver());
+        DistributedDataResolver.addResolver("user.AuthorizedSignedWitnessData", AuthorizedSignedWitnessData.class, AuthorizedSignedWitnessData.getResolver());
+        DistributedDataResolver.addResolver("user.AuthorizedTimestampData", AuthorizedTimestampData.class, AuthorizedTimestampData.getResolver());
+        DistributedDataResolver.addResolver("user.BannedUserProfileData", BannedUserProfileData.class, BannedUserProfileData.getResolver());
+        DistributedDataResolver.addResolver("offer.MuSigOfferMessage", MuSigOfferMessage.class, MuSigOfferMessage.getResolver());
+        DistributedDataResolver.addResolver("burningman.AuthorizedBurningmanListByBlock", AuthorizedBurningmanListByBlock.class, AuthorizedBurningmanListByBlock.getResolver());
+        DistributedDataResolver.addResolver("account.AccountTimestamp", AccountTimestamp.class, AccountTimestamp.getResolver());
+        DistributedDataResolver.addResolver("account.AuthorizedAccountTimestamp", AuthorizedAccountTimestamp.class, AuthorizedAccountTimestamp.getResolver());
 
         // Register resolvers for networkMessages 
         // Abstract classes
-        NetworkMessageResolver.addResolver("chat.ChatMessage", ChatMessage.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("trade.TradeMessage", TradeMessage.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("chat.ChatMessageReaction", ChatMessageReaction.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("chat.ChatMessage", ChatMessage.class, ChatMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("trade.TradeMessage", TradeMessage.class, TradeMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("chat.ChatMessageReaction", ChatMessageReaction.class, ChatMessageReaction.getNetworkMessageResolver());
 
         // Final classes
-        NetworkMessageResolver.addResolver("user.AuthorizeAccountAgeRequest", AuthorizeAccountAgeRequest.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("user.AuthorizeSignedWitnessRequest", AuthorizeSignedWitnessRequest.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("user.AuthorizeTimestampRequest", AuthorizeTimestampRequest.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("bonded_roles.BondedRoleRegistrationRequest", BondedRoleRegistrationRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("user.AuthorizeAccountAgeRequest", AuthorizeAccountAgeRequest.class, AuthorizeAccountAgeRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("user.AuthorizeSignedWitnessRequest", AuthorizeSignedWitnessRequest.class, AuthorizeSignedWitnessRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("user.AuthorizeTimestampRequest", AuthorizeTimestampRequest.class, AuthorizeTimestampRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("bonded_roles.BondedRoleRegistrationRequest", BondedRoleRegistrationRequest.class, BondedRoleRegistrationRequest.getNetworkMessageResolver());
         // Keep proto name for backward compatibility
-        NetworkMessageResolver.addResolver("support.MediationRequest", BisqEasyMediationRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MediationRequest", BisqEasyMediationRequest.class, BisqEasyMediationRequest.getNetworkMessageResolver());
         // Keep proto name for backward compatibility
-        NetworkMessageResolver.addResolver("support.MediatorsResponse", BisqEasyMediatorsResponse.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("support.MuSigMediationRequest", MuSigMediationRequest.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("support.MuSigMediatorsResponse", MuSigMediatorsResponse.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("support.ReportToModeratorMessage", ReportToModeratorMessage.getNetworkMessageResolver());
-        NetworkMessageResolver.addResolver("account.AuthorizeAccountTimestampRequest", AuthorizeAccountTimestampRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MediatorsResponse", BisqEasyMediatorsResponse.class, BisqEasyMediatorsResponse.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigDisputeCaseDataMessage", MuSigDisputeCaseDataMessage.class, MuSigDisputeCaseDataMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigMediationRequest", MuSigMediationRequest.class, MuSigMediationRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigMediationStateChangeMessage", MuSigMediationStateChangeMessage.class, MuSigMediationStateChangeMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigDisputeCasePaymentDetailsRequest", MuSigDisputeCasePaymentDetailsRequest.class, MuSigDisputeCasePaymentDetailsRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigDisputeCasePaymentDetailsResponse", MuSigDisputeCasePaymentDetailsResponse.class, MuSigDisputeCasePaymentDetailsResponse.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigArbitrationRequest", MuSigArbitrationRequest.class, MuSigArbitrationRequest.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.MuSigArbitrationStateChangeMessage", MuSigArbitrationStateChangeMessage.class, MuSigArbitrationStateChangeMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("support.ReportToModeratorMessage", ReportToModeratorMessage.class, ReportToModeratorMessage.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("account.AuthorizeAccountTimestampV1Request", AuthorizeAccountTimestampV1Request.class, AuthorizeAccountTimestampV1Request.getNetworkMessageResolver());
+        NetworkMessageResolver.addResolver("account.AuthorizeAccountTimestampV2Request", AuthorizeAccountTimestampV2Request.class, AuthorizeAccountTimestampV2Request.getNetworkMessageResolver());
 
 
         // If the classes added via `addResolver` are not final classes, we need to add manually the subclasses.

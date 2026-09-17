@@ -20,9 +20,9 @@ package bisq.desktop.main.content.mu_sig.trade.trade_limits;
 import bisq.desktop.ServiceProvider;
 import bisq.desktop.common.view.Controller;
 import bisq.desktop.common.view.TabController;
-import bisq.desktop.main.content.mu_sig.trade.trade_limits.tab1.TradeLimitsTab1Controller;
-import bisq.desktop.main.content.mu_sig.trade.trade_limits.tab2.TradeLimitsTab2Controller;
-import bisq.desktop.main.content.mu_sig.trade.trade_limits.tab3.TradeLimitsTab3Controller;
+import bisq.desktop.main.content.mu_sig.trade.trade_limits.overview.TradeLimitsOverviewController;
+import bisq.desktop.main.content.mu_sig.trade.trade_limits.simulation.MuSigTradeLimitsSimulationController;
+import bisq.desktop.main.content.mu_sig.trade.trade_limits.algorithm.MuSigTradeLimitsAlgorithmController;
 import bisq.desktop.navigation.NavigationTarget;
 import bisq.desktop.overlay.OverlayController;
 import lombok.Getter;
@@ -54,9 +54,9 @@ public class TradeLimitsController extends TabController<TradeLimitsModel> {
     @Override
     protected Optional<? extends Controller> createController(NavigationTarget navigationTarget) {
         return switch (navigationTarget) {
-            case MU_SIG_TRADE_LIMITS_TAB_1 -> Optional.of(new TradeLimitsTab1Controller(serviceProvider));
-            case MU_SIG_TRADE_LIMITS_TAB_2 -> Optional.of(new TradeLimitsTab2Controller(serviceProvider));
-            case MU_SIG_TRADE_LIMITS_TAB_3 -> Optional.of(new TradeLimitsTab3Controller(serviceProvider));
+            case MU_SIG_TRADE_LIMITS_OVERVIEW -> Optional.of(new TradeLimitsOverviewController(serviceProvider));
+            case MU_SIG_TRADE_LIMITS_ALGORITHM -> Optional.of(new MuSigTradeLimitsAlgorithmController(serviceProvider));
+            case MU_SIG_TRADE_LIMITS_SIMULATION -> Optional.of(new MuSigTradeLimitsSimulationController(serviceProvider));
             default -> Optional.empty();
         };
     }

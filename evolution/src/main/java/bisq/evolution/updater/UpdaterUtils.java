@@ -20,6 +20,7 @@ package bisq.evolution.updater;
 import bisq.common.file.FileReaderUtils;
 import bisq.common.platform.Platform;
 import bisq.common.platform.PlatformUtils;
+import com.google.common.annotations.VisibleForTesting;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,16 +41,22 @@ public class UpdaterUtils {
         return FileReaderUtils.readUTF8String(dirPath.resolve(SIGNING_KEY_FILE));
     }
 
-    public static String getSigningKey(Path dirPath, String signingKeyId) throws IOException {
-        return FileReaderUtils.readUTF8String(dirPath.resolve(signingKeyId + ASC_EXTENSION));
-    }
-
     public static String getDownloadFileName(String version, boolean isLauncherUpdate) {
         return isLauncherUpdate ? getInstallerFileName(version) : getJarFileName(version);
     }
 
     public static String getInstallerFileName(String version) {
-        return "Bisq-" + version + PlatformUtils.getInstallerExtension();
+        return getInstallerFileName(version, Platform.getPlatform(), PlatformUtils.getInstallerExtension());
+    }
+
+    @VisibleForTesting
+    static String getInstallerFileName(String version, Platform platform, String installerExtension) {
+        String architecturePrefix = switch (platform) {
+            case MACOS_X86_64 -> "x86_64-";
+            case MACOS_ARM_64 -> "aarch64-";
+            default -> "";
+        };
+        return "Bisq-" + architecturePrefix + version + installerExtension;
     }
 
     public static String getJarFileName(String version) {

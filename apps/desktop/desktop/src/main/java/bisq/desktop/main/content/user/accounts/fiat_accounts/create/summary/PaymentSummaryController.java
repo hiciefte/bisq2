@@ -110,7 +110,7 @@ import bisq.account.accounts.fiat.ZelleAccountPayload;
 import bisq.account.payment_method.PaymentMethod;
 import bisq.account.payment_method.crypto.CryptoPaymentRail;
 import bisq.account.payment_method.fiat.FiatPaymentRail;
-import bisq.account.timestamp.KeyAlgorithm;
+import bisq.account.timestamp.KeyType;
 import bisq.common.asset.FiatCurrencyRepository;
 import bisq.common.util.StringUtils;
 import bisq.desktop.ServiceProvider;
@@ -317,6 +317,7 @@ public class PaymentSummaryController implements Controller {
                     new SwiftAccountDetailsGridPane((SwiftAccountPayload) accountPayload, fiatPaymentRail);
             case SWISH ->
                     new SwishAccountDetailsGridPane((SwishAccountPayload) accountPayload, fiatPaymentRail);
+            case TELE_BIRR -> throw new UnsupportedOperationException("Not yet implemented:  " + fiatPaymentRail);
             case UPHOLD ->
                     new UpholdAccountDetailsGridPane((UpholdAccountPayload) accountPayload, fiatPaymentRail);
             case UPI ->
@@ -335,7 +336,7 @@ public class PaymentSummaryController implements Controller {
 
     private Account<? extends PaymentMethod<?>, ?> getAccount(String accountName) {
         KeyPair keyPair = KeyGeneration.generateDefaultEcKeyPair();
-        KeyAlgorithm keyAlgorithm = KeyAlgorithm.EC;
+        KeyType keyType = KeyType.EC;
         AccountOrigin accountOrigin = AccountOrigin.BISQ2_NEW;
         if (model.getPaymentMethod().getPaymentRail() instanceof FiatPaymentRail fiatPaymentRail) {
             return switch (fiatPaymentRail) {
@@ -345,7 +346,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (AchTransferAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case ADVANCED_CASH ->
                         new AdvancedCashAccount(StringUtils.createUid(),
@@ -353,7 +354,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (AdvancedCashAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case ALI_PAY ->
                         new AliPayAccount(StringUtils.createUid(),
@@ -361,7 +362,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (AliPayAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case AMAZON_GIFT_CARD ->
                         new AmazonGiftCardAccount(StringUtils.createUid(),
@@ -369,7 +370,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (AmazonGiftCardAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case BIZUM ->
                         new BizumAccount(StringUtils.createUid(),
@@ -377,7 +378,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (BizumAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case CASH_APP -> throw new UnsupportedOperationException("Not yet implemented:  " + fiatPaymentRail);
                 case CASH_BY_MAIL ->
@@ -386,7 +387,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (CashByMailAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case CASH_DEPOSIT ->
                         new CashDepositAccount(StringUtils.createUid(),
@@ -394,7 +395,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (CashDepositAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case CUSTOM -> throw new UnsupportedOperationException("FiatPaymentRail.CUSTOM is not supported");
                 case DOMESTIC_WIRE_TRANSFER ->
@@ -403,7 +404,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (DomesticWireTransferAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case F2F ->
                         new F2FAccount(StringUtils.createUid(),
@@ -411,7 +412,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (F2FAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case FASTER_PAYMENTS ->
                         new FasterPaymentsAccount(StringUtils.createUid(),
@@ -419,7 +420,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (FasterPaymentsAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case HAL_CASH ->
                         new HalCashAccount(StringUtils.createUid(),
@@ -427,7 +428,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (HalCashAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case IMPS ->
                         new ImpsAccount(StringUtils.createUid(),
@@ -435,7 +436,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (ImpsAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case INTERAC_E_TRANSFER ->
                         new InteracETransferAccount(StringUtils.createUid(),
@@ -443,7 +444,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (InteracETransferAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case MERCADO_PAGO ->
                         new MercadoPagoAccount(StringUtils.createUid(),
@@ -451,7 +452,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (MercadoPagoAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case MONESE ->
                         new MoneseAccount(StringUtils.createUid(),
@@ -459,7 +460,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (MoneseAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case MONEY_BEAM ->
                         new MoneyBeamAccount(StringUtils.createUid(),
@@ -467,7 +468,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (MoneyBeamAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case MONEY_GRAM ->
                         new MoneyGramAccount(StringUtils.createUid(),
@@ -475,7 +476,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (MoneyGramAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case NATIONAL_BANK ->
                         new NationalBankAccount(StringUtils.createUid(),
@@ -483,7 +484,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (NationalBankAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case NEFT ->
                         new NeftAccount(StringUtils.createUid(),
@@ -491,7 +492,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (NeftAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PAY_ID ->
                         new PayIdAccount(StringUtils.createUid(),
@@ -499,7 +500,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (PayIdAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PAYSERA ->
                         new PayseraAccount(StringUtils.createUid(),
@@ -507,7 +508,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (PayseraAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PERFECT_MONEY ->
                         new PerfectMoneyAccount(StringUtils.createUid(),
@@ -515,7 +516,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (PerfectMoneyAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PIN_4 ->
                         new Pin4Account(StringUtils.createUid(),
@@ -523,7 +524,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (Pin4AccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PIX ->
                         new PixAccount(StringUtils.createUid(),
@@ -531,7 +532,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (PixAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case PROMPT_PAY ->
                         new PromptPayAccount(StringUtils.createUid(),
@@ -539,7 +540,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (PromptPayAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case REVOLUT ->
                         new RevolutAccount(StringUtils.createUid(),
@@ -547,7 +548,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (RevolutAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SAME_BANK ->
                         new SameBankAccount(StringUtils.createUid(),
@@ -555,7 +556,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SameBankAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SATISPAY ->
                         new SatispayAccount(StringUtils.createUid(),
@@ -563,7 +564,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SatispayAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SBP ->
                         new SbpAccount(StringUtils.createUid(),
@@ -571,7 +572,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SbpAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SEPA ->
                         new SepaAccount(StringUtils.createUid(),
@@ -579,7 +580,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SepaAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SEPA_INSTANT ->
                         new SepaInstantAccount(StringUtils.createUid(),
@@ -587,7 +588,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SepaInstantAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case STRIKE ->
                         new StrikeAccount(StringUtils.createUid(),
@@ -595,7 +596,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (StrikeAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SWIFT ->
                         new SwiftAccount(StringUtils.createUid(),
@@ -603,7 +604,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SwiftAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case SWISH ->
                         new SwishAccount(StringUtils.createUid(),
@@ -611,15 +612,16 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (SwishAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
+                case TELE_BIRR -> throw new UnsupportedOperationException("Not yet implemented:  " + fiatPaymentRail);
                 case UPHOLD ->
                         new UpholdAccount(StringUtils.createUid(),
                                 System.currentTimeMillis(),
                                 accountName,
                                 (UpholdAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case UPI ->
                         new UpiAccount(StringUtils.createUid(),
@@ -627,7 +629,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (UpiAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case US_POSTAL_MONEY_ORDER ->
                         new USPostalMoneyOrderAccount(StringUtils.createUid(),
@@ -635,7 +637,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (USPostalMoneyOrderAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case WECHAT_PAY ->
                         new WeChatPayAccount(StringUtils.createUid(),
@@ -643,7 +645,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (WeChatPayAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case WISE ->
                         new WiseAccount(StringUtils.createUid(),
@@ -651,7 +653,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (WiseAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case WISE_USD ->
                         new WiseUsdAccount(StringUtils.createUid(),
@@ -659,7 +661,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (WiseUsdAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
                 case ZELLE ->
                         new ZelleAccount(StringUtils.createUid(),
@@ -667,7 +669,7 @@ public class PaymentSummaryController implements Controller {
                                 accountName,
                                 (ZelleAccountPayload) model.getAccountPayload(),
                                 keyPair,
-                                keyAlgorithm,
+                                keyType,
                                 accountOrigin);
             };
         } else if (model.getPaymentMethod().getPaymentRail() instanceof CryptoPaymentRail cryptoPaymentRail) {

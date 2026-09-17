@@ -54,6 +54,7 @@ class TakeOfferReviewView extends View<StackPane, TakeOfferReviewModel, TakeOffe
     private final WizardOverlay takeOfferSuccessOverlay, sendTakeOfferMessageOverlay;
     private Subscription takeOfferStatusPin;
     private boolean minWaitingTimePassed = false;
+    private UIScheduler minWaitingTimeScheduler;
 
     TakeOfferReviewView(TakeOfferReviewModel model, TakeOfferReviewController controller, HBox reviewDataDisplay) {
         super(new StackPane(), model, controller);
@@ -157,7 +158,7 @@ class TakeOfferReviewView extends View<StackPane, TakeOfferReviewModel, TakeOffe
         takeOfferSendMessageWaitingAnimation = new WaitingAnimation(WaitingState.TAKE_BISQ_EASY_OFFER);
         sendTakeOfferMessageOverlay = new WizardOverlay(root)
                 .headlineIcon(takeOfferSendMessageWaitingAnimation)
-                .headline("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.headline")
+                .headlineFromI18nKey("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.headline")
                 .descriptionFromI18nKeys("bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.subTitle",
                         "bisqEasy.takeOffer.review.sendTakeOfferMessageFeedback.info")
                 .build();
@@ -166,7 +167,7 @@ class TakeOfferReviewView extends View<StackPane, TakeOfferReviewModel, TakeOffe
         takeOfferSuccessButton.setDefaultButton(true);
         takeOfferSuccessOverlay = new WizardOverlay(root)
                 .info()
-                .headline("bisqEasy.takeOffer.review.takeOfferSuccess.headline")
+                .headlineFromI18nKey("bisqEasy.takeOffer.review.takeOfferSuccess.headline")
                 .descriptionFromI18nKey("bisqEasy.takeOffer.review.takeOfferSuccess.subTitle")
                 .buttons(takeOfferSuccessButton)
                 .build();
@@ -200,17 +201,20 @@ class TakeOfferReviewView extends View<StackPane, TakeOfferReviewModel, TakeOffe
         takeOfferSuccessButton.setOnAction(null);
         takeOfferStatusPin.unsubscribe();
         takeOfferSendMessageWaitingAnimation.stop();
+        stopMinWaitingTimeScheduler();
     }
 
     private void showTakeOfferStatusFeedback(TakeOfferReviewModel.TakeOfferStatus status) {
         if (status == TakeOfferReviewModel.TakeOfferStatus.SENT) {
+            minWaitingTimePassed = false;
             sendTakeOfferMessageOverlay.setVisible(true);
 
             Transitions.blurStrong(content, 0);
             Transitions.slideInTop(sendTakeOfferMessageOverlay, 450);
             takeOfferSendMessageWaitingAnimation.playIndefinitely();
 
-            UIScheduler.run(() -> {
+            stopMinWaitingTimeScheduler();
+            minWaitingTimeScheduler = UIScheduler.run(() -> {
                 minWaitingTimePassed = true;
                 if (model.getTakeOfferStatus().get() == TakeOfferReviewModel.TakeOfferStatus.SUCCESS) {
                     sendTakeOfferMessageOverlay.setVisible(false);
@@ -224,7 +228,17 @@ class TakeOfferReviewView extends View<StackPane, TakeOfferReviewModel, TakeOffe
             takeOfferSendMessageWaitingAnimation.stop();
         } else if (status == TakeOfferReviewModel.TakeOfferStatus.NOT_STARTED) {
             sendTakeOfferMessageOverlay.setVisible(false);
+            takeOfferSuccessOverlay.setVisible(false);
+            takeOfferSendMessageWaitingAnimation.stop();
+            stopMinWaitingTimeScheduler();
             Transitions.removeEffect(content);
+        }
+    }
+
+    private void stopMinWaitingTimeScheduler() {
+        if (minWaitingTimeScheduler != null) {
+            minWaitingTimeScheduler.stop();
+            minWaitingTimeScheduler = null;
         }
     }
 

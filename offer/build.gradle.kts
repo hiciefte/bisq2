@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":burningman"))
     implementation(project(":account"))
     implementation(project(":presentation"))
+    implementation(project(":settings"))
     implementation(project(":notifications"))
     implementation(project(":bonded-roles"))
 
@@ -18,5 +19,4 @@ dependencies {
     implementation("network:network-identity:$version")
 
     implementation(libs.google.gson)
-    implementation(libs.jsocks)
 }

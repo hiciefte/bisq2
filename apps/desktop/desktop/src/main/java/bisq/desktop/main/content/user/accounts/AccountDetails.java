@@ -27,6 +27,7 @@ import bisq.account.payment_method.fiat.FiatPaymentRail;
 import bisq.account.timestamp.AccountTimestampService;
 import bisq.common.asset.FiatCurrencyRepository;
 import bisq.common.data.Triple;
+import bisq.common.monetary.Fiat;
 import bisq.common.observable.Pin;
 import bisq.common.util.StringUtils;
 import bisq.desktop.common.threading.UIThread;
@@ -34,6 +35,8 @@ import bisq.desktop.common.utils.ClipboardUtil;
 import bisq.desktop.common.utils.GridPaneUtil;
 import bisq.desktop.components.controls.BisqMenuItem;
 import bisq.i18n.Res;
+import bisq.offer.mu_sig.use_case.create_offer.amount.limits.PaymentMethodBasedAmountLimitsProvider;
+import bisq.presentation.formatters.AmountFormatter;
 import bisq.presentation.formatters.DateFormatter;
 import bisq.presentation.formatters.TimeFormatter;
 import javafx.geometry.HPos;
@@ -150,7 +153,7 @@ public abstract class AccountDetails<A extends Account<?, ?>, R extends PaymentR
     protected void addAccountAge() {
         Label accountAgeLabel = addDescriptionAndValue(Res.get("paymentAccounts.accountAge"), Res.get("data.na"));
         accountTimestampByHashPin = accountTimestampService.getAccountTimestampByHash().addObserver(() -> {
-            accountTimestampService.findAccountTimestamp(account)
+            accountTimestampService.findAccountTimestampDate(account)
                     .ifPresent(date -> UIThread.run(() -> {
                         String accountAge = TimeFormatter.formatAgeInDays(date);
                         accountAgeLabel.setText(accountAge);
@@ -159,8 +162,10 @@ public abstract class AccountDetails<A extends Account<?, ?>, R extends PaymentR
     }
 
     protected Label addTradeLimitInfo() {
-        return addDescriptionAndValue(Res.get("paymentAccounts.tradeLimit"),
-                account.getPaymentMethod().getPaymentRail().getTradeLimit());
+        PaymentRail paymentRail = account.getPaymentMethod().getPaymentRail();
+        Fiat maxTradeLimitInUsd = PaymentMethodBasedAmountLimitsProvider.evaluateLimitInUsd(paymentRail);
+        String maxTradeLimit = AmountFormatter.formatQuoteAmount(maxTradeLimitInUsd);
+        return addDescriptionAndValue(Res.get("paymentAccounts.tradeLimit"), maxTradeLimit);
     }
 
     protected Label addTradeDuration() {

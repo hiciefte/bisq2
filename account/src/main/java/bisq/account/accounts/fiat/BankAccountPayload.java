@@ -21,6 +21,7 @@ import bisq.account.accounts.SelectableCurrencyAccountPayload;
 import bisq.account.accounts.util.AccountDataDisplayStringBuilder;
 import bisq.account.accounts.util.BankAccountUtils;
 import bisq.common.proto.UnresolvableProtobufMessageException;
+import bisq.common.util.ByteArrayUtils;
 import bisq.common.validation.NetworkDataValidation;
 import bisq.common.validation.PaymentAccountValidation;
 import bisq.i18n.Res;
@@ -158,23 +159,26 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
     }
 
     @Override
-    public byte[] getFingerprint() {
-        String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
-        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
-        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
+    public byte[] getBisq1CompatibleFingerprint() {
+        @SuppressWarnings("ConstantValue") String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode, true) ? bankName.orElse("") : "";
+        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode, true) ? bankId.orElse("") : "";
 
-        // In Bisq 1 bankAccountType was using the translated strings (Checking, Savings).
-        // This was a bug and cannot be ported to Bisq 2. Users with account age for such accounts would have
-        // problems on Bisq 1 as well as verification depends on language. We assume there are few accounts
-        // affected by that.
-        String accountTypeValue = BankAccountUtils.isBankAccountTypeRequired(countryCode)
-                ? bankAccountType.map(BankAccountType::name).orElse("")
+        // Bisq 1 used null if not set instead of empty string
+        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode, true) ? branchId.orElse("null") : "";
+
+        // i18n string is used, thus the resulting hash will be unreliable
+        String accountTypeValue = BankAccountUtils.isBankAccountTypeRequired(countryCode, true)
+                ? bankAccountType.map(BankAccountUtils::getBisq1CompatibleI18nAccountTypeName).orElse("")
                 : "";
 
-        // We also have to break compatibility with Bisq 1 holderIdValue as it uses i18n strings.
-        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode) ? holderId.orElse("") : "";
+        // i18n string is used, thus the resulting hash will be unreliable
+        // The line break is also part of Bisq 1 string.
+        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode, true)
+                ? BankAccountUtils.getHolderIdDescription(countryCode) + " " + holderId.orElse("") + "\n"
+                : "";
 
-        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode) ? nationalAccountId.orElse("") : "";
+        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode, true) ? nationalAccountId.orElse("") : "";
+
         String all = bankNameValue +
                 bankIdValue +
                 branchIdValue +
@@ -182,6 +186,33 @@ public abstract class BankAccountPayload extends CountryBasedAccountPayload impl
                 accountTypeValue +
                 holderIdValue +
                 nationalAccountIdValue;
-        return super.getFingerprint(all.getBytes(StandardCharsets.UTF_8));
+        return super.getBisq1CompatibleFingerprint(all.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    protected byte[] getBisq2Fingerprint() {
+        String holderNameValue = holderName.orElse("");
+        String holderIdValue = BankAccountUtils.isHolderIdRequired(countryCode) ? holderId.orElse("") : "";
+        String nationalAccountIdValue = BankAccountUtils.isNationalAccountIdRequired(countryCode) ? nationalAccountId.orElse("") : "";
+
+        String accountTypeValue = BankAccountUtils.isBankAccountTypeRequired(countryCode)
+                ? bankAccountType.map(BankAccountType::name).orElse("")
+                : "";
+
+        String bankNameValue = BankAccountUtils.isBankNameRequired(countryCode) ? bankName.orElse("") : "";
+        String bankIdValue = BankAccountUtils.isBankIdRequired(countryCode) ? bankId.orElse("") : "";
+        String branchIdValue = BankAccountUtils.isBranchIdRequired(countryCode) ? branchId.orElse("") : "";
+
+        byte[] data = ByteArrayUtils.concat(
+                holderNameValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                holderIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                nationalAccountIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                accountNr.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                accountTypeValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bankNameValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                bankIdValue.getBytes(StandardCharsets.UTF_8), FINGERPRINT_SEPARATOR,
+                branchIdValue.getBytes(StandardCharsets.UTF_8)
+        );
+        return super.getBisq2Fingerprint(data);
     }
 }

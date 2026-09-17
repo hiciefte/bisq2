@@ -54,6 +54,7 @@ public final class MuSigTrade extends Trade<MuSigOffer, MuSigContract, MuSigTrad
     private final Observable<String> depositTxId = new Observable<>("TODO depositTxId");
     @Getter
     private Optional<Long> tradeCompletedDate = Optional.empty();
+    private MuSigTradeDispute tradeDispute = new MuSigTradeDispute();
 
     public MuSigTrade(MuSigContract contract,
                       boolean isBuyer,
@@ -107,6 +108,7 @@ public final class MuSigTrade extends Trade<MuSigOffer, MuSigContract, MuSigTrad
         var builder = bisq.trade.protobuf.MuSigTrade.newBuilder();
         Optional.ofNullable(depositTxId.get()).ifPresent(builder::setDepositTxId);
         tradeCompletedDate.ifPresent(builder::setTradeCompletedDate);
+        builder.setTradeDispute(tradeDispute.toProto(serializeForHash));
         return builder;
     }
 
@@ -147,6 +149,11 @@ public final class MuSigTrade extends Trade<MuSigOffer, MuSigContract, MuSigTrad
         if (muSigTradeProto.hasDepositTxId()) {
             trade.setDepositTxId(muSigTradeProto.getDepositTxId());
         }
+
+        if (muSigTradeProto.hasTradeDispute()) {
+            trade.setTradeDispute(MuSigTradeDispute.fromProto(muSigTradeProto.getTradeDispute()));
+        }
+
         return trade;
     }
 
@@ -202,5 +209,13 @@ public final class MuSigTrade extends Trade<MuSigOffer, MuSigContract, MuSigTrad
 
     public Market getMarket() {
         return getOffer().getMarket();
+    }
+
+    public MuSigTradeDispute getTradeDispute() {
+        return tradeDispute;
+    }
+
+    private void setTradeDispute(MuSigTradeDispute tradeDispute) {
+        this.tradeDispute = tradeDispute;
     }
 }

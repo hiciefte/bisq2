@@ -19,6 +19,7 @@ package bisq.desktop.main.content.mu_sig.trade.pending;
 
 import bisq.account.payment_method.PaymentMethod;
 import bisq.account.payment_method.PaymentRail;
+import bisq.chat.mu_sig.open_trades.MuSigDisputeAgentType;
 import bisq.chat.mu_sig.open_trades.MuSigOpenTradeChannel;
 import bisq.chat.notifications.ChatNotification;
 import bisq.chat.notifications.ChatNotificationService;
@@ -55,10 +56,10 @@ class MuSigPendingTradeListItem implements DateTableItem {
             market, priceString, btcAmountString, nonBtcAmountString, myRole, paymentMethodDisplayName;
     private final long date, price, btcAmount, nonBtcAmount;
     private final ChatNotificationService chatNotificationService;
-    private final ReputationScore reputationScore;
+    private final ReputationScore peersReputationScore;
     private final StringProperty peerNumNotificationsProperty = new SimpleStringProperty();
     private final StringProperty mediatorNumNotificationsProperty = new SimpleStringProperty();
-    private final Pin changedChatNotificationPin, isInMediationPin;
+    private final Pin changedChatNotificationPin, disputeAgentTypePin;
     private final PaymentRail basePaymentRail;
     private final PaymentRail quotePaymentRail;
     private final PaymentMethod<?> paymentMethod;
@@ -102,25 +103,27 @@ class MuSigPendingTradeListItem implements DateTableItem {
         paymentMethod = contract.getNonBtcSidePaymentMethodSpec().getPaymentMethod();
 
         myRole = MuSigTradeFormatter.getMakerTakerRole(trade);
-        reputationScore = reputationService.getReputationScore(peersUserProfile);
+        peersReputationScore = reputationService.getReputationScore(peersUserProfile);
 
         chatNotificationService.getNotConsumedNotifications().forEach(this::handleNotification);
         changedChatNotificationPin = chatNotificationService.getChangedNotification().addObserver(this::handleNotification);
 
-        isInMediationPin = channel.isInMediationObservable().addObserver(isInMediation -> {
-            if (isInMediation == null) {
+        disputeAgentTypePin = channel.disputeAgentTypeObservable().addObserver(disputeAgentType -> {
+            if (disputeAgentType == null) {
                 return;
             }
-            this.isInMediation = isInMediation;
-            if (isInMediation) {
+            this.isInMediation = disputeAgentType == MuSigDisputeAgentType.MEDIATOR;
+            if (this.isInMediation) {
                 mediatorUserName = channel.getMediator().map(UserProfile::getUserName).orElse("");
+            } else {
+                mediatorUserName = "";
             }
         });
     }
 
     public void dispose() {
         changedChatNotificationPin.unbind();
-        isInMediationPin.unbind();
+        disputeAgentTypePin.unbind();
     }
 
     private void handleNotification(ChatNotification notification) {

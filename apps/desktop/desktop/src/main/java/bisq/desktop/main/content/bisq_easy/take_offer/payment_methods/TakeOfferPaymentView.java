@@ -101,7 +101,7 @@ public class TakeOfferPaymentView extends View<StackPane, TakeOfferPaymentModel,
         invalidInputOverlayCloseButton = new Button(Res.get("action.close"));
         invalidInputOverlay = new WizardOverlay(root)
                 .warning()
-                .headline("bisqEasy.takeOffer.paymentMethods.invalidInputWizardOverlay.title")
+                .headlineFromI18nKey("bisqEasy.takeOffer.paymentMethods.invalidInputWizardOverlay.title")
                 .description(new VBox(invalidInputOverlayTextLabel))
                 .buttons(invalidInputOverlayCloseButton)
                 .build();
